@@ -70,5 +70,11 @@
     "path": "/viewer/../docs/team_protocol.yaml",
     "summary": "SilverHand / Handy / Scout roles, QA scoring framework, lean communication rules, and anti-idle workflow.",
     "category": "Protocol"
+  },
+  {
+    "label": "GitHub Repo",
+    "path": "https://github.com/SmartLHA/job-seeking-tool",
+    "summary": "Public GitHub repository for the Job Seeking Tool project.",
+    "category": "External"
   }
 ]
