@@ -920,3 +920,55 @@ Added timestamped run logs to `logs/` directory.
 **Next:** CV tailoring + UI paste/URL pre-fill — hand off to Handy when back.
 
 
+
+---
+
+**2026-04-07 — Viewer Server Fix + OpenClaw Status Dashboard**
+
+### What was done
+
+- Fixed `viewer_server.py` — `openclaw cron runs` hangs when called from Python subprocess (even with `stdin=subprocess.DEVNULL`), blocking the entire `/api/health` endpoint
+  - Root cause: `openclaw cron runs` reads JSONL file and with `stdin=subprocess.DEVNULL` it still hangs in subprocess context
+  - Fix: Removed `openclaw cron runs` call entirely; cron job status now derived from `openclaw status` output parsing (checks session model column for "error"/"fail" strings in cron sessions)
+  - Also: Added `stdin=subprocess.DEVNULL` to all subprocess calls to prevent any stdin-reading issues
+  - All three health checks (`ollama list`, `ollama ps`, `openclaw status`) now complete in ~3.5s total
+
+- `viewer_server.py` now exposes:
+  - `GET /usage` — usage.json data
+  - `GET /api/health` — sessions count, Ollama models (available + running), cron job status (derived from openclaw status)
+  - `GET /api/help` — `openclaw --help` output
+
+- `openclaw_status.html` dashboard (already existed, now works):
+  - Big colorful cards: green/amber/red color coding
+  - Session count (green when >0)
+  - LLM active status (green = no errors, amber = has errors)
+  - Cron job last-run status (green = ok, red = error)
+  - `openclaw --help` check (green = works, red = fails)
+  - Auto-refreshes every 30s
+
+### Key Decisions
+- Cron job "error" detection: checks for "error" or "fail" in the session's model column from `openclaw status` — not perfect but non-blocking
+- LaunchAgent still has I/O error on `launchctl load/bootout`; server runs manually via `bash viewer.sh start`
+
+### Skills scoring differentiation — approved (2026-04-07)
+
+Handy Task: Differentiate skills scoring — matching more required skills earns more points.
+New formula: base_score + (matched-1) * bonus_per_extra
+Brief: `docs/tasks/skills-scoring-differentiate-brief.md`
+
+### Edge case QA — Scout findings (2026-04-07)
+
+Scout ran 7 edge cases, found no bugs — system working correctly.
+- Salary critical risk correctly gating apply decisions
+- All-unknown validation works
+- Skills scoring is %-based (2/2=1/1=35pts) — intentional but changed per Mic decision
+
+### Session management rules added (2026-04-07)
+
+Handy: session by file, max 120min/25turns idle.
+Scout: short-lived, max 30min/15turns.
+Cron: clean old sessions every 2 days.
+
+### GitHub repo connected (2026-04-07)
+
+Repo: https://github.com/SmartLHA/job-seeking-tool
