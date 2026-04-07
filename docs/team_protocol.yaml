@@ -125,6 +125,22 @@ handoff:
       - test_result
       - assumptions
       - doc_updates
+session_management:
+  handy:
+    - SilverHand maintains: filename → session_key map
+    - Before spawning Handy: check if idle session exists for target file(s)
+    - If idle and recent: reuse it. If busy or stale: start new
+    - Stale threshold: idle >30 min OR turns >20 → start fresh
+    - Multi-file task: use session of primary/most-changed file
+    - Session name format: handy-<filename> (e.g. handy-src-ui)
+    - Session key tracked in memory/handy-sessions.md
+  scout:
+    - Scout QA tasks are short and deterministic — sessions close after task
+    - For complex QA (multi-step): SilverHand creates own subagent session
+    - Scout task session format: scout-<task_id>
+    - Scout sessions do not need reuse — each QA task is independent
+    - Max Scout session age: 15 min idle OR turns >10 → close
+    - Complex QA subagent: silverhand-<task_id>, follows anti_idle rules
 qa:
   scout_modes:
     lean_default:
