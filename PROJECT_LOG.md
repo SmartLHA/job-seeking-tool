@@ -809,6 +809,35 @@ Files changed:
 - `viewer/app.js` — cache-busting query params on fetches, improved usage empty states
 - `viewer/viewer.sh` — fixed `viewer_server.py` path in start command
 
+### Viewer always-on LaunchAgent
+
+Configured `viewer_server.py` to run permanently via a macOS LaunchAgent (`ai.openclaw.viewer.plist`) so it survives shell exits and system restarts.
+
+Files changed:
+- `~/Library/LaunchAgents/ai.openclaw.viewer.plist` — new LaunchAgent config with `KeepAlive: true`, `RunAtLoad: true`, and correct `PATH` env so subprocess calls work
+
+### Viewer LLM health dashboard section
+
+Added a new `/api/health` server endpoint and a "LLM health" dashboard card showing real-time model status:
+- Ollama: which local models are available (gemma4:e4b 9.6GB, gemma4:e2b 7.2GB) and whether they're currently running
+- OpenClaw sessions: which models are active and in which sessions (green dot = running, gray dot = stopped/loaded)
+
+Also added LLM health to the sidebar (below usage) so it's always visible.
+
+Additional fixes:
+- `viewer_server.py`: uses fixed `ENV` with correct `PATH` so subprocess calls (`openclaw status`, `ollama list/ps`) work even from LaunchAgent context
+- `app.js`: `fetchHealth()` polls `/api/health` every 30s, displays dots for model status
+- `index.html`: added `#llm-health-bar` and `#dash-health-card` elements
+- `styles.css`: added `.llm-health-bar` and `.model-dot` styles with green/gray status colours
+
+### Dashboard summary extraction fixed
+
+`buildDashboardSummary()` was returning "Nothing captured yet" for all cards despite data existing.
+
+Two bugs fixed:
+1. Section extraction regex used `(?=^##\\s+)` lookahead which failed on the last section (`## Next Recommended Step`) at EOF — added `|$` to match end-of-file
+2. Dashboard tried to read `docCache.get('/PROJECT_CONTEXT.md')` but docs are cached at `/viewer/../PROJECT_CONTEXT.md` (the withBase path) — added fallback chain so both cache-key formats work
+
 ### Session cleanup
 
 Checked all sessions — only 2 active sessions found (main + one closed subagent). No stale inactive sessions requiring cleanup.
@@ -888,6 +917,6 @@ Added timestamped run logs to `logs/` directory.
 - `orchestrator.py`: `_log_run()` writes structured log after each evaluation
 - Tests: 80/80 pass
 
-**Next:** CV tailoring — hand off to Handy when back.
+**Next:** CV tailoring + UI paste/URL pre-fill — hand off to Handy when back.
 
 
