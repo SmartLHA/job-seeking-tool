@@ -130,7 +130,7 @@ session_management:
     - SilverHand maintains: filename → session_key map
     - Before spawning Handy: check if idle session exists for target file(s)
     - If idle and recent: reuse it. If busy or stale: start new
-    - Stale threshold: idle >30 min OR turns >20 → start fresh
+    - Stale threshold: idle >120 min OR turns >25 → start fresh
     - Multi-file task: use session of primary/most-changed file
     - Session name format: handy-<filename> (e.g. handy-src-ui)
     - Session key tracked in memory/handy-sessions.md
