@@ -1,0 +1,14 @@
+timestamp: 2026-04-07 17:31:33 UTC
+job_id: test-job-junior-birmingham
+decision: review
+match_score: 77.5
+confidence: high
+profile_id: test-junior-ba
+job_title: Junior Business Analyst
+company: RetailCo Ltd
+source_type: copied_text
+input_reviewed_job: data/state/reviewed_jobs/test-job-junior-birmingham.json
+output_analysis: data/state/analyses/test-job-junior-birmingham.json
+output_reports: output/reports/test-job-junior-birmingham.json, output/reports/test-job-junior-birmingham.csv
+master_cv: none
+storage_root: data/state

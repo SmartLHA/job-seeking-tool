@@ -1,0 +1,2 @@
+job_id,job_title,company,location,work_mode,employment_type,source_type,source_ref,match_score,confidence,decision,decision_reason,blockers,risk_flags,strengths,missing_required_skills,missing_preferred_skills,outcome_status,outcome_updated_at,outcome_notes,tailoring_ready
+demo-job-003,Business Analyst,Gap Co,London,hybrid,full-time,copied_text,manual-gap,80.0,high,review,"Score 80 would otherwise qualify for apply, but critical risks require review: Salary below floor",,Salary below floor,Power BI; SQL; stakeholder management,,,,,,False

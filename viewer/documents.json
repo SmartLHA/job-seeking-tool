@@ -1,0 +1,74 @@
+[
+  {
+    "label": "Project Index",
+    "path": "/viewer/../INDEX.md",
+    "summary": "Quick reference guide: which file to read for any given task, plus data flow diagram and key invariants.",
+    "category": "Core"
+  },
+  {
+    "label": "Project Context",
+    "path": "/viewer/../PROJECT_CONTEXT.md",
+    "summary": "Shared project brain: confirmed direction, constraints, open questions, and latest progress.",
+    "category": "Core"
+  },
+  {
+    "label": "Project Log",
+    "path": "/viewer/../PROJECT_LOG.md",
+    "summary": "Dated logbook of what happened, what changed, and what should happen next.",
+    "category": "Core"
+  },
+  {
+    "label": "Product Spec",
+    "path": "/viewer/../docs/product_spec.md",
+    "summary": "High-level product definition, MVP scope, goals, non-goals, and open product decisions.",
+    "category": "Planning Docs"
+  },
+  {
+    "label": "Function List",
+    "path": "/viewer/../docs/function_list.md",
+    "summary": "Planned modules and function responsibilities across the whole product.",
+    "category": "Planning Docs"
+  },
+  {
+    "label": "Development Sequence",
+    "path": "/viewer/../docs/development_sequence.md",
+    "summary": "Phased implementation order so the project grows in a controlled way.",
+    "category": "Planning Docs"
+  },
+  {
+    "label": "Development Rules",
+    "path": "/viewer/../docs/development_rules.md",
+    "summary": "Non-negotiable build rules: local-first, truthful output, deterministic-first logic, and tests.",
+    "category": "Planning Docs"
+  },
+  {
+    "label": "Data Contract",
+    "path": "/viewer/../docs/data_contract.md",
+    "summary": "MVP data shapes, required vs optional fields, unknown handling, blockers, and decision outputs.",
+    "category": "Planning Docs"
+  },
+  {
+    "label": "UI Scope",
+    "path": "/viewer/../docs/ui_scope.md",
+    "summary": "Defines the minimal local UI for MVP, its workflow boundaries, and what it should not become.",
+    "category": "Planning Docs"
+  },
+  {
+    "label": "Architecture Guardrails",
+    "path": "/viewer/../docs/architecture_guardrails.md",
+    "summary": "Pre-implementation architecture discipline: state separation, module boundaries, input handling rules, and policy configuration principles.",
+    "category": "Planning Docs"
+  },
+  {
+    "label": "Viewer README",
+    "path": "/viewer/../viewer/README.md",
+    "summary": "How to run, stop, and manage the local docs viewer. Use viewer.sh for start/stop/status/restart control, or run the HTTP server directly.",
+    "category": "Viewer"
+  },
+  {
+    "label": "Team Protocol",
+    "path": "/viewer/../docs/team_protocol.yaml",
+    "summary": "SilverHand / Handy / Scout roles, QA scoring framework, lean communication rules, and anti-idle workflow.",
+    "category": "Protocol"
+  }
+]

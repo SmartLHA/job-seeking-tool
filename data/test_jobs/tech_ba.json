@@ -1,0 +1,26 @@
+{
+  "job_id": "test-job-tech-ba",
+  "job_title": "Business Analyst - Tech",
+  "company": "StartupTech Ltd",
+  "location": "Remote",
+  "work_mode": "remote",
+  "employment_type": "full-time",
+  "required_skills": [
+    "SQL",
+    "Python",
+    "Data Analysis",
+    "Jira"
+  ],
+  "preferred_skills": [
+    "Machine Learning",
+    "Tableau"
+  ],
+  "required_years_experience": 3,
+  "domain": "Technology",
+  "salary_min_gbp": 55000,
+  "salary_max_gbp": 70000,
+  "description_raw": "Fast-growing tech startup seeking a BA to bridge technical and business teams.",
+  "source_type": "copied_text",
+  "source_ref": "test",
+  "notes": ""
+}

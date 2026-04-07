@@ -1,0 +1,2 @@
+job_id,job_title,company,location,work_mode,employment_type,source_type,source_ref,match_score,confidence,decision,decision_reason,blockers,risk_flags,strengths,missing_required_skills,missing_preferred_skills,outcome_status,outcome_updated_at,outcome_notes,tailoring_ready
+qa-test-job-001,Business Analyst,Test Corp,London,hybrid,full-time,copied_text,qa-manual,95.0,high,apply,Score 95 meets the apply threshold and no critical risks were found,,Preferred skill gap,SQL; Stakeholder Management,,Power BI,,,,True

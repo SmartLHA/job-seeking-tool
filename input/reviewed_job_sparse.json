@@ -1,0 +1,19 @@
+{
+  "job_id": "demo-job-002",
+  "job_title": "Business Analyst",
+  "company": "Sparse Co",
+  "description_raw": "Analyst role.",
+  "source_type": "copied_text",
+  "source_ref": "manual-sparse",
+  "location": null,
+  "work_mode": "unknown",
+  "employment_type": "full-time",
+  "required_skills": [],
+  "preferred_skills": [],
+  "required_years_experience": null,
+  "nice_to_have_years_experience": null,
+  "domain": null,
+  "notes": "Sparse demo job",
+  "salary_min_gbp": null,
+  "salary_max_gbp": null
+}

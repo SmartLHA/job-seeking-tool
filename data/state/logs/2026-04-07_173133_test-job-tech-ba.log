@@ -1,0 +1,14 @@
+timestamp: 2026-04-07 17:31:33 UTC
+job_id: test-job-tech-ba
+decision: review
+match_score: 40.0
+confidence: high
+profile_id: test-senior-ba
+job_title: Business Analyst - Tech
+company: StartupTech Ltd
+source_type: copied_text
+input_reviewed_job: data/state/reviewed_jobs/test-job-tech-ba.json
+output_analysis: data/state/analyses/test-job-tech-ba.json
+output_reports: output/reports/test-job-tech-ba.json, output/reports/test-job-tech-ba.csv
+master_cv: none
+storage_root: data/state

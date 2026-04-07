@@ -1,0 +1,14 @@
+timestamp: 2026-04-07 17:31:32 UTC
+job_id: test-job-senior-london
+decision: review
+match_score: 86.0
+confidence: high
+profile_id: test-senior-ba
+job_title: Senior Business Analyst
+company: Global Bank plc
+source_type: copied_text
+input_reviewed_job: data/state/reviewed_jobs/test-job-senior-london.json
+output_analysis: data/state/analyses/test-job-senior-london.json
+output_reports: output/reports/test-job-senior-london.json, output/reports/test-job-senior-london.csv
+master_cv: none
+storage_root: data/state

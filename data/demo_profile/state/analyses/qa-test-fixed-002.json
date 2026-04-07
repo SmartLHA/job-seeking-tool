@@ -1,0 +1,54 @@
+{
+  "job_id": "qa-test-fixed-002",
+  "match_score": 95.0,
+  "score_breakdown": {
+    "skills_score": {
+      "value": 35.0,
+      "reason": "Matched 2 of 2 required skills; Matched 0 of 1 preferred skills"
+    },
+    "experience_score": {
+      "value": 20.0,
+      "reason": "Candidate meets or exceeds required experience"
+    },
+    "location_score": {
+      "value": 10.0,
+      "reason": "Job location matches candidate preferences"
+    },
+    "salary_score": {
+      "value": 10.0,
+      "reason": "Job salary appears to meet the candidate floor"
+    },
+    "domain_score": {
+      "value": 10.0,
+      "reason": "Job domain matches candidate experience"
+    },
+    "work_mode_score": {
+      "value": 10.0,
+      "reason": "Work mode matches a flexible remote preference"
+    },
+    "notes": [
+      "Missing preferred skills are soft gaps only."
+    ]
+  },
+  "blockers": [],
+  "strengths": [
+    "SQL",
+    "Stakeholder Management"
+  ],
+  "missing_required_skills": [],
+  "missing_preferred_skills": [
+    "Power BI"
+  ],
+  "risk_flags": [
+    {
+      "code": "missing-preferred-skills",
+      "label": "Preferred skill gap",
+      "reason": "Missing preferred skills: Power BI"
+    }
+  ],
+  "decision": "apply",
+  "decision_reason": "Score 95 meets the apply threshold and no critical risks were found",
+  "confidence": "high",
+  "tailoring_ready": true,
+  "tailoring_notes": "Evaluation supports tailoring from approved profile and CV facts only."
+}

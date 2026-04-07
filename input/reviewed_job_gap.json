@@ -1,0 +1,19 @@
+{
+  "job_id": "demo-job-003",
+  "job_title": "Business Analyst",
+  "company": "Gap Co",
+  "description_raw": "Looking for stakeholder management and Power BI.",
+  "source_type": "copied_text",
+  "source_ref": "manual-gap",
+  "location": "London",
+  "work_mode": "hybrid",
+  "employment_type": "full-time",
+  "required_skills": ["stakeholder management", "Power BI"],
+  "preferred_skills": ["SQL"],
+  "required_years_experience": 3,
+  "nice_to_have_years_experience": null,
+  "domain": "finance",
+  "notes": "Gap demo job",
+  "salary_min_gbp": 50000,
+  "salary_max_gbp": 60000
+}

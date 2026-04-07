@@ -1,0 +1,14 @@
+timestamp: 2026-04-07 16:26:05 UTC
+job_id: demo-job-001
+decision: review
+match_score: 80.0
+confidence: high
+profile_id: mic-ba-001
+job_title: Business Analyst
+company: Example Co
+source_type: copied_text
+input_reviewed_job: data/state/reviewed_jobs/demo-job-001.json
+output_analysis: data/state/analyses/demo-job-001.json
+output_reports: output/reports/demo-job-001.json, output/reports/demo-job-001.csv
+master_cv: /Users/lhaclaw/.openclaw/workspace/Job Seeking Tool/data/demo_profile/docs/master_cv.md
+storage_root: data/state

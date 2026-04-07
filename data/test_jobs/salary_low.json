@@ -1,0 +1,22 @@
+{
+  "job_id": "test-job-salary-low",
+  "job_title": "Business Analyst",
+  "company": "Budget Corp",
+  "location": "Remote",
+  "work_mode": "remote",
+  "employment_type": "full-time",
+  "required_skills": [
+    "SQL",
+    "Stakeholder Management",
+    "Process Mapping"
+  ],
+  "preferred_skills": [],
+  "required_years_experience": 5,
+  "domain": "Finance",
+  "salary_min_gbp": 25000,
+  "salary_max_gbp": 35000,
+  "description_raw": "Experienced BA needed for fast-paced finance team.",
+  "source_type": "copied_text",
+  "source_ref": "test",
+  "notes": ""
+}

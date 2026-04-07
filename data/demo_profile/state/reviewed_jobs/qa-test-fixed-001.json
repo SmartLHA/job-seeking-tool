@@ -1,0 +1,24 @@
+{
+  "job_id": "qa-test-fixed-001",
+  "job_title": "Business Analyst",
+  "company": "Test Corp",
+  "description_raw": "Looking for stakeholder management and SQL skills.",
+  "source_type": "copied_text",
+  "source_ref": "qa-manual",
+  "location": "London",
+  "work_mode": "hybrid",
+  "employment_type": "full-time",
+  "required_skills": [
+    "Stakeholder Management",
+    "SQL"
+  ],
+  "preferred_skills": [
+    "Power BI"
+  ],
+  "required_years_experience": 3.0,
+  "nice_to_have_years_experience": null,
+  "domain": "finance",
+  "notes": "QA test",
+  "salary_min_gbp": 50000,
+  "salary_max_gbp": 60000
+}

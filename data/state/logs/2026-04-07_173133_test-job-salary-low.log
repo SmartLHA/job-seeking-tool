@@ -1,0 +1,14 @@
+timestamp: 2026-04-07 17:31:33 UTC
+job_id: test-job-salary-low
+decision: review
+match_score: 51.67
+confidence: high
+profile_id: test-senior-ba
+job_title: Business Analyst
+company: Budget Corp
+source_type: copied_text
+input_reviewed_job: data/state/reviewed_jobs/test-job-salary-low.json
+output_analysis: data/state/analyses/test-job-salary-low.json
+output_reports: output/reports/test-job-salary-low.json, output/reports/test-job-salary-low.csv
+master_cv: none
+storage_root: data/state

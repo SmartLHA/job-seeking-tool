@@ -1,0 +1,42 @@
+{
+  "generated_at": "2026-04-07T16:27:19Z",
+  "summary": {
+    "total_jobs": 1,
+    "decision_counts": {
+      "review": 1
+    },
+    "outcome_counts": {}
+  },
+  "rows": [
+    {
+      "job_id": "demo-job-001",
+      "job_title": "Business Analyst",
+      "company": "Example Co",
+      "location": "London",
+      "work_mode": "hybrid",
+      "employment_type": "full-time",
+      "source_type": "copied_text",
+      "source_ref": "manual-demo",
+      "match_score": 80.0,
+      "confidence": "high",
+      "decision": "review",
+      "decision_reason": "Score 80 would otherwise qualify for apply, but critical risks require review: Salary below floor",
+      "blockers": [],
+      "risk_flags": [
+        "Salary below floor"
+      ],
+      "strengths": [
+        "Power BI",
+        "SQL",
+        "process mapping",
+        "stakeholder management"
+      ],
+      "missing_required_skills": [],
+      "missing_preferred_skills": [],
+      "outcome_status": null,
+      "outcome_updated_at": null,
+      "outcome_notes": null,
+      "tailoring_ready": false
+    }
+  ]
+}

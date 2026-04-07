@@ -1,0 +1,24 @@
+{
+  "job_id": "demo-job-004",
+  "job_title": "Business Analyst",
+  "company": "LowPay Co",
+  "description_raw": "Business Analyst role with SQL.",
+  "source_type": "copied_text",
+  "source_ref": "manual-salary",
+  "location": "London",
+  "work_mode": "hybrid",
+  "employment_type": "full-time",
+  "required_skills": [
+    "stakeholder management",
+    "process mapping"
+  ],
+  "preferred_skills": [
+    "SQL"
+  ],
+  "required_years_experience": 3.0,
+  "nice_to_have_years_experience": null,
+  "domain": "finance",
+  "notes": "Salary miss demo",
+  "salary_min_gbp": 30000,
+  "salary_max_gbp": 40000
+}

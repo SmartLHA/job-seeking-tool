@@ -1,0 +1,26 @@
+{
+  "job_id": "test-job-junior-birmingham",
+  "job_title": "Junior Business Analyst",
+  "company": "RetailCo Ltd",
+  "location": "Birmingham",
+  "work_mode": "onsite",
+  "employment_type": "full-time",
+  "required_skills": [
+    "Requirements Gathering",
+    "Stakeholder Interviews",
+    "Excel",
+    "PowerPoint"
+  ],
+  "preferred_skills": [
+    "Jira",
+    "Process Mapping"
+  ],
+  "required_years_experience": 0,
+  "domain": "Retail",
+  "salary_min_gbp": 25000,
+  "salary_max_gbp": 30000,
+  "description_raw": "Entry-level BA role supporting our retail operations team.",
+  "source_type": "copied_text",
+  "source_ref": "test",
+  "notes": ""
+}

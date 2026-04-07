@@ -1,0 +1,222 @@
+version: 1
+mode:
+  default: lean
+  non_office_hour:
+    quiet_execution: true
+    skip_if_uncertain: true
+    batch_report_later: true
+status_terms:
+  - ready to start
+  - paused
+  - In Progress
+  - Completed
+communication:
+  rules:
+    - result_first
+    - bullet_or_yaml_only
+    - max_5_items_per_list
+    - max_1_line_per_item
+    - no_filler
+    - no_repetition
+    - no_examples_unless_required
+    - no_guessing
+    - only_next_step_useful_info
+    - stop_when_complete
+    - one_specific_clarification_if_blocked
+  default_format: yaml
+  fallback_format: json_if_required_by_tool
+workflow:
+  anti_idle:
+    if_completed_and_no_blocker_and_next_known:
+      - send_completed
+      - launch_next_step
+      - send_in_progress
+    ready_to_start_allowed_only_for:
+      - real_blocker
+      - real_uncertainty
+      - user_decision_needed
+    subagent_5min_rule:
+      - SilverHand must check subagent status if no reply in 5 minutes
+      - If failed or silent: take action (diagnose, fix, or rerun)
+      - Report to Mic immediately when taking action — do not wait silently
+  continuation:
+    auto_continue_if:
+      - prior_slice_reviewed
+      - tests_passed
+      - no_risky_ambiguity
+roles:
+  SilverHand:
+    role:
+      - planner
+      - gatekeeper
+      - reviewer
+      - doc_maintainer
+      - user_reporter
+    must:
+      - update_project_docs_after_verified_progress
+      - keep_team_moving
+      - escalate_real_decisions_to_user
+      - apply_qa_feedback_to_prompt_and_process
+  Handy:
+    role:
+      - dev_agent
+    must:
+      - implement_only_approved_slice
+      - run_required_tests
+      - handoff_to_scout_after_dev_done
+    must_not:
+      - self_approve
+      - redefine_scope
+      - broad_refactor_without_instruction
+  Scout:
+    role:
+      - qa_agent
+      - handoff_intake_checker
+    must:
+      - validate_only
+      - run_test_command_if_defined
+      - report_structured_findings
+      - plan_tests_when_idle_if_timing_is_right
+    must_not:
+      - modify_app_source
+      - implement_product_features
+      - implement_core_modules
+      - install_dependencies
+      - change_config
+      - guess_requirements
+handoff:
+  SilverHand_to_Handy:
+    format: yaml
+    fields:
+      - task_id
+      - goal
+      - scope
+      - constraints
+      - files
+      - test_cmd
+      - handoff_to
+  Handy_to_Scout:
+    format: yaml
+    fields:
+      - task_id
+      - changed_files
+      - tests_run
+      - test_result
+      - assumptions
+      - uncertainties
+  Scout_to_SilverHand:
+    format: yaml
+    fields:
+      - status
+      - score
+      - hard_gates
+      - test_results
+      - failures
+      - gaps
+      - ambiguities
+      - actions
+      - confidence
+  Handy_to_SilverHand:
+    format: yaml
+    fields:
+      - task_id
+      - result
+      - changed_files
+      - test_result
+      - assumptions
+      - doc_updates
+qa:
+  scout_modes:
+    lean_default:
+      use_for:
+        - normal_slices
+        - focused_followups
+      output:
+        - status
+        - test_results
+        - gaps
+        - failures
+        - actions
+        - confidence
+    full_scoring:
+      use_for:
+        - milestone_review
+        - regression_pass
+        - release_readiness
+      score_total: 100
+      thresholds:
+        pass:
+          min_score: 75
+          hard_gates_required: true
+        needs_review:
+          min_score: 60
+          max_score: 74
+          hard_gate_breach: false
+        fail:
+          max_score: 59
+          or_hard_gate_breach: true
+      hard_gates:
+        requirements_adherence: 15
+        code_correctness: 10
+        security_hygiene: 15
+        deliverable_completeness: 5
+      categories:
+        requirements_adherence: 20
+        code_correctness: 15
+        security_hygiene: 15
+        edge_case_handling: 12
+        test_coverage_quality: 10
+        error_handling_completeness: 8
+        deliverable_completeness: 8
+        input_validation: 5
+        regression_contract_risk: 4
+        scope_discipline: 2
+        code_clarity_maintainability: 1
+  intake_gate:
+    block_if:
+      - acceptance_criteria_absent_or_contradictory
+      - test_command_missing_or_fails_to_resolve
+      - more_than_3_unrelated_modules_changed
+      - critical_issue_blocks_feature
+      - review_requires_guessing
+project_specific:
+  preserve:
+    - raw_vs_reviewed_vs_analysis_separation
+    - score_vs_confidence_separation
+    - local_first_behavior
+    - lightweight_input_boundary
+    - truthful_output_boundary
+  conventions:
+    gemma_usage:
+      - gemma is a small fast local model — best for deterministic execution
+      - Good for gemma: shell commands, file parsing, structured output checks
+      - Bad for gemma: judgement, reasoning, multi-step planning, ambiguous tasks
+      - Rule: if task requires judgement/reasoning → route to MiniMax or Handy
+      - Rule: if task is deterministic execution → gemma can handle it
+      - Scout QA tasks to gemma must be ultra-structured: exact commands, exact format, file write
+    complex_qa:
+      - SilverHand may create own subagent for complex QA tasks
+      - Complex QA: multi-step analysis, failure investigation, cross-module verification
+      - If Scout cannot handle it and it is not product development → SilverHand handles via subagent
+      - SilverHand subagent follows same anti-idle, write-to-file, and result_first rules
+
+      - QA tasks (shell-based checks): use codexbar exec directly
+      - Dev tasks: route to Handy agent via ACP or subagent
+      - If acpx unavailable: use codexbar exec for Scout QA tasks
+    subagent_output:
+      - long_tasks_write_result_to_file: |
+          Any subagent task expected to produce significant output (>30 lines)
+          must write results to a temp file and return only the file path.
+          SilverHand reads the file after to deliver the result.
+          This avoids WebSocket buffer overflow causing 1006 closures.
+    reply_format:
+      - use_write_to_file_for: ["long_task_result", "verbose_test_output", "multi_check_result"]
+
+    low_salary_default: review
+  idle_scout_behavior:
+    do:
+      - lean_test_planning
+      - suitable_test_execution_only_when_timing_is_right
+    avoid:
+      - heavy_regression_by_default
+      - overproduction

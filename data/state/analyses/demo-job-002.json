@@ -1,0 +1,44 @@
+{
+  "job_id": "demo-job-002",
+  "match_score": 49.0,
+  "score_breakdown": {
+    "skills_score": {
+      "value": 0.0,
+      "reason": "No required skills were provided in the reviewed job data; No preferred skills were provided in the reviewed job data"
+    },
+    "experience_score": {
+      "value": 20.0,
+      "reason": "Required experience is unknown, so score stays neutral"
+    },
+    "location_score": {
+      "value": 10.0,
+      "reason": "Job location is unknown, so score stays neutral"
+    },
+    "salary_score": {
+      "value": 10.0,
+      "reason": "Job salary data is unknown, so score stays neutral"
+    },
+    "domain_score": {
+      "value": 5.0,
+      "reason": "Job domain is unknown, so only neutral partial credit is given"
+    },
+    "work_mode_score": {
+      "value": 4.0,
+      "reason": "Work mode is unknown, so only partial neutral credit is given"
+    },
+    "notes": [
+      "Reviewed job data did not include explicit required skills.",
+      "Reviewed job data did not include explicit required years of experience."
+    ]
+  },
+  "blockers": [],
+  "strengths": [],
+  "missing_required_skills": [],
+  "missing_preferred_skills": [],
+  "risk_flags": [],
+  "decision": "skip",
+  "decision_reason": "Score 49 is below the review threshold",
+  "confidence": "low",
+  "tailoring_ready": false,
+  "tailoring_notes": "Skipped jobs are not tailoring-ready."
+}

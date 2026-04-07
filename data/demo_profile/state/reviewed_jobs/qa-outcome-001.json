@@ -1,0 +1,22 @@
+{
+  "job_id": "qa-outcome-001",
+  "job_title": "Business Analyst",
+  "company": "Outcome Corp",
+  "description_raw": "Need stakeholder management and SQL.",
+  "source_type": "copied_text",
+  "source_ref": "qa-test",
+  "location": "London",
+  "work_mode": "hybrid",
+  "employment_type": "full-time",
+  "required_skills": [
+    "Stakeholder Management",
+    "SQL"
+  ],
+  "preferred_skills": [],
+  "required_years_experience": 3.0,
+  "nice_to_have_years_experience": null,
+  "domain": "finance",
+  "notes": null,
+  "salary_min_gbp": 50000,
+  "salary_max_gbp": 60000
+}

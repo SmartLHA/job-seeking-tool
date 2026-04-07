@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-04-07T17:31:33Z",
+  "summary": {
+    "total_jobs": 1,
+    "decision_counts": {
+      "review": 1
+    },
+    "outcome_counts": {}
+  },
+  "rows": [
+    {
+      "job_id": "test-job-salary-low",
+      "job_title": "Business Analyst",
+      "company": "Budget Corp",
+      "location": "Remote",
+      "work_mode": "remote",
+      "employment_type": "full-time",
+      "source_type": "copied_text",
+      "source_ref": "test",
+      "match_score": 51.67,
+      "confidence": "high",
+      "decision": "review",
+      "decision_reason": "Score 52 would otherwise qualify for apply, but critical risks require review: Required skill gap, Salary below floor",
+      "blockers": [],
+      "risk_flags": [
+        "Required skill gap",
+        "Salary below floor"
+      ],
+      "strengths": [
+        "Stakeholder Management"
+      ],
+      "missing_required_skills": [
+        "SQL",
+        "Process Mapping"
+      ],
+      "missing_preferred_skills": [],
+      "outcome_status": null,
+      "outcome_updated_at": null,
+      "outcome_notes": null,
+      "tailoring_ready": false
+    }
+  ]
+}

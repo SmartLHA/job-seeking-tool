@@ -1,0 +1,22 @@
+{
+  "candidate_id": "test-junior-ba",
+  "name": "Alex Junior",
+  "target_roles": ["Junior Business Analyst", "Graduate Business Analyst"],
+  "locations": ["Birmingham", "Remote"],
+  "remote_preference": "remote_friendly",
+  "salary_floor_gbp": 32000,
+  "right_to_work_uk": true,
+  "skills": [
+    "Requirements Gathering",
+    "Stakeholder Interviews",
+    "Excel",
+    "PowerPoint",
+    "Jira",
+    "Business Process Mapping"
+  ],
+  "years_experience": 1,
+  "industries": ["Retail", "Charity"],
+  "achievements": [],
+  "certifications": [],
+  "master_cv_ref": null
+}

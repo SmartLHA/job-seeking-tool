@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-04-07T16:27:19Z",
+  "summary": {
+    "total_jobs": 1,
+    "decision_counts": {
+      "skip": 1
+    },
+    "outcome_counts": {}
+  },
+  "rows": [
+    {
+      "job_id": "demo-job-002",
+      "job_title": "Business Analyst",
+      "company": "Sparse Co",
+      "location": null,
+      "work_mode": "unknown",
+      "employment_type": "full-time",
+      "source_type": "copied_text",
+      "source_ref": "manual-sparse",
+      "match_score": 49.0,
+      "confidence": "low",
+      "decision": "skip",
+      "decision_reason": "Score 49 is below the review threshold",
+      "blockers": [],
+      "risk_flags": [],
+      "strengths": [],
+      "missing_required_skills": [],
+      "missing_preferred_skills": [],
+      "outcome_status": null,
+      "outcome_updated_at": null,
+      "outcome_notes": null,
+      "tailoring_ready": false
+    }
+  ]
+}

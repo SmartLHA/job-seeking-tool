@@ -1,0 +1,38 @@
+{
+  "generated_at": "2026-04-07T15:39:16Z",
+  "summary": {
+    "total_jobs": 1,
+    "decision_counts": {
+      "apply": 1
+    },
+    "outcome_counts": {}
+  },
+  "rows": [
+    {
+      "job_id": "qa-outcome-001",
+      "job_title": "Business Analyst",
+      "company": "Outcome Corp",
+      "location": "London",
+      "work_mode": "hybrid",
+      "employment_type": "full-time",
+      "source_type": "copied_text",
+      "source_ref": "qa-test",
+      "match_score": 95.0,
+      "confidence": "high",
+      "decision": "apply",
+      "decision_reason": "Score 95 meets the apply threshold and no critical risks were found",
+      "blockers": [],
+      "risk_flags": [],
+      "strengths": [
+        "SQL",
+        "Stakeholder Management"
+      ],
+      "missing_required_skills": [],
+      "missing_preferred_skills": [],
+      "outcome_status": null,
+      "outcome_updated_at": null,
+      "outcome_notes": null,
+      "tailoring_ready": true
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "generated_at": "2026-04-07T15:44:13Z",
+  "summary": {
+    "total_jobs": 1,
+    "decision_counts": {
+      "apply": 1
+    },
+    "outcome_counts": {}
+  },
+  "rows": [
+    {
+      "job_id": "qa-test-001",
+      "job_title": "Business Analyst",
+      "company": "Test Corp",
+      "location": "London",
+      "work_mode": "hybrid",
+      "employment_type": "full-time",
+      "source_type": "copied_text",
+      "source_ref": "qa-test",
+      "match_score": 95.0,
+      "confidence": "high",
+      "decision": "apply",
+      "decision_reason": "Score 95 meets the apply threshold and no critical risks were found",
+      "blockers": [],
+      "risk_flags": [
+        "Preferred skill gap"
+      ],
+      "strengths": [
+        "SQL",
+        "Stakeholder Management"
+      ],
+      "missing_required_skills": [],
+      "missing_preferred_skills": [
+        "Power BI"
+      ],
+      "outcome_status": null,
+      "outcome_updated_at": null,
+      "outcome_notes": null,
+      "tailoring_ready": true
+    }
+  ]
+}

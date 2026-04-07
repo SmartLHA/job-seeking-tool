@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Job Seeking Tool Docs Viewer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <h1>Job Seeking Tool</h1>
+        <p class="subtitle">Local project document viewer</p>
+
+        <label for="doc-select" class="label">Open document</label>
+        <select id="doc-select"></select>
+
+        <label for="search-input" class="label">Search documents</label>
+        <input id="search-input" class="search-input" type="search" placeholder="Search titles, summaries, and content" />
+
+        <nav id="doc-list" class="doc-list"></nav>
+
+        <div id="usage-bar" class="usage-bar">
+          <p id="usage-text">Loading usage…</p>
+        </div>
+
+        <div class="help">
+          <p><strong>Tip:</strong> serve this folder locally, then open the viewer in your browser.</p>
+          <code>cd "Job Seeking Tool/viewer" && python3 -m http.server 8765</code>
+        </div>
+      </aside>
+
+      <main class="content">
+        <div class="content-shell">
+          <header class="content-header">
+            <div>
+              <p class="eyebrow">Project document viewer</p>
+              <h2 id="doc-title">Select a document</h2>
+              <p id="doc-path" class="doc-path"></p>
+            </div>
+            <button id="refresh-btn" type="button">Refresh</button>
+          </header>
+
+          <section id="status" class="status">Loading document list…</section>
+          <article id="viewer" class="viewer"></article>
+        </div>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

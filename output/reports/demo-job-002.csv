@@ -1,0 +1,2 @@
+job_id,job_title,company,location,work_mode,employment_type,source_type,source_ref,match_score,confidence,decision,decision_reason,blockers,risk_flags,strengths,missing_required_skills,missing_preferred_skills,outcome_status,outcome_updated_at,outcome_notes,tailoring_ready
+demo-job-002,Business Analyst,Sparse Co,,unknown,full-time,copied_text,manual-sparse,49.0,low,skip,Score 49 is below the review threshold,,,,,,,,,False

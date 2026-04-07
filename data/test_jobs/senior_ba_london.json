@@ -1,0 +1,28 @@
+{
+  "job_id": "test-job-senior-london",
+  "job_title": "Senior Business Analyst",
+  "company": "Global Bank plc",
+  "location": "London",
+  "work_mode": "hybrid",
+  "employment_type": "full-time",
+  "required_skills": [
+    "Stakeholder Management",
+    "SQL",
+    "Power BI",
+    "Agile",
+    "Process Improvement"
+  ],
+  "preferred_skills": [
+    "TOGAF",
+    "Lean Six Sigma",
+    "Vendor Management"
+  ],
+  "required_years_experience": 7,
+  "domain": "Banking",
+  "salary_min_gbp": 70000,
+  "salary_max_gbp": 85000,
+  "description_raw": "We are looking for a Senior Business Analyst to join our transformation team.",
+  "source_type": "copied_text",
+  "source_ref": "test",
+  "notes": ""
+}

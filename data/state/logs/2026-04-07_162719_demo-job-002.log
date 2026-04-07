@@ -1,0 +1,14 @@
+timestamp: 2026-04-07 16:27:19 UTC
+job_id: demo-job-002
+decision: skip
+match_score: 49.0
+confidence: low
+profile_id: mic-ba-001
+job_title: Business Analyst
+company: Sparse Co
+source_type: copied_text
+input_reviewed_job: data/state/reviewed_jobs/demo-job-002.json
+output_analysis: data/state/analyses/demo-job-002.json
+output_reports: output/reports/demo-job-002.json, output/reports/demo-job-002.csv
+master_cv: /Users/lhaclaw/.openclaw/workspace/Job Seeking Tool/data/demo_profile/docs/master_cv.md
+storage_root: data/state

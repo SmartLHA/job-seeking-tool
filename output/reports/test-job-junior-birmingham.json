@@ -1,0 +1,46 @@
+{
+  "generated_at": "2026-04-07T17:31:33Z",
+  "summary": {
+    "total_jobs": 1,
+    "decision_counts": {
+      "review": 1
+    },
+    "outcome_counts": {}
+  },
+  "rows": [
+    {
+      "job_id": "test-job-junior-birmingham",
+      "job_title": "Junior Business Analyst",
+      "company": "RetailCo Ltd",
+      "location": "Birmingham",
+      "work_mode": "onsite",
+      "employment_type": "full-time",
+      "source_type": "copied_text",
+      "source_ref": "test",
+      "match_score": 77.5,
+      "confidence": "high",
+      "decision": "review",
+      "decision_reason": "Score 78 is promising but still needs manual review",
+      "blockers": [],
+      "risk_flags": [
+        "Preferred skill gap",
+        "Salary below floor"
+      ],
+      "strengths": [
+        "Excel",
+        "Jira",
+        "PowerPoint",
+        "Requirements Gathering",
+        "Stakeholder Interviews"
+      ],
+      "missing_required_skills": [],
+      "missing_preferred_skills": [
+        "Process Mapping"
+      ],
+      "outcome_status": null,
+      "outcome_updated_at": null,
+      "outcome_notes": null,
+      "tailoring_ready": false
+    }
+  ]
+}

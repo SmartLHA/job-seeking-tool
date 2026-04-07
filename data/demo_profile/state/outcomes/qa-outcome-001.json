@@ -1,0 +1,33 @@
+{
+  "job_id": "qa-outcome-001",
+  "status": "applied",
+  "updated_at": "2026-04-07T15:39:16Z",
+  "notes": "QA test applied",
+  "history": [
+    {
+      "status": "not_applied",
+      "updated_at": "2026-04-07T15:37:39Z",
+      "notes": "Initial local tracking record"
+    },
+    {
+      "status": "applied",
+      "updated_at": "2026-04-07T15:37:39Z",
+      "notes": "QA test applied"
+    },
+    {
+      "status": "applied",
+      "updated_at": "2026-04-07T15:37:54Z",
+      "notes": "QA test applied"
+    },
+    {
+      "status": "applied",
+      "updated_at": "2026-04-07T15:38:13Z",
+      "notes": "QA test applied"
+    },
+    {
+      "status": "applied",
+      "updated_at": "2026-04-07T15:39:16Z",
+      "notes": "QA test applied"
+    }
+  ]
+}

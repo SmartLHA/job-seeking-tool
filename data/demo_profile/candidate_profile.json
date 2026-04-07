@@ -1,0 +1,39 @@
+{
+  "candidate_id": "mic-ba-001",
+  "name": "Mic S",
+  "target_roles": ["Business Analyst", "Senior Business Analyst", "AI Business Analyst"],
+  "locations": ["London", "Manchester", "Remote"],
+  "remote_preference": "hybrid_friendly",
+  "salary_floor_gbp": 75000,
+  "right_to_work_uk": true,
+  "skills": [
+    "Stakeholder Management",
+    "Requirements Gathering",
+    "Process Mapping",
+    "SQL",
+    "Data Analysis",
+    "Power BI",
+    "Jira",
+    "Agile / Scrum",
+    "Business Case Development",
+    "Gap Analysis",
+    "UAT Planning",
+    "Excel Advanced",
+    "Python (intermediate)",
+    "Machine Learning Fundamentals",
+    "AI Literacy"
+  ],
+  "years_experience": 8,
+  "industries": ["Financial Services", "Technology", "Consulting", "E-commerce"],
+  "achievements": [
+    "Delivered a data migration project saving £200K annually for a FTSE 100 firm",
+    "Reduced report generation time by 60% through Power BI dashboards",
+    "Led BA team of 4 on a digital transformation programme for a retail bank",
+    "Introduced Agile ceremonies to a previously waterfall-only team, cutting delivery time by 25%"
+  ],
+  "certifications": [
+    "BCS Foundation Certificate in Business Analysis",
+    "PRINCE2 Practitioner"
+  ],
+  "master_cv_ref": "docs/master_cv.md"
+}

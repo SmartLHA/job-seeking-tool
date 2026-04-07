@@ -1,0 +1,54 @@
+{
+  "job_id": "demo-job-001",
+  "match_score": 80.0,
+  "score_breakdown": {
+    "skills_score": {
+      "value": 40.0,
+      "reason": "Matched 2 of 2 required skills; Matched 2 of 2 preferred skills"
+    },
+    "experience_score": {
+      "value": 20.0,
+      "reason": "Candidate meets or exceeds required experience"
+    },
+    "location_score": {
+      "value": 10.0,
+      "reason": "Job location matches candidate preferences"
+    },
+    "salary_score": {
+      "value": 0.0,
+      "reason": "Known salary data appears below the candidate floor"
+    },
+    "domain_score": {
+      "value": 0.0,
+      "reason": "Job domain is outside the candidate's known industries"
+    },
+    "work_mode_score": {
+      "value": 10.0,
+      "reason": "No restrictive work mode preference blocks the job"
+    },
+    "notes": [
+      "Known salary data appears below the candidate floor and needs manual review."
+    ]
+  },
+  "blockers": [],
+  "strengths": [
+    "Power BI",
+    "SQL",
+    "process mapping",
+    "stakeholder management"
+  ],
+  "missing_required_skills": [],
+  "missing_preferred_skills": [],
+  "risk_flags": [
+    {
+      "code": "salary-below-floor",
+      "label": "Salary below floor",
+      "reason": "Known salary data appears below the candidate floor"
+    }
+  ],
+  "decision": "review",
+  "decision_reason": "Score 80 would otherwise qualify for apply, but critical risks require review: Salary below floor",
+  "confidence": "high",
+  "tailoring_ready": false,
+  "tailoring_notes": "Manual selection is required before tailoring a review decision."
+}

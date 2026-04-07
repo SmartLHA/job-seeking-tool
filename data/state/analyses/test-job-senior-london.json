@@ -1,0 +1,59 @@
+{
+  "job_id": "test-job-senior-london",
+  "match_score": 86.0,
+  "score_breakdown": {
+    "skills_score": {
+      "value": 26.0,
+      "reason": "Matched 3 of 5 required skills; Matched 3 of 3 preferred skills"
+    },
+    "experience_score": {
+      "value": 20.0,
+      "reason": "Candidate meets or exceeds required experience"
+    },
+    "location_score": {
+      "value": 10.0,
+      "reason": "Job location matches candidate preferences"
+    },
+    "salary_score": {
+      "value": 10.0,
+      "reason": "Job salary appears to meet the candidate floor"
+    },
+    "domain_score": {
+      "value": 10.0,
+      "reason": "Job domain matches candidate experience"
+    },
+    "work_mode_score": {
+      "value": 10.0,
+      "reason": "No restrictive work mode preference blocks the job"
+    },
+    "notes": [
+      "Missing required skills reduce fit materially."
+    ]
+  },
+  "blockers": [],
+  "strengths": [
+    "Lean Six Sigma",
+    "Power BI",
+    "Process Improvement",
+    "Stakeholder Management",
+    "TOGAF",
+    "Vendor Management"
+  ],
+  "missing_required_skills": [
+    "SQL",
+    "Agile"
+  ],
+  "missing_preferred_skills": [],
+  "risk_flags": [
+    {
+      "code": "missing-required-skills",
+      "label": "Required skill gap",
+      "reason": "Missing required skills: SQL, Agile"
+    }
+  ],
+  "decision": "review",
+  "decision_reason": "Score 86 would otherwise qualify for apply, but critical risks require review: Required skill gap",
+  "confidence": "high",
+  "tailoring_ready": false,
+  "tailoring_notes": "Manual selection is required before tailoring a review decision."
+}

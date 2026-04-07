@@ -1,0 +1,1 @@
+{"candidate_id": "test", "name": "Test User", "target_roles": ["Business Analyst"], "locations": ["London"], "remote_preference": "remote_friendly", "salary_floor_gbp": 50000, "right_to_work_uk": true, "skills": ["Stakeholder Management", "SQL"], "years_experience": 5, "industries": ["finance"], "achievements": [], "certifications": [], "master_cv_ref": "docs/master_cv.md"}

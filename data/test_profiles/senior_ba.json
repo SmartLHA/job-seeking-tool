@@ -1,0 +1,33 @@
+{
+  "candidate_id": "test-senior-ba",
+  "name": "Sarah Senior",
+  "target_roles": ["Senior Business Analyst", "Lead Business Analyst", "BA Manager"],
+  "locations": ["London", "Hybrid"],
+  "remote_preference": "hybrid_friendly",
+  "salary_floor_gbp": 75000,
+  "right_to_work_uk": true,
+  "skills": [
+    "Stakeholder Management",
+    "Process Improvement",
+    "SQL Advanced",
+    "Power BI",
+    "Data Modelling",
+    "Agile Leadership",
+    "UAT Leadership",
+    "Vendor Management",
+    "TOGAF",
+    "Lean Six Sigma"
+  ],
+  "years_experience": 10,
+  "industries": ["Banking", "FinTech", "Consulting"],
+  "achievements": [
+    "Led BA team of 8 on £5M digital transformation",
+    "Delivered ROI of 300% on process automation programme"
+  ],
+  "certifications": [
+    "CBAP",
+    "TOGAF 9",
+    "Lean Six Sigma Black Belt"
+  ],
+  "master_cv_ref": null
+}

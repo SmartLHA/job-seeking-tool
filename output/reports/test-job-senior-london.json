@@ -1,0 +1,47 @@
+{
+  "generated_at": "2026-04-07T17:31:32Z",
+  "summary": {
+    "total_jobs": 1,
+    "decision_counts": {
+      "review": 1
+    },
+    "outcome_counts": {}
+  },
+  "rows": [
+    {
+      "job_id": "test-job-senior-london",
+      "job_title": "Senior Business Analyst",
+      "company": "Global Bank plc",
+      "location": "London",
+      "work_mode": "hybrid",
+      "employment_type": "full-time",
+      "source_type": "copied_text",
+      "source_ref": "test",
+      "match_score": 86.0,
+      "confidence": "high",
+      "decision": "review",
+      "decision_reason": "Score 86 would otherwise qualify for apply, but critical risks require review: Required skill gap",
+      "blockers": [],
+      "risk_flags": [
+        "Required skill gap"
+      ],
+      "strengths": [
+        "Lean Six Sigma",
+        "Power BI",
+        "Process Improvement",
+        "Stakeholder Management",
+        "TOGAF",
+        "Vendor Management"
+      ],
+      "missing_required_skills": [
+        "SQL",
+        "Agile"
+      ],
+      "missing_preferred_skills": [],
+      "outcome_status": null,
+      "outcome_updated_at": null,
+      "outcome_notes": null,
+      "tailoring_ready": false
+    }
+  ]
+}
