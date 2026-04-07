@@ -139,7 +139,7 @@ session_management:
     - For complex QA (multi-step): SilverHand creates own subagent session
     - Scout task session format: scout-<task_id>
     - Scout sessions do not need reuse — each QA task is independent
-    - Max Scout session age: 15 min idle OR turns >10 → close
+    - Max Scout session age: 30 min idle OR turns >15 → close
     - Complex QA subagent: silverhand-<task_id>, follows anti_idle rules
 qa:
   scout_modes:
