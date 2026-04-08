@@ -229,6 +229,7 @@
         <span class="llm-badge badge-green" id="e4b-badge">LOADED</span>
       </div>
       <p class="llm-sub"><span id="e4b-params">—</span> · <span id="e4b-size">—</span></p>
+      <p class="llm-sub" style="margin-top:0.25rem"><span id="e4b-active" style="color:var(--yellow)">—</span></p>
     </div>
 
     <!-- Codex -->
@@ -418,6 +419,7 @@
       const e4bGB = e4bBytes > 0 ? (e4bBytes / (1024**3)).toFixed(1) + ' GB' : '—';
       document.getElementById('e4b-params').textContent = e4bParams;
       document.getElementById('e4b-size').textContent = e4bGB;
+      document.getElementById('e4b-active').textContent = '—';
 
       // Codex - big number = total sessions, small = active in 2h
       const codexAgent = byAgent.find(a => a.agentId === 'codex');
