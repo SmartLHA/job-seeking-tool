@@ -31,8 +31,10 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
     }
-    h1 { font-size: 1.5rem; font-weight: 600; }
+    h1 { font-size: 1.5rem; font-weight: 600; flex: 1; text-align: center; }
     .refresh-btn {
       background: var(--card-bg);
       color: var(--text);
@@ -198,9 +200,11 @@
 </head>
 <body>
   <div class="header">
-    <h1>🖥️ OpenClaw Status</h1>
+    <div style="width:80px"></div>
+    <h1>OpenClaw Status Dashboard</h1>
     <button class="refresh-btn" onclick="fetchAll()">↻ Refresh</button>
   </div>
+  <p id="last-refresh" style="text-align:center;font-size:0.7rem;color:var(--muted);margin-bottom:1rem">—</p>
 
   <!-- LLM Status Row -->
   <div class="llm-row">
@@ -341,7 +345,7 @@
 
     async function fetchAll() {
       document.body.classList.add('loading');
-      document.getElementById('message-time').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+      document.getElementById('last-refresh').textContent = 'Last refresh: ' + new Date().toLocaleTimeString();
 
       const [health, roleStatus, recentSessions] = await Promise.all([
         fetchJSON('/api/health'),
