@@ -163,7 +163,7 @@ def _openclaw_status() -> dict:
 def _get_active_sessions() -> dict:
     """Get active session counts (updated within 1 hour) per agent."""
     now_ms = datetime.now().timestamp() * 1000
-    ONE_HOUR = 3600000
+    TWO_HOURS = 7200000
     agents = ["main", "codex", "qa"]
     result = {}
     for agent in agents:
@@ -175,7 +175,7 @@ def _get_active_sessions() -> dict:
                     data = json.load(f)
                 for val in data.values():
                     updated = val.get("updatedAt", 0)
-                    if now_ms - updated < ONE_HOUR:
+                    if now_ms - updated < TWO_HOURS:
                         count += 1
             except Exception:
                 pass
