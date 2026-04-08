@@ -224,6 +224,23 @@ def handle_api_role_status() -> bytes:
     return json.dumps(_role_status()).encode()
 
 
+def handle_api_help() -> bytes:
+    """Check if openclaw CLI is accessible."""
+    try:
+        result = subprocess.run(
+            ["/opt/homebrew/bin/openclaw", "--help"],
+            capture_output=True, text=True, timeout=5,
+            stdin=subprocess.DEVNULL,
+            env=dict(os.environ, PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"),
+        )
+        if result.returncode == 0:
+            return json.dumps({"ok": True, "output": "OpenClaw CLI is accessible"}).encode()
+        else:
+            return json.dumps({"ok": False, "error": result.stderr[:200]}).encode()
+    except Exception as e:
+        return json.dumps({"ok": False, "error": str(e)}).encode()
+
+
 def serve_file(sock: socket.socket, path: str) -> bool:
     if path.startswith("/viewer/"):
         rel = path.replace("/viewer/", "", 1).replace("/viewer", "", 1)
@@ -326,6 +343,19 @@ def handle_request(sock: socket.socket) -> None:
             sock.sendall(resp)
             return
 
+        if path == "/api/help":
+            data = handle_api_help()
+            resp = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " + str(len(data)).encode() + b"\r\n"
+                b"Access-Control-Allow-Origin: *\r\n"
+                b"Connection: close\r\n"
+                b"\r\n" + data
+            )
+            sock.sendall(resp)
+            return
+
         if serve_file(sock, path):
             return
 
@@ -354,7 +384,7 @@ def main() -> None:
     server.bind((VIEWER_HOST, PORT))
     server.listen(50)
     print(f"Viewer running at http://127.0.0.1:{PORT}/viewer/")
-    print(f"API: /api/health and /api/role-status")
+    print(f"API: /api/health, /api/role-status, /api/help")
     try:
         while True:
             client_sock, _ = server.accept()
