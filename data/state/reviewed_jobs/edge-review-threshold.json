@@ -1,0 +1,21 @@
+{
+  "job_id": "edge-review-threshold",
+  "job_title": "BA",
+  "company": "Edge Corp",
+  "description_raw": "Standard BA role.",
+  "source_type": "copied_text",
+  "source_ref": "test",
+  "location": "London",
+  "work_mode": "hybrid",
+  "employment_type": "full-time",
+  "required_skills": [
+    "Stakeholder Management"
+  ],
+  "preferred_skills": [],
+  "required_years_experience": 5.0,
+  "nice_to_have_years_experience": null,
+  "domain": "Finance",
+  "notes": null,
+  "salary_min_gbp": 50000,
+  "salary_max_gbp": 60000
+}

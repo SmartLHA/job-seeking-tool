@@ -1,0 +1,22 @@
+{
+  "job_id": "edge-onsite-role",
+  "job_title": "BA",
+  "company": "Edge Corp",
+  "description_raw": "Onsite only role in Scotland.",
+  "source_type": "copied_text",
+  "source_ref": "test",
+  "location": "Scotland",
+  "work_mode": "onsite",
+  "employment_type": "full-time",
+  "required_skills": [
+    "Stakeholder Management",
+    "Process Mapping"
+  ],
+  "preferred_skills": [],
+  "required_years_experience": 5.0,
+  "nice_to_have_years_experience": null,
+  "domain": "Finance",
+  "notes": null,
+  "salary_min_gbp": 50000,
+  "salary_max_gbp": 60000
+}

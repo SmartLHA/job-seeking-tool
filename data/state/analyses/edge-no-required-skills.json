@@ -1,0 +1,58 @@
+{
+  "job_id": "edge-no-required-skills",
+  "match_score": 40.0,
+  "score_breakdown": {
+    "skills_score": {
+      "value": 0.0,
+      "reason": "Matched 0 of 2 required skills; No preferred skills were provided in the reviewed job data"
+    },
+    "experience_score": {
+      "value": 20.0,
+      "reason": "Candidate meets or exceeds required experience"
+    },
+    "location_score": {
+      "value": 10.0,
+      "reason": "Job location matches candidate preferences"
+    },
+    "salary_score": {
+      "value": 0.0,
+      "reason": "Known salary data appears below the candidate floor"
+    },
+    "domain_score": {
+      "value": 0.0,
+      "reason": "Job domain is outside the candidate's known industries"
+    },
+    "work_mode_score": {
+      "value": 10.0,
+      "reason": "No restrictive work mode preference blocks the job"
+    },
+    "notes": [
+      "Missing required skills reduce fit materially.",
+      "Known salary data appears below the candidate floor and needs manual review."
+    ]
+  },
+  "blockers": [],
+  "strengths": [],
+  "missing_required_skills": [
+    "Quantum Computing",
+    "Blockchain"
+  ],
+  "missing_preferred_skills": [],
+  "risk_flags": [
+    {
+      "code": "missing-required-skills",
+      "label": "Required skill gap",
+      "reason": "Missing required skills: Quantum Computing, Blockchain"
+    },
+    {
+      "code": "salary-below-floor",
+      "label": "Salary below floor",
+      "reason": "Known salary data appears below the candidate floor"
+    }
+  ],
+  "decision": "review",
+  "decision_reason": "Score 40 would otherwise qualify for apply, but critical risks require review: Required skill gap, Salary below floor",
+  "confidence": "high",
+  "tailoring_ready": false,
+  "tailoring_notes": "Manual selection is required before tailoring a review decision."
+}

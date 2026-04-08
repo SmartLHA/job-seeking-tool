@@ -1,0 +1,18 @@
+{
+  "job_id": "edge-salary-zero",
+  "job_title": "BA",
+  "company": "Edge Corp",
+  "location": "London",
+  "work_mode": "hybrid",
+  "employment_type": "full-time",
+  "required_skills": ["Stakeholder Management", "Process Mapping"],
+  "preferred_skills": [],
+  "required_years_experience": 5,
+  "domain": "Finance",
+  "salary_min_gbp": 0,
+  "salary_max_gbp": 0,
+  "description_raw": "No salary info.",
+  "source_type": "copied_text",
+  "source_ref": "test",
+  "notes": ""
+}

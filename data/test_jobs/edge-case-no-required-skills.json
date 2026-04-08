@@ -1,0 +1,18 @@
+{
+  "job_id": "edge-no-required-skills",
+  "job_title": "BA",
+  "company": "Edge Corp",
+  "location": "London",
+  "work_mode": "hybrid",
+  "employment_type": "full-time",
+  "required_skills": ["Quantum Computing", "Blockchain"],
+  "preferred_skills": [],
+  "required_years_experience": 5,
+  "domain": "Finance",
+  "salary_min_gbp": 50000,
+  "salary_max_gbp": 60000,
+  "description_raw": "Very specialised BA role.",
+  "source_type": "copied_text",
+  "source_ref": "test",
+  "notes": ""
+}
