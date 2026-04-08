@@ -192,18 +192,30 @@ def handle_api_health() -> bytes:
     }
 
     try:
-        result = subprocess.run(
-            ["ollama", "list"], capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL
+        # Use Ollama API to get detailed model info
+        api_result = subprocess.run(
+            ["curl", "-s", "http://127.0.0.1:11434/api/tags"],
+            capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL
         )
         ollama_available = []
         ollama_running = []
-        for line in result.stdout.split("\n"):
-            if line.strip() and not line.startswith("NAME"):
+        if api_result.returncode == 0:
+            models_data = json.loads(api_result.stdout)
+            for m in models_data.get("models", []):
+                ollama_available.append({
+                    "name": m.get("name", "?"),
+                    "size": m.get("size", 0),
+                    "details": m.get("details", {})
+                })
+        # Also check running models via ollama list
+        list_result = subprocess.run(
+            ["ollama", "list"], capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL
+        )
+        for line in list_result.stdout.split("\n"):
+            if line.strip() and not line.startswith("NAME") and "running" in line:
                 parts = re.split(r"\s+", line.strip())
-                if len(parts) >= 2:
-                    ollama_available.append({"name": parts[0], "size": parts[1]})
-                    if len(parts) >= 3 and parts[2] == "running":
-                        ollama_running.append(parts[0])
+                if len(parts) >= 1:
+                    ollama_running.append(parts[0])
         data["ollama"] = {"available": ollama_available, "running": ollama_running, "error": None}
     except Exception as e:
         data["ollama"] = {"available": [], "running": [], "error": str(e)}
