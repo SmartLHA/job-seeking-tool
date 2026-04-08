@@ -43,9 +43,10 @@
       font-size: 0.875rem;
     }
     .refresh-btn:hover { background: var(--border); }
+
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
       gap: 1rem;
       margin-bottom: 1rem;
     }
@@ -78,6 +79,44 @@
     .metric.red { color: var(--red); }
     .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
 
+    /* LLM Status row */
+    .llm-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .llm-card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 1.25rem;
+      border: 1px solid var(--border);
+    }
+    .llm-card .header {
+      margin-bottom: 0.75rem;
+    }
+    .llm-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    .llm-metric {
+      font-size: 2rem;
+      font-weight: 700;
+      margin: 0.5rem 0;
+    }
+    .llm-badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      margin-left: 0.5rem;
+    }
+    .badge-green { background: var(--green); color: #000; }
+    .badge-yellow { background: var(--yellow); color: #000; }
+    .badge-red { background: var(--red); color: #fff; }
+    .llm-sub { font-size: 0.7rem; color: var(--muted); margin-top: 0.25rem; }
+
     /* Status boxes */
     .status-box {
       border-radius: 8px;
@@ -91,37 +130,27 @@
     .status-box.green { background: var(--green-bg); border: 1px solid var(--green); }
     .status-box.yellow { background: var(--yellow-bg); border: 1px solid var(--yellow); }
     .status-box.red { background: var(--red-bg); border: 1px solid var(--red); }
-    .status-box .label { font-size: 0.8rem; color: var(--muted); }
+    .status-box .label { font-size: 0.8rem; color: var(--muted); flex: 1; }
     .status-box .value { font-size: 0.9rem; font-weight: 500; }
-    .status-box .badge {
-      margin-left: auto;
-      font-size: 0.7rem;
-      font-weight: 600;
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
-    }
-    .badge-green { background: var(--green); color: #000; }
-    .badge-yellow { background: var(--yellow); color: #000; }
-    .badge-red { background: var(--red); color: #fff; }
 
     /* Role cards */
     .roles-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      grid-template-columns: repeat(3, 1fr);
       gap: 0.75rem;
     }
     .role-card {
       background: #0f172a;
       border-radius: 8px;
       padding: 1rem;
-      border: 1px solid var(--border);
+      border: 2px solid var(--border);
     }
     .role-card.green { border-color: var(--green); }
     .role-card.yellow { border-color: var(--yellow); }
     .role-card.red { border-color: var(--red); }
-    .role-card .name { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; }
-    .role-card .status { font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem; }
-    .role-card .session-key { font-size: 0.65rem; color: var(--muted); margin-top: 0.5rem; word-break: break-all; }
+    .role-card .name { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .role-card .status { font-size: 1.75rem; font-weight: 700; margin-top: 0.25rem; }
+    .role-card .session-info { font-size: 0.6rem; color: var(--muted); margin-top: 0.5rem; word-break: break-all; line-height: 1.4; }
     .role-card .age { font-size: 0.7rem; color: var(--muted); margin-top: 0.25rem; }
 
     /* Cron list */
@@ -139,12 +168,13 @@
     .cron-list li.yellow { background: var(--yellow-bg); border: 1px solid var(--yellow); }
     .cron-list li.red { background: var(--red-bg); border: 1px solid var(--red); }
     .cron-list .cron-name { font-size: 0.85rem; font-weight: 500; flex: 1; }
-    .cron-list .cron-time { font-size: 0.7rem; color: var(--muted); }
-    .cron-list .cron-badge {
+    .cron-list .cron-time { font-size: 0.7rem; color: var(--muted); text-align: right; }
+    .cron-badge {
       font-size: 0.65rem;
       font-weight: 600;
       padding: 0.15rem 0.4rem;
       border-radius: 3px;
+      margin-left: 0.5rem;
     }
     .cron-badge-green { background: var(--green); color: #000; }
     .cron-badge-yellow { background: var(--yellow); color: #000; }
@@ -159,12 +189,16 @@
       font-size: 0.9rem;
       line-height: 1.5;
     }
-    .message-box strong { color: #60a5fa; }
     .timestamp { font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem; }
 
     .full-width { grid-column: 1 / -1; }
     .loading { opacity: 0.5; }
     .error { color: var(--red); font-size: 0.8rem; }
+
+    @media (max-width: 900px) {
+      .llm-row { grid-template-columns: 1fr; }
+      .roles-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -173,37 +207,50 @@
     <button class="refresh-btn" onclick="fetchAll()">↻ Refresh</button>
   </div>
 
-  <!-- Top Row: LLM Models + Latest Message -->
-  <div class="grid">
-    <!-- MiniMax Status -->
-    <div class="card">
+  <!-- LLM Status Row -->
+  <div class="llm-row">
+    <!-- MiniMax -->
+    <div class="llm-card">
       <div class="card-header">
         <span class="status-dot dot-gray" id="minimax-dot"></span>
-        <h2>MiniMax M2.7</h2>
+        <h3>MiniMax M2.7</h3>
       </div>
-      <div class="status-box green" id="minimax-box">
-        <span class="label">Sessions</span>
-        <span class="value" id="minimax-sessions">—</span>
-        <span class="badge badge-green" id="minimax-badge">ACTIVE</span>
+      <div class="llm-metric green" id="minimax-count">—</div>
+      <div>
+        <span class="llm-badge badge-green" id="minimax-badge">ACTIVE</span>
       </div>
-      <p class="sub" style="margin-top:0.75rem;">Context: <span id="minimax-context">—</span> tokens</p>
+      <p class="llm-sub">Context: <span id="minimax-context">—</span> tokens</p>
     </div>
 
-    <!-- E4B Status -->
-    <div class="card">
+    <!-- E4B -->
+    <div class="llm-card">
       <div class="card-header">
         <span class="status-dot dot-gray" id="e4b-dot"></span>
-        <h2>Gemma 4 E4B</h2>
+        <h3>Gemma 4 E4B</h3>
       </div>
-      <div class="status-box green" id="e4b-box">
-        <span class="label">Status</span>
-        <span class="value" id="e4b-status">—</span>
-        <span class="badge badge-green" id="e4b-badge">LOADED</span>
+      <div class="llm-metric" id="e4b-metric">—</div>
+      <div>
+        <span class="llm-badge badge-green" id="e4b-badge">LOADED</span>
       </div>
-      <p class="sub" style="margin-top:0.75rem;">Size: <span id="e4b-size">—</span></p>
+      <p class="llm-sub">Size: <span id="e4b-size">—</span></p>
     </div>
 
-    <!-- Latest Message -->
+    <!-- Codex -->
+    <div class="llm-card">
+      <div class="card-header">
+        <span class="status-dot dot-gray" id="codex-dot"></span>
+        <h3>Codex CLI</h3>
+      </div>
+      <div class="llm-metric green" id="codex-sessions">—</div>
+      <div>
+        <span class="llm-badge badge-green" id="codex-badge">ONLINE</span>
+      </div>
+      <p class="llm-sub">Dev agent sessions</p>
+    </div>
+  </div>
+
+  <!-- Latest Message -->
+  <div class="grid">
     <div class="card">
       <div class="card-header">
         <span class="status-dot dot-green"></span>
@@ -215,11 +262,8 @@
       </div>
       <p class="timestamp" id="message-time"></p>
     </div>
-  </div>
 
-  <!-- Sessions + Cron + CLI -->
-  <div class="grid">
-    <!-- All Sessions -->
+    <!-- Sessions -->
     <div class="card">
       <div class="card-header">
         <span class="status-dot dot-gray" id="sessions-dot"></span>
@@ -227,12 +271,12 @@
       </div>
       <div class="metric green" id="session-count">—</div>
       <p class="sub">total sessions</p>
-      <div style="margin-top:1rem;">
-        <div id="agent-list" style="font-size:0.8rem;color:var(--muted);"></div>
-      </div>
+      <div id="agent-list" style="margin-top:1rem;font-size:0.8rem;color:var(--muted);"></div>
     </div>
+  </div>
 
-    <!-- Cron Jobs -->
+  <!-- Cron Jobs + CLI -->
+  <div class="grid">
     <div class="card">
       <div class="card-header">
         <span class="status-dot dot-gray" id="cron-dot"></span>
@@ -241,7 +285,6 @@
       <ul class="cron-list" id="cron-list">Loading...</ul>
     </div>
 
-    <!-- OpenClaw CLI -->
     <div class="card">
       <div class="card-header">
         <span class="status-dot dot-gray" id="cli-dot"></span>
@@ -293,11 +336,14 @@
       el.className = 'status-dot dot-' + (status === 'green' ? 'green' : status === 'yellow' ? 'yellow' : status === 'red' ? 'red' : 'gray');
     }
 
+    function setMetricColor(el, status) {
+      el.className = 'llm-metric ' + (status === 'green' ? 'green' : status === 'yellow' ? 'yellow' : status === 'red' ? 'red' : '');
+    }
+
     async function fetchAll() {
       document.body.classList.add('loading');
       document.getElementById('message-time').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
 
-      // Fetch all data in parallel
       const [health, roleStatus, help] = await Promise.all([
         fetchJSON('/api/health'),
         fetchJSON('/api/role-status'),
@@ -319,24 +365,24 @@
       const available = ollama.available || [];
       const sessions = openclaw.sessions || {};
       const byAgent = sessions.byAgent || [];
-      const recent = sessions.recent || [];
 
       // MiniMax
-      const minimaxSessions = byAgent.find(a => a.agentId === 'main')?.count || 0;
-      document.getElementById('minimax-sessions').textContent = minimaxSessions;
+      const mainAgent = byAgent.find(a => a.agentId === 'main');
+      const minimaxCount = mainAgent?.count || 0;
+      document.getElementById('minimax-count').textContent = minimaxCount;
       const minimaxDot = document.getElementById('minimax-dot');
-      const minimaxBox = document.getElementById('minimax-box');
       const minimaxBadge = document.getElementById('minimax-badge');
-      if (minimaxSessions > 0) {
-        minimaxBox.className = 'status-box green';
-        minimaxBadge.className = 'badge badge-green';
+      const minimaxMetric = document.getElementById('minimax-count');
+      if (minimaxCount > 0) {
+        minimaxBadge.className = 'llm-badge badge-green';
         minimaxBadge.textContent = 'ACTIVE';
         setDot(minimaxDot, 'green');
+        setMetricColor(minimaxMetric, 'green');
       } else {
-        minimaxBox.className = 'status-box yellow';
-        minimaxBadge.className = 'badge badge-yellow';
+        minimaxBadge.className = 'llm-badge badge-yellow';
         minimaxBadge.textContent = 'IDLE';
         setDot(minimaxDot, 'yellow');
+        setMetricColor(minimaxMetric, 'yellow');
       }
       document.getElementById('minimax-context').textContent = sessions.defaults?.contextTokens?.toLocaleString() || '—';
 
@@ -344,29 +390,47 @@
       const e4bAvailable = available.find(m => m.name === 'gemma4:e4b');
       const e4bRunning = running.includes('gemma4:e4b');
       const e4bDot = document.getElementById('e4b-dot');
-      const e4bBox = document.getElementById('e4b-box');
       const e4bBadge = document.getElementById('e4b-badge');
-      const e4bStatus = document.getElementById('e4b-status');
+      const e4bMetric = document.getElementById('e4b-metric');
       if (e4bRunning) {
-        e4bBox.className = 'status-box green';
-        e4bBadge.className = 'badge badge-green';
+        e4bMetric.textContent = 'Running';
+        e4bBadge.className = 'llm-badge badge-green';
         e4bBadge.textContent = 'RUNNING';
-        e4bStatus.textContent = 'Running';
         setDot(e4bDot, 'green');
+        setMetricColor(e4bMetric, 'green');
       } else if (e4bAvailable) {
-        e4bBox.className = 'status-box yellow';
-        e4bBadge.className = 'badge badge-yellow';
+        e4bMetric.textContent = 'Loaded';
+        e4bBadge.className = 'llm-badge badge-yellow';
         e4bBadge.textContent = 'LOADED';
-        e4bStatus.textContent = 'Loaded';
         setDot(e4bDot, 'yellow');
+        setMetricColor(e4bMetric, 'yellow');
       } else {
-        e4bBox.className = 'status-box red';
-        e4bBadge.className = 'badge badge-red';
+        e4bMetric.textContent = 'Missing';
+        e4bBadge.className = 'llm-badge badge-red';
         e4bBadge.textContent = 'MISSING';
-        e4bStatus.textContent = 'Not available';
         setDot(e4bDot, 'red');
+        setMetricColor(e4bMetric, 'red');
       }
       document.getElementById('e4b-size').textContent = e4bAvailable?.size || '—';
+
+      // Codex (codex agent sessions)
+      const codexAgent = byAgent.find(a => a.agentId === 'codex');
+      const codexCount = codexAgent?.count || 0;
+      document.getElementById('codex-sessions').textContent = codexCount;
+      const codexDot = document.getElementById('codex-dot');
+      const codexBadge = document.getElementById('codex-badge');
+      const codexMetric = document.getElementById('codex-sessions');
+      if (codexCount > 0) {
+        codexBadge.className = 'llm-badge badge-green';
+        codexBadge.textContent = 'ONLINE';
+        setDot(codexDot, 'green');
+        setMetricColor(codexMetric, 'green');
+      } else {
+        codexBadge.className = 'llm-badge badge-yellow';
+        codexBadge.textContent = 'OFFLINE';
+        setDot(codexDot, 'yellow');
+        setMetricColor(codexMetric, 'yellow');
+      }
 
       // Sessions
       const totalSessions = sessions.count || 0;
@@ -374,7 +438,6 @@
       const sessionsDot = document.getElementById('sessions-dot');
       setDot(sessionsDot, totalSessions > 0 ? 'green' : 'red');
 
-      // Agent list
       const agentList = document.getElementById('agent-list');
       agentList.innerHTML = byAgent.map(a => {
         const color = a.count > 0 ? 'var(--green)' : 'var(--muted)';
@@ -397,9 +460,9 @@
           if (j.last_status === 'error') hasError = true;
           return `<li class="${status}">
             <span class="cron-name">${j.name}</span>
-            <div style="text-align:right">
+            <div>
               <span class="cron-time">${formatTime(j.last_run)}</span>
-              <span class="cron-badge cron-badge-${status}">${j.last_status?.toUpperCase() || '?'}</span>
+              <span class="cron-badge cron-badge-${status}">${(j.last_status || '?').toUpperCase()}</span>
             </div>
           </li>`;
         }).join('');
@@ -423,7 +486,7 @@
         return `<div class="role-card ${cardClass}">
           <div class="name">${r.label}</div>
           <div class="status" style="color:${color}">${icon}</div>
-          <div class="session-key">${r.summary || '—'}</div>
+          <div class="session-info">${r.session_key || '—'}</div>
           <div class="age">${r.age || '—'}</div>
         </div>`;
       }).join('');
@@ -445,7 +508,6 @@
       }
     }
 
-    // Initial load
     fetchAll();
     setInterval(fetchAll, 30000);
   </script>
