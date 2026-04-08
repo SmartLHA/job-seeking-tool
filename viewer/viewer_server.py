@@ -161,25 +161,32 @@ def _openclaw_status() -> dict:
 
 
 def _get_active_sessions() -> dict:
-    """Get active session counts (updated within 1 hour) per agent."""
+    """Get session counts per agent: total, active 2h, recent 5m."""
     now_ms = datetime.now().timestamp() * 1000
     TWO_HOURS = 7200000
+    FIVE_MINS = 300000
     agents = ["main", "codex", "qa"]
     result = {}
     for agent in agents:
         sessions_file = Path(f"/Users/lhaclaw/.openclaw/agents/{agent}/sessions/sessions.json")
-        count = 0
+        total = 0
+        active_2h = 0
+        recent_5m = 0
         if sessions_file.exists():
             try:
                 with open(sessions_file) as f:
                     data = json.load(f)
                 for val in data.values():
                     updated = val.get("updatedAt", 0)
-                    if now_ms - updated < TWO_HOURS:
-                        count += 1
+                    total += 1
+                    age = now_ms - updated
+                    if age < TWO_HOURS:
+                        active_2h += 1
+                    if age < FIVE_MINS:
+                        recent_5m += 1
             except Exception:
                 pass
-        result[agent] = count
+        result[agent] = {"total": total, "active_2h": active_2h, "recent_5m": recent_5m}
     return result
 
 

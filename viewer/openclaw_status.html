@@ -365,15 +365,16 @@
       const byAgent = sessions.byAgent || [];
       const activeSessions = d.active_sessions || {};
 
-      // MiniMax - big number = total sessions, small = active in 2h
+      // MiniMax - big number = recent 5m, small = active 2h
       const mainAgent = byAgent.find(a => a.agentId === 'main');
       const minimaxTotal = mainAgent?.count || 0;
-      const minimaxActive = activeSessions.main || 0;
-      document.getElementById('minimax-count').textContent = minimaxTotal;
+      const minimaxActive2h = activeSessions.main?.active_2h || 0;
+      const minimaxRecent5m = activeSessions.main?.recent_5m || 0;
+      document.getElementById('minimax-count').textContent = minimaxRecent5m;
       const minimaxDot = document.getElementById('minimax-dot');
       const minimaxBadge = document.getElementById('minimax-badge');
       const minimaxMetric = document.getElementById('minimax-count');
-      if (minimaxTotal > 0) {
+      if (minimaxRecent5m > 0) {
         minimaxBadge.className = 'llm-badge badge-green';
         minimaxBadge.textContent = 'ACTIVE';
         setDot(minimaxDot, 'green');
@@ -385,8 +386,7 @@
         setMetricColor(minimaxMetric, 'yellow');
       }
       document.getElementById('minimax-context').textContent = sessions.defaults?.contextTokens?.toLocaleString() || '—';
-      // Show active count below
-      document.getElementById('minimax-active').textContent = `+${minimaxActive} active (2h)`;
+      document.getElementById('minimax-active').textContent = `${minimaxActive2h} active (2h) · ${minimaxTotal} total`;
 
       // E4B
       const e4bAvailable = available.find(m => m.name === 'gemma4:e4b');
@@ -421,15 +421,16 @@
       document.getElementById('e4b-size').textContent = e4bGB;
       document.getElementById('e4b-active').textContent = '—';
 
-      // Codex - big number = total sessions, small = active in 2h
+      // Codex - big number = recent 5m, small = active 2h
       const codexAgent = byAgent.find(a => a.agentId === 'codex');
       const codexTotal = codexAgent?.count || 0;
-      const codexActive = activeSessions.codex || 0;
-      document.getElementById('codex-sessions').textContent = codexTotal;
+      const codexActive2h = activeSessions.codex?.active_2h || 0;
+      const codexRecent5m = activeSessions.codex?.recent_5m || 0;
+      document.getElementById('codex-sessions').textContent = codexRecent5m;
       const codexDot = document.getElementById('codex-dot');
       const codexBadge = document.getElementById('codex-badge');
       const codexMetric = document.getElementById('codex-sessions');
-      if (codexTotal > 0) {
+      if (codexRecent5m > 0) {
         codexBadge.className = 'llm-badge badge-green';
         codexBadge.textContent = 'ONLINE';
         setDot(codexDot, 'green');
@@ -440,7 +441,7 @@
         setDot(codexDot, 'yellow');
         setMetricColor(codexMetric, 'yellow');
       }
-      document.getElementById('codex-active').textContent = `+${codexActive} active (2h)`;
+      document.getElementById('codex-active').textContent = `${codexActive2h} active (2h) · ${codexTotal} total`;
 
       // Sessions - total count still shows all
       const totalSessions = sessions.count || 0;
