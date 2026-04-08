@@ -7,12 +7,16 @@
   <style>
     :root {
       --green: #22c55e;
-      --amber: #f59e0b;
+      --green-bg: #052e16;
+      --yellow: #eab308;
+      --yellow-bg: #422006;
       --red: #ef4444;
+      --red-bg: #450a0a;
       --bg: #0f172a;
       --card-bg: #1e293b;
       --text: #f8fafc;
       --muted: #94a3b8;
+      --border: #334155;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -32,16 +36,16 @@
     .refresh-btn {
       background: var(--card-bg);
       color: var(--text);
-      border: 1px solid #334155;
+      border: 1px solid var(--border);
       padding: 0.5rem 1rem;
       border-radius: 6px;
       cursor: pointer;
       font-size: 0.875rem;
     }
-    .refresh-btn:hover { background: #334155; }
+    .refresh-btn:hover { background: var(--border); }
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 1rem;
       margin-bottom: 1rem;
     }
@@ -49,7 +53,7 @@
       background: var(--card-bg);
       border-radius: 12px;
       padding: 1.25rem;
-      border: 1px solid #334155;
+      border: 1px solid var(--border);
     }
     .card-header {
       display: flex;
@@ -59,29 +63,94 @@
     }
     .card-header h2 { font-size: 0.875rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
     .status-dot {
-      width: 10px; height: 10px;
+      width: 12px; height: 12px;
       border-radius: 50%;
+      flex-shrink: 0;
     }
-    .status-dot.green { background: var(--green); box-shadow: 0 0 8px var(--green); }
-    .status-dot.amber { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
-    .status-dot.red { background: var(--red); box-shadow: 0 0 8px var(--red); }
-    .status-dot.gray { background: var(--muted); }
-    .metric { font-size: 2rem; font-weight: 700; }
+    .dot-green { background: var(--green); box-shadow: 0 0 8px var(--green); }
+    .dot-yellow { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+    .dot-red { background: var(--red); box-shadow: 0 0 8px var(--red); }
+    .dot-gray { background: var(--muted); }
+
+    .metric { font-size: 2.5rem; font-weight: 700; }
     .metric.green { color: var(--green); }
-    .metric.amber { color: var(--amber); }
+    .metric.yellow { color: var(--yellow); }
     .metric.red { color: var(--red); }
     .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
-    .list { list-style: none; }
-    .list li {
+
+    /* Status boxes */
+    .status-box {
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      padding: 0.375rem 0;
-      font-size: 0.875rem;
-      border-bottom: 1px solid #334155;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
     }
-    .list li:last-child { border-bottom: none; }
-    .full-width { grid-column: 1 / -1; }
+    .status-box:last-child { margin-bottom: 0; }
+    .status-box.green { background: var(--green-bg); border: 1px solid var(--green); }
+    .status-box.yellow { background: var(--yellow-bg); border: 1px solid var(--yellow); }
+    .status-box.red { background: var(--red-bg); border: 1px solid var(--red); }
+    .status-box .label { font-size: 0.8rem; color: var(--muted); }
+    .status-box .value { font-size: 0.9rem; font-weight: 500; }
+    .status-box .badge {
+      margin-left: auto;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+    }
+    .badge-green { background: var(--green); color: #000; }
+    .badge-yellow { background: var(--yellow); color: #000; }
+    .badge-red { background: var(--red); color: #fff; }
+
+    /* Role cards */
+    .roles-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.75rem;
+    }
+    .role-card {
+      background: #0f172a;
+      border-radius: 8px;
+      padding: 1rem;
+      border: 1px solid var(--border);
+    }
+    .role-card.green { border-color: var(--green); }
+    .role-card.yellow { border-color: var(--yellow); }
+    .role-card.red { border-color: var(--red); }
+    .role-card .name { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; }
+    .role-card .status { font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem; }
+    .role-card .session-key { font-size: 0.65rem; color: var(--muted); margin-top: 0.5rem; word-break: break-all; }
+    .role-card .age { font-size: 0.7rem; color: var(--muted); margin-top: 0.25rem; }
+
+    /* Cron list */
+    .cron-list { list-style: none; }
+    .cron-list li {
+      padding: 0.75rem;
+      border-radius: 6px;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .cron-list li:last-child { margin-bottom: 0; }
+    .cron-list li.green { background: var(--green-bg); border: 1px solid var(--green); }
+    .cron-list li.yellow { background: var(--yellow-bg); border: 1px solid var(--yellow); }
+    .cron-list li.red { background: var(--red-bg); border: 1px solid var(--red); }
+    .cron-list .cron-name { font-size: 0.85rem; font-weight: 500; flex: 1; }
+    .cron-list .cron-time { font-size: 0.7rem; color: var(--muted); }
+    .cron-list .cron-badge {
+      font-size: 0.65rem;
+      font-weight: 600;
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
+    }
+    .cron-badge-green { background: var(--green); color: #000; }
+    .cron-badge-yellow { background: var(--yellow); color: #000; }
+    .cron-badge-red { background: var(--red); color: #fff; }
+
+    /* Latest message */
     .message-box {
       background: linear-gradient(135deg, #1e3a5f, #2d4a6f);
       border: 1px solid #3b82f6;
@@ -91,23 +160,11 @@
       line-height: 1.5;
     }
     .message-box strong { color: #60a5fa; }
-    .roles-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 0.75rem;
-    }
-    .role-card {
-      background: #0f172a;
-      border-radius: 8px;
-      padding: 0.75rem;
-      text-align: center;
-    }
-    .role-card .label { font-size: 0.75rem; color: var(--muted); }
-    .role-card .value { font-size: 1.25rem; font-weight: 600; margin-top: 0.25rem; }
-    .error-msg { color: var(--red); font-size: 0.8rem; margin-top: 0.5rem; }
-    .ok-msg { color: var(--green); font-size: 0.8rem; margin-top: 0.5rem; }
     .timestamp { font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem; }
+
+    .full-width { grid-column: 1 / -1; }
     .loading { opacity: 0.5; }
+    .error { color: var(--red); font-size: 0.8rem; }
   </style>
 </head>
 <body>
@@ -116,57 +173,81 @@
     <button class="refresh-btn" onclick="fetchAll()">↻ Refresh</button>
   </div>
 
-  <!-- Codex LLM Status -->
+  <!-- Top Row: LLM Models + Latest Message -->
   <div class="grid">
+    <!-- MiniMax Status -->
     <div class="card">
       <div class="card-header">
-        <span class="status-dot gray" id="codex-dot"></span>
-        <h2>Codex LLM</h2>
+        <span class="status-dot dot-gray" id="minimax-dot"></span>
+        <h2>MiniMax M2.7</h2>
       </div>
-      <div id="codex-status">Loading...</div>
+      <div class="status-box green" id="minimax-box">
+        <span class="label">Sessions</span>
+        <span class="value" id="minimax-sessions">—</span>
+        <span class="badge badge-green" id="minimax-badge">ACTIVE</span>
+      </div>
+      <p class="sub" style="margin-top:0.75rem;">Context: <span id="minimax-context">—</span> tokens</p>
+    </div>
+
+    <!-- E4B Status -->
+    <div class="card">
+      <div class="card-header">
+        <span class="status-dot dot-gray" id="e4b-dot"></span>
+        <h2>Gemma 4 E4B</h2>
+      </div>
+      <div class="status-box green" id="e4b-box">
+        <span class="label">Status</span>
+        <span class="value" id="e4b-status">—</span>
+        <span class="badge badge-green" id="e4b-badge">LOADED</span>
+      </div>
+      <p class="sub" style="margin-top:0.75rem;">Size: <span id="e4b-size">—</span></p>
     </div>
 
     <!-- Latest Message -->
     <div class="card">
       <div class="card-header">
-        <span class="status-dot green"></span>
+        <span class="status-dot dot-green"></span>
         <h2>Latest Message</h2>
       </div>
       <div class="message-box">
-        <strong>📌 Hey Boss Mic!</strong><br/>
-        <span id="latest-message">Dashboard refreshed. All systems operational.</span>
+        <strong>📌 Boss Mic</strong><br/>
+        <span id="latest-message">All systems operational.</span>
       </div>
       <p class="timestamp" id="message-time"></p>
     </div>
   </div>
 
-  <!-- Sessions -->
+  <!-- Sessions + Cron + CLI -->
   <div class="grid">
+    <!-- All Sessions -->
     <div class="card">
       <div class="card-header">
-        <span class="status-dot gray" id="sessions-dot"></span>
+        <span class="status-dot dot-gray" id="sessions-dot"></span>
         <h2>Sessions</h2>
       </div>
       <div class="metric green" id="session-count">—</div>
-      <p class="sub">active sessions</p>
+      <p class="sub">total sessions</p>
+      <div style="margin-top:1rem;">
+        <div id="agent-list" style="font-size:0.8rem;color:var(--muted);"></div>
+      </div>
     </div>
 
     <!-- Cron Jobs -->
     <div class="card">
       <div class="card-header">
-        <span class="status-dot gray" id="cron-dot"></span>
+        <span class="status-dot dot-gray" id="cron-dot"></span>
         <h2>Cron Jobs</h2>
       </div>
-      <div id="cron-status">Loading...</div>
+      <ul class="cron-list" id="cron-list">Loading...</ul>
     </div>
 
-    <!-- OpenClaw Help -->
+    <!-- OpenClaw CLI -->
     <div class="card">
       <div class="card-header">
-        <span class="status-dot gray" id="help-dot"></span>
+        <span class="status-dot dot-gray" id="cli-dot"></span>
         <h2>OpenClaw CLI</h2>
       </div>
-      <div id="help-status">Loading...</div>
+      <div id="cli-status">Loading...</div>
     </div>
   </div>
 
@@ -174,7 +255,7 @@
   <div class="grid">
     <div class="card full-width">
       <div class="card-header">
-        <span class="status-dot gray" id="roles-dot"></span>
+        <span class="status-dot dot-gray" id="roles-dot"></span>
         <h2>Agent Roles</h2>
       </div>
       <div class="roles-grid" id="roles-grid">Loading...</div>
@@ -182,8 +263,6 @@
   </div>
 
   <script>
-    const VIEWER = '/Users/lhaclaw/AI-Project-Workspace/Job Seeking Tool/viewer';
-
     async function fetchJSON(url) {
       try {
         const r = await fetch(url);
@@ -194,91 +273,181 @@
       }
     }
 
-    async function fetchHealth() {
-      return fetchJSON('/api/health');
+    function timeAgo(ms) {
+      if (!ms) return '—';
+      const s = Math.floor((Date.now() - ms) / 1000);
+      if (s < 60) return `${s}s ago`;
+      if (s < 3600) return `${Math.floor(s/60)}m ago`;
+      if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+      return `${Math.floor(s/86400)}d ago`;
     }
 
-    async function fetchRoleStatus() {
-      return fetchJSON('/api/role-status');
+    function formatTime(ms) {
+      if (!ms) return '—';
+      const d = new Date(ms);
+      return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + 
+             ' ' + d.toLocaleDateString([], {month: 'short', day: 'numeric'});
     }
 
-    async function fetchHelp() {
-      return fetchJSON('/api/help');
-    }
-
-    function setDot(el, ok, hasWarn) {
-      el.className = 'status-dot ' + (ok === true ? 'green' : ok === false ? 'red' : 'amber');
-    }
-
-    function renderHealth(d) {
-      // Sessions
-      const count = d.sessions?.length || 0;
-      document.getElementById('session-count').textContent = count;
-      const sessDot = document.getElementById('sessions-dot');
-      setDot(sessDot, count > 0 ? true : false);
-
-      // Cron status
-      const cronOk = !d.cron_errors || d.cron_errors.length === 0;
-      document.getElementById('cron-status').innerHTML = cronOk
-        ? '<span class="ok-msg">✓ No errors detected</span>'
-        : `<span class="error-msg">⚠ ${d.cron_errors.join(', ')}</span>`;
-      setDot(document.getElementById('cron-dot'), cronOk);
+    function setDot(el, status) {
+      el.className = 'status-dot dot-' + (status === 'green' ? 'green' : status === 'yellow' ? 'yellow' : status === 'red' ? 'red' : 'gray');
     }
 
     async function fetchAll() {
       document.body.classList.add('loading');
-
-      // Update timestamp
       document.getElementById('message-time').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
 
-      // Fetch health
-      const health = await fetchHealth();
-      if (health.error) {
-        console.error('Health error:', health.error);
-      } else {
-        renderHealth(health);
-      }
+      // Fetch all data in parallel
+      const [health, roleStatus, help] = await Promise.all([
+        fetchJSON('/api/health'),
+        fetchJSON('/api/role-status'),
+        fetchJSON('/api/help')
+      ]);
 
-      // Fetch role status
-      const roles = await fetchRoleStatus();
-      if (!roles.error) {
-        renderRoles(roles);
-      }
-
-      // Fetch help
-      const help = await fetchHelp();
-      if (!help.error) {
-        const helpOk = help.output && !help.output.includes('command not found');
-        document.getElementById('help-status').innerHTML = helpOk
-          ? '<span class="ok-msg">✓ CLI accessible</span>'
-          : '<span class="error-msg">✗ CLI not found</span>';
-        setDot(document.getElementById('help-dot'), helpOk);
-      }
-
-      // Codex status (simulated - shows as available if we got this far)
-      document.getElementById('codex-status').innerHTML = '<span class="ok-msg">✓ Available</span>';
-      setDot(document.getElementById('codex-dot'), true);
+      renderHealth(health);
+      renderRoleStatus(roleStatus);
+      renderHelp(help);
 
       document.body.classList.remove('loading');
     }
 
-    function renderRoles(roles) {
-      const grid = document.getElementById('roles-grid');
-      const rolesOk = roles.filter(r => r.status !== 'amber').length > 0;
-      setDot(document.getElementById('roles-dot'), rolesOk ? true : null);
+    function renderHealth(d) {
+      const ollama = d.ollama || {};
+      const openclaw = d.openclaw || {};
+      const cronJobs = d.cron_jobs || [];
+      const running = ollama.running || [];
+      const available = ollama.available || [];
+      const sessions = openclaw.sessions || {};
+      const byAgent = sessions.byAgent || [];
+      const recent = sessions.recent || [];
 
-      grid.innerHTML = roles.map(r => `
-        <div class="role-card">
-          <div class="label">${r.label}</div>
-          <div class="value" style="color: var(--${r.status === 'green' ? 'green' : r.status === 'red' ? 'red' : 'amber'})">${r.status === 'green' ? '✓' : r.status === 'red' ? '✗' : '?'}</div>
-          <div class="label" style="margin-top:0.25rem;font-size:0.65rem">${r.age || '—'}</div>
-        </div>
-      `).join('');
+      // MiniMax
+      const minimaxSessions = byAgent.find(a => a.agentId === 'main')?.count || 0;
+      document.getElementById('minimax-sessions').textContent = minimaxSessions;
+      const minimaxDot = document.getElementById('minimax-dot');
+      const minimaxBox = document.getElementById('minimax-box');
+      const minimaxBadge = document.getElementById('minimax-badge');
+      if (minimaxSessions > 0) {
+        minimaxBox.className = 'status-box green';
+        minimaxBadge.className = 'badge badge-green';
+        minimaxBadge.textContent = 'ACTIVE';
+        setDot(minimaxDot, 'green');
+      } else {
+        minimaxBox.className = 'status-box yellow';
+        minimaxBadge.className = 'badge badge-yellow';
+        minimaxBadge.textContent = 'IDLE';
+        setDot(minimaxDot, 'yellow');
+      }
+      document.getElementById('minimax-context').textContent = sessions.defaults?.contextTokens?.toLocaleString() || '—';
+
+      // E4B
+      const e4bAvailable = available.find(m => m.name === 'gemma4:e4b');
+      const e4bRunning = running.includes('gemma4:e4b');
+      const e4bDot = document.getElementById('e4b-dot');
+      const e4bBox = document.getElementById('e4b-box');
+      const e4bBadge = document.getElementById('e4b-badge');
+      const e4bStatus = document.getElementById('e4b-status');
+      if (e4bRunning) {
+        e4bBox.className = 'status-box green';
+        e4bBadge.className = 'badge badge-green';
+        e4bBadge.textContent = 'RUNNING';
+        e4bStatus.textContent = 'Running';
+        setDot(e4bDot, 'green');
+      } else if (e4bAvailable) {
+        e4bBox.className = 'status-box yellow';
+        e4bBadge.className = 'badge badge-yellow';
+        e4bBadge.textContent = 'LOADED';
+        e4bStatus.textContent = 'Loaded';
+        setDot(e4bDot, 'yellow');
+      } else {
+        e4bBox.className = 'status-box red';
+        e4bBadge.className = 'badge badge-red';
+        e4bBadge.textContent = 'MISSING';
+        e4bStatus.textContent = 'Not available';
+        setDot(e4bDot, 'red');
+      }
+      document.getElementById('e4b-size').textContent = e4bAvailable?.size || '—';
+
+      // Sessions
+      const totalSessions = sessions.count || 0;
+      document.getElementById('session-count').textContent = totalSessions;
+      const sessionsDot = document.getElementById('sessions-dot');
+      setDot(sessionsDot, totalSessions > 0 ? 'green' : 'red');
+
+      // Agent list
+      const agentList = document.getElementById('agent-list');
+      agentList.innerHTML = byAgent.map(a => {
+        const color = a.count > 0 ? 'var(--green)' : 'var(--muted)';
+        return `<div style="display:flex;justify-content:space-between;padding:0.25rem 0;border-bottom:1px solid var(--border)">
+          <span style="color:${color}">${a.agentId}</span>
+          <span>${a.count} sessions</span>
+        </div>`;
+      }).join('');
+
+      // Cron Jobs
+      const cronList = document.getElementById('cron-list');
+      const cronDot = document.getElementById('cron-dot');
+      if (!cronJobs || cronJobs.length === 0) {
+        cronList.innerHTML = '<li class="yellow"><span class="cron-name">No cron jobs found</span></li>';
+        setDot(cronDot, 'yellow');
+      } else {
+        let hasError = false;
+        cronList.innerHTML = cronJobs.map(j => {
+          const status = j.last_status === 'ok' ? 'green' : j.last_status === 'error' ? 'red' : 'yellow';
+          if (j.last_status === 'error') hasError = true;
+          return `<li class="${status}">
+            <span class="cron-name">${j.name}</span>
+            <div style="text-align:right">
+              <span class="cron-time">${formatTime(j.last_run)}</span>
+              <span class="cron-badge cron-badge-${status}">${j.last_status?.toUpperCase() || '?'}</span>
+            </div>
+          </li>`;
+        }).join('');
+        setDot(cronDot, hasError ? 'red' : 'green');
+      }
+    }
+
+    function renderRoleStatus(data) {
+      const roles = data.roles || [];
+      const rolesDot = document.getElementById('roles-dot');
+      const grid = document.getElementById('roles-grid');
+
+      const hasAmber = roles.some(r => r.status === 'amber');
+      const hasRed = roles.some(r => r.status === 'red');
+      setDot(rolesDot, hasRed ? 'red' : hasAmber ? 'yellow' : 'green');
+
+      grid.innerHTML = roles.map(r => {
+        const color = r.status === 'green' ? 'var(--green)' : r.status === 'red' ? 'var(--red)' : 'var(--yellow)';
+        const icon = r.status === 'green' ? '✓' : r.status === 'red' ? '✗' : '?';
+        const cardClass = r.status === 'green' ? 'green' : r.status === 'red' ? 'red' : 'yellow';
+        return `<div class="role-card ${cardClass}">
+          <div class="name">${r.label}</div>
+          <div class="status" style="color:${color}">${icon}</div>
+          <div class="session-key">${r.summary || '—'}</div>
+          <div class="age">${r.age || '—'}</div>
+        </div>`;
+      }).join('');
+
+      if (roles.length === 0) {
+        grid.innerHTML = '<p class="error">No role data available</p>';
+      }
+    }
+
+    function renderHelp(data) {
+      const cliDot = document.getElementById('cli-dot');
+      const cliStatus = document.getElementById('cli-status');
+      if (data.error) {
+        cliStatus.innerHTML = `<span class="error">✗ ${data.error}</span>`;
+        setDot(cliDot, 'red');
+      } else {
+        cliStatus.innerHTML = `<span style="color:var(--green)">✓ CLI accessible</span>`;
+        setDot(cliDot, 'green');
+      }
     }
 
     // Initial load
     fetchAll();
-    setInterval(fetchAll, 30000); // Auto-refresh every 30s
+    setInterval(fetchAll, 30000);
   </script>
 </body>
 </html>
