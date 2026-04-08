@@ -141,6 +141,13 @@ session_management:
     - Scout sessions do not need reuse — each QA task is independent
     - Max Scout session age: 30 min idle OR turns >15 → close
     - Complex QA subagent: silverhand-<task_id>, follows anti_idle rules
+    - Scout MUST follow improved task template: docs/scouts-task-template.md
+    - Scout rule: if unsure → FAIL. Never guess.
+    - Scout rule: write to /tmp/scout_<task>.txt first, then cat
+    - Scout rule: reply MUST be valid YAML starting with task_id line — no prose before it
+    - Scout rule: do NOT investigate failures — report FAIL and stop
+    - Scout rule: exact grep/cut commands only — no "check if reasonable" vague instructions
+    - Scout rule: use python3.14 explicitly (not python3)
 qa:
   scout_modes:
     lean_default:
