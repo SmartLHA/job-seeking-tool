@@ -215,6 +215,7 @@
         <span class="llm-badge badge-green" id="minimax-badge">ACTIVE</span>
       </div>
       <p class="llm-sub">Context: <span id="minimax-context">—</span> tokens</p>
+      <p class="llm-sub" style="margin-top:0.25rem"><span id="minimax-active" style="color:var(--yellow)">—</span></p>
     </div>
 
     <!-- E4B -->
@@ -241,6 +242,7 @@
         <span class="llm-badge badge-green" id="codex-badge">ONLINE</span>
       </div>
       <p class="llm-sub">Dev agent sessions</p>
+      <p class="llm-sub" style="margin-top:0.25rem"><span id="codex-active" style="color:var(--yellow)">—</span></p>
     </div>
   </div>
 
@@ -362,13 +364,15 @@
       const byAgent = sessions.byAgent || [];
       const activeSessions = d.active_sessions || {};
 
-      // MiniMax - only count sessions updated in last 1 hour
+      // MiniMax - big number = total sessions, small = active in 2h
+      const mainAgent = byAgent.find(a => a.agentId === 'main');
+      const minimaxTotal = mainAgent?.count || 0;
       const minimaxActive = activeSessions.main || 0;
-      document.getElementById('minimax-count').textContent = minimaxActive;
+      document.getElementById('minimax-count').textContent = minimaxTotal;
       const minimaxDot = document.getElementById('minimax-dot');
       const minimaxBadge = document.getElementById('minimax-badge');
       const minimaxMetric = document.getElementById('minimax-count');
-      if (minimaxActive > 0) {
+      if (minimaxTotal > 0) {
         minimaxBadge.className = 'llm-badge badge-green';
         minimaxBadge.textContent = 'ACTIVE';
         setDot(minimaxDot, 'green');
@@ -380,6 +384,8 @@
         setMetricColor(minimaxMetric, 'yellow');
       }
       document.getElementById('minimax-context').textContent = sessions.defaults?.contextTokens?.toLocaleString() || '—';
+      // Show active count below
+      document.getElementById('minimax-active').textContent = `+${minimaxActive} active (2h)`;
 
       // E4B
       const e4bAvailable = available.find(m => m.name === 'gemma4:e4b');
@@ -413,13 +419,15 @@
       document.getElementById('e4b-params').textContent = e4bParams;
       document.getElementById('e4b-size').textContent = e4bGB;
 
-      // Codex - only count sessions updated in last 1 hour
+      // Codex - big number = total sessions, small = active in 2h
+      const codexAgent = byAgent.find(a => a.agentId === 'codex');
+      const codexTotal = codexAgent?.count || 0;
       const codexActive = activeSessions.codex || 0;
-      document.getElementById('codex-sessions').textContent = codexActive;
+      document.getElementById('codex-sessions').textContent = codexTotal;
       const codexDot = document.getElementById('codex-dot');
       const codexBadge = document.getElementById('codex-badge');
       const codexMetric = document.getElementById('codex-sessions');
-      if (codexActive > 0) {
+      if (codexTotal > 0) {
         codexBadge.className = 'llm-badge badge-green';
         codexBadge.textContent = 'ONLINE';
         setDot(codexDot, 'green');
@@ -430,6 +438,7 @@
         setDot(codexDot, 'yellow');
         setMetricColor(codexMetric, 'yellow');
       }
+      document.getElementById('codex-active').textContent = `+${codexActive} active (2h)`;
 
       // Sessions - total count still shows all
       const totalSessions = sessions.count || 0;
