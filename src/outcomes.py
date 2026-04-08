@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from src.models import ApplicationOutcome, OutcomeEvent, OutcomeStatus
@@ -183,7 +183,7 @@ def _normalise_status(value: Any) -> OutcomeStatus:
 
 def _normalise_timestamp(value: Any) -> str:
     if value is None:
-        return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     if not isinstance(value, str) or not value.strip():
         raise OutcomeValidationError("updated_at must be a non-empty ISO 8601 string")
 
