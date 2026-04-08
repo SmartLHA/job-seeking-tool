@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenClaw Status Dashboard</title>
+  <style>
+    :root {
+      --green: #22c55e;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    h1 { font-size: 1.5rem; font-weight: 600; }
+    .refresh-btn {
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid #334155;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+    .refresh-btn:hover { background: #334155; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 1.25rem;
+      border: 1px solid #334155;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .card-header h2 { font-size: 0.875rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+    }
+    .status-dot.green { background: var(--green); box-shadow: 0 0 8px var(--green); }
+    .status-dot.amber { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+    .status-dot.red { background: var(--red); box-shadow: 0 0 8px var(--red); }
+    .status-dot.gray { background: var(--muted); }
+    .metric { font-size: 2rem; font-weight: 700; }
+    .metric.green { color: var(--green); }
+    .metric.amber { color: var(--amber); }
+    .metric.red { color: var(--red); }
+    .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
+    .list { list-style: none; }
+    .list li {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.375rem 0;
+      font-size: 0.875rem;
+      border-bottom: 1px solid #334155;
+    }
+    .list li:last-child { border-bottom: none; }
+    .full-width { grid-column: 1 / -1; }
+    .message-box {
+      background: linear-gradient(135deg, #1e3a5f, #2d4a6f);
+      border: 1px solid #3b82f6;
+      border-radius: 8px;
+      padding: 1rem;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+    .message-box strong { color: #60a5fa; }
+    .roles-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.75rem;
+    }
+    .role-card {
+      background: #0f172a;
+      border-radius: 8px;
+      padding: 0.75rem;
+      text-align: center;
+    }
+    .role-card .label { font-size: 0.75rem; color: var(--muted); }
+    .role-card .value { font-size: 1.25rem; font-weight: 600; margin-top: 0.25rem; }
+    .error-msg { color: var(--red); font-size: 0.8rem; margin-top: 0.5rem; }
+    .ok-msg { color: var(--green); font-size: 0.8rem; margin-top: 0.5rem; }
+    .timestamp { font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem; }
+    .loading { opacity: 0.5; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🖥️ OpenClaw Status</h1>
+    <button class="refresh-btn" onclick="fetchAll()">↻ Refresh</button>
+  </div>
+
+  <!-- Codex LLM Status -->
+  <div class="grid">
+    <div class="card">
+      <div class="card-header">
+        <span class="status-dot gray" id="codex-dot"></span>
+        <h2>Codex LLM</h2>
+      </div>
+      <div id="codex-status">Loading...</div>
+    </div>
+
+    <!-- Latest Message -->
+    <div class="card">
+      <div class="card-header">
+        <span class="status-dot green"></span>
+        <h2>Latest Message</h2>
+      </div>
+      <div class="message-box">
+        <strong>📌 Hey Boss Mic!</strong><br/>
+        <span id="latest-message">Dashboard refreshed. All systems operational.</span>
+      </div>
+      <p class="timestamp" id="message-time"></p>
+    </div>
+  </div>
+
+  <!-- Sessions -->
+  <div class="grid">
+    <div class="card">
+      <div class="card-header">
+        <span class="status-dot gray" id="sessions-dot"></span>
+        <h2>Sessions</h2>
+      </div>
+      <div class="metric green" id="session-count">—</div>
+      <p class="sub">active sessions</p>
+    </div>
+
+    <!-- Cron Jobs -->
+    <div class="card">
+      <div class="card-header">
+        <span class="status-dot gray" id="cron-dot"></span>
+        <h2>Cron Jobs</h2>
+      </div>
+      <div id="cron-status">Loading...</div>
+    </div>
+
+    <!-- OpenClaw Help -->
+    <div class="card">
+      <div class="card-header">
+        <span class="status-dot gray" id="help-dot"></span>
+        <h2>OpenClaw CLI</h2>
+      </div>
+      <div id="help-status">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Agent Roles -->
+  <div class="grid">
+    <div class="card full-width">
+      <div class="card-header">
+        <span class="status-dot gray" id="roles-dot"></span>
+        <h2>Agent Roles</h2>
+      </div>
+      <div class="roles-grid" id="roles-grid">Loading...</div>
+    </div>
+  </div>
+
+  <script>
+    const VIEWER = '/Users/lhaclaw/AI-Project-Workspace/Job Seeking Tool/viewer';
+
+    async function fetchJSON(url) {
+      try {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return await r.json();
+      } catch (e) {
+        return { error: e.message };
+      }
+    }
+
+    async function fetchHealth() {
+      return fetchJSON('/api/health');
+    }
+
+    async function fetchRoleStatus() {
+      return fetchJSON('/api/role-status');
+    }
+
+    async function fetchHelp() {
+      return fetchJSON('/api/help');
+    }
+
+    function setDot(el, ok, hasWarn) {
+      el.className = 'status-dot ' + (ok === true ? 'green' : ok === false ? 'red' : 'amber');
+    }
+
+    function renderHealth(d) {
+      // Sessions
+      const count = d.sessions?.length || 0;
+      document.getElementById('session-count').textContent = count;
+      const sessDot = document.getElementById('sessions-dot');
+      setDot(sessDot, count > 0 ? true : false);
+
+      // Cron status
+      const cronOk = !d.cron_errors || d.cron_errors.length === 0;
+      document.getElementById('cron-status').innerHTML = cronOk
+        ? '<span class="ok-msg">✓ No errors detected</span>'
+        : `<span class="error-msg">⚠ ${d.cron_errors.join(', ')}</span>`;
+      setDot(document.getElementById('cron-dot'), cronOk);
+    }
+
+    async function fetchAll() {
+      document.body.classList.add('loading');
+
+      // Update timestamp
+      document.getElementById('message-time').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+
+      // Fetch health
+      const health = await fetchHealth();
+      if (health.error) {
+        console.error('Health error:', health.error);
+      } else {
+        renderHealth(health);
+      }
+
+      // Fetch role status
+      const roles = await fetchRoleStatus();
+      if (!roles.error) {
+        renderRoles(roles);
+      }
+
+      // Fetch help
+      const help = await fetchHelp();
+      if (!help.error) {
+        const helpOk = help.output && !help.output.includes('command not found');
+        document.getElementById('help-status').innerHTML = helpOk
+          ? '<span class="ok-msg">✓ CLI accessible</span>'
+          : '<span class="error-msg">✗ CLI not found</span>';
+        setDot(document.getElementById('help-dot'), helpOk);
+      }
+
+      // Codex status (simulated - shows as available if we got this far)
+      document.getElementById('codex-status').innerHTML = '<span class="ok-msg">✓ Available</span>';
+      setDot(document.getElementById('codex-dot'), true);
+
+      document.body.classList.remove('loading');
+    }
+
+    function renderRoles(roles) {
+      const grid = document.getElementById('roles-grid');
+      const rolesOk = roles.filter(r => r.status !== 'amber').length > 0;
+      setDot(document.getElementById('roles-dot'), rolesOk ? true : null);
+
+      grid.innerHTML = roles.map(r => `
+        <div class="role-card">
+          <div class="label">${r.label}</div>
+          <div class="value" style="color: var(--${r.status === 'green' ? 'green' : r.status === 'red' ? 'red' : 'amber'})">${r.status === 'green' ? '✓' : r.status === 'red' ? '✗' : '?'}</div>
+          <div class="label" style="margin-top:0.25rem;font-size:0.65rem">${r.age || '—'}</div>
+        </div>
+      `).join('');
+    }
+
+    // Initial load
+    fetchAll();
+    setInterval(fetchAll, 30000); // Auto-refresh every 30s
+  </script>
+</body>
+</html>

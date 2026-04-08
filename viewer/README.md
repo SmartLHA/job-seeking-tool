@@ -7,7 +7,7 @@ This is a simple local web page for browsing the project markdown files in one p
 From the project folder:
 
 ```bash
-cd "/Users/lhaclaw/.openclaw/workspace/Job Seeking Tool"
+cd "/Users/lhaclaw/AI-Project-Workspace/Job Seeking Tool"
 python3 -m http.server 8765
 ```
 
@@ -22,7 +22,7 @@ http://localhost:8765/viewer/
 Run the server so it listens on your local network:
 
 ```bash
-cd "/Users/lhaclaw/.openclaw/workspace/Job Seeking Tool"
+cd "/Users/lhaclaw/AI-Project-Workspace/Job Seeking Tool"
 python3 -m http.server 8765 --bind 0.0.0.0
 ```
 

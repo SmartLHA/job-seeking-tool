@@ -18,7 +18,7 @@ task_id: scout-<short-name>
 
 ### Constraints
 - Do NOT modify source or config
-- Run from: /Users/lhaclaw/.openclaw/workspace/Job Seeking Tool
+- Run from: /Users/lhaclaw/AI-Project-Workspace/Job Seeking Tool
 - Use python3.14 explicitly (not python3)
 - result_first, bullet_or_yaml_only, max 1 line per item
 
@@ -26,7 +26,7 @@ task_id: scout-<short-name>
 Run these EXACT commands. Write ALL output to /tmp/scout_<task>.txt
 
 ```bash
-cd "/Users/lhaclaw/.openclaw/workspace/Job Seeking Tool"
+cd "/Users/lhaclaw/AI-Project-Workspace/Job Seeking Tool"
 echo "=== CHECK NAME ===" > /tmp/scout_<task>.txt
 <exact command> >> /tmp/scout_<task>.txt 2>&1
 # repeat for each check
