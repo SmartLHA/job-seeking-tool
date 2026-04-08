@@ -419,7 +419,20 @@
       const e4bGB = e4bBytes > 0 ? (e4bBytes / (1024**3)).toFixed(1) + ' GB' : '—';
       document.getElementById('e4b-params').textContent = e4bParams;
       document.getElementById('e4b-size').textContent = e4bGB;
-      document.getElementById('e4b-active').textContent = '—';
+      const ollamaUsage = d.ollama_usage || {};
+      const e4bUsage = ollamaUsage['gemma4:e4b'] || {};
+      if (e4bUsage.ago_ms !== undefined) {
+        const mins = Math.floor(e4bUsage.ago_ms / 60000);
+        const hours = Math.floor(mins / 60);
+        const days = Math.floor(hours / 24);
+        let agoStr;
+        if (days > 0) agoStr = `${days}d ago`;
+        else if (hours > 0) agoStr = `${hours}h ago`;
+        else agoStr = `${mins}m ago`;
+        document.getElementById('e4b-active').textContent = `Last used: ${agoStr}`;
+      } else {
+        document.getElementById('e4b-active').textContent = 'Not used today';
+      }
 
       // Codex - big number = recent 5m, small = active 2h
       const codexAgent = byAgent.find(a => a.agentId === 'codex');

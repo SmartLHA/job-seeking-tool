@@ -190,6 +190,37 @@ def _get_active_sessions() -> dict:
     return result
 
 
+def _get_ollama_usage() -> dict:
+    """Get last used time for Ollama models from session history."""
+    now_ms = datetime.now().timestamp() * 1000
+    ONE_DAY = 86400000
+    result = {}
+    
+    # Check all agents for gemma usage
+    for agent in ["main", "codex", "qa"]:
+        sessions_file = Path(f"/Users/lhaclaw/.openclaw/agents/{agent}/sessions/sessions.json")
+        if sessions_file.exists():
+            try:
+                with open(sessions_file) as f:
+                    data = json.load(f)
+                for val in data.values():
+                    model = val.get("model", "")
+                    if "gemma" in model.lower():
+                        updated = val.get("updatedAt", 0)
+                        age = now_ms - updated
+                        if age < ONE_DAY:
+                            # Store as negative age (last used ago)
+                            if model not in result or result[model]["ago_ms"] > age:
+                                result[model] = {
+                                    "ago_ms": age,
+                                    "input_tokens": val.get("inputTokens", 0),
+                                    "output_tokens": val.get("outputTokens", 0)
+                                }
+            except Exception:
+                pass
+    return result
+
+
 def handle_api_health() -> bytes:
     data = {
         "ollama": {"available": [], "running": [], "error": None},
@@ -261,6 +292,9 @@ def handle_api_health() -> bytes:
 
     # Add active session counts (updated within 1 hour)
     data["active_sessions"] = _get_active_sessions()
+    
+    # Add Ollama model usage from session history
+    data["ollama_usage"] = _get_ollama_usage()
 
     return json.dumps(data).encode()
 
