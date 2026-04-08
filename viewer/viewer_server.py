@@ -14,7 +14,17 @@ import socket
 from pathlib import Path
 from datetime import datetime
 
+def _load_json(path: Path) -> dict:
+    if path.exists():
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            return {}
+    return {}
+
+
 VIEWER_DIR = Path(__file__).parent.resolve()
+TASK_IDS_FILE = VIEWER_DIR / "task_ids.json"
 PROJECT_ROOT = VIEWER_DIR.parent.resolve()
 PORT = 8765
 VIEWER_HOST = "0.0.0.0"
@@ -478,9 +488,25 @@ def handle_request(sock: socket.socket) -> None:
             return
         method, raw_path, _ = lines[0].split(" ", 2)
         path = raw_path.split("?")[0].split(" ")[0]
-        if method != "GET":
+        if method not in ("GET", "POST"):
             sock.sendall(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n")
             return
+
+        # Extract POST body — for small bodies it's already in the initial recv(8192)
+        post_body = b""
+        if method == "POST":
+            content_length = 0
+            body_start = request.find("\r\n\r\n")
+            if body_start >= 0:
+                header_part = request[:body_start]
+                body_start += 4
+                for line in header_part.split("\r\n"):
+                    if line.lower().startswith("content-length:"):
+                        content_length = int(line.split(":", 1)[1].strip())
+                        break
+                # Body starts right after \r\n\r\n in the request
+                if content_length > 0:
+                    post_body = request[body_start:body_start + content_length].encode("utf-8")
 
         if path == "/usage":
             try:
@@ -556,6 +582,89 @@ def handle_request(sock: socket.socket) -> None:
 
         if path == "/api/latest-message":
             data = handle_api_latest_message()
+            resp = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " + str(len(data)).encode() + b"\r\n"
+                b"Access-Control-Allow-Origin: *\r\n"
+                b"Connection: close\r\n"
+                b"\r\n" + data
+            )
+            sock.sendall(resp)
+            return
+
+        # POST: register a task_id for a session
+        if path == "/api/register-task-id" and method == "POST":
+            try:
+                body = json.loads(post_body.decode("utf-8"))
+                session_key = body.get("session_key", "")
+                task_id = body.get("task_id", "")
+                if not session_key or not task_id:
+                    data = json.dumps({"ok": False, "error": "session_key and task_id required"}).encode()
+                else:
+                    task_ids = _load_json(TASK_IDS_FILE)
+                    task_ids[session_key] = task_id
+                    TASK_IDS_FILE.write_text(json.dumps(task_ids, indent=2))
+                    data = json.dumps({"ok": True}).encode()
+            except Exception as e:
+                data = json.dumps({"ok": False, "error": str(e)}).encode()
+            resp = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " + str(len(data)).encode() + b"\r\n"
+                b"Access-Control-Allow-Origin: *\r\n"
+                b"Connection: close\r\n"
+                b"\r\n" + data
+            )
+            sock.sendall(resp)
+            return
+
+        # POST: spawn-gate — check for duplicate before creating a session
+        # Body: { "role": "handy", "task_id": "T123" }
+        # Returns: { "ok": true/false, "duplicate": bool, "existing_session_key": "...", "action": "..." }
+        if path == "/api/spawn-gate" and method == "POST":
+            try:
+                body = json.loads(post_body.decode("utf-8"))
+                role = body.get("role", "")
+                task_id = body.get("task_id", "")
+                if not role:
+                    data = json.dumps({"ok": False, "error": "role required"}).encode()
+                else:
+                    # Map role → agent
+                    ROLE_AGENT_MAP = {"handy": "codex", "scout": "qa", "planner": "main", "reviewer": "main"}
+                    agent_id = ROLE_AGENT_MAP.get(role, role)
+                    sessions_file = Path(f"/Users/lhaclaw/.openclaw/agents/{agent_id}/sessions/sessions.json")
+                    task_ids = _load_json(TASK_IDS_FILE)
+
+                    active_sessions = []
+                    if sessions_file.exists():
+                        with open(sessions_file) as f:
+                            sessions_data = json.load(f)
+                        now_ms = datetime.now().timestamp() * 1000
+                        for sk, sv in sessions_data.items():
+                            if sv.get("status") not in ("running", "waiting", "active"):
+                                continue
+                            stored_task = task_ids.get(sk, "")
+                            if task_id and stored_task == task_id:
+                                active_sessions.append(sk)
+
+                    if active_sessions:
+                        data = json.dumps({
+                            "ok": True,
+                            "duplicate": True,
+                            "existing_session_key": active_sessions[0],
+                            "action": "reuse",
+                            "message": f"Active {role} session with task_id={task_id} already exists: {active_sessions[0]}"
+                        }).encode()
+                    else:
+                        data = json.dumps({
+                            "ok": True,
+                            "duplicate": False,
+                            "action": "create",
+                            "message": f"No duplicate {role} session for task_id={task_id}. Proceed to spawn."
+                        }).encode()
+            except Exception as e:
+                data = json.dumps({"ok": False, "error": str(e)}).encode()
             resp = (
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
