@@ -121,7 +121,7 @@ def _log_run(result: LocalEvaluationRunResult) -> None:
     layout = ensure_storage_layout(result.storage_root)
     log_file = layout.logs_dir / f"{ts}_{result.reviewed_job.job_id}.log"
     lines = [
-        f"timestamp: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z")}",
+        f"timestamp: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')}",
         f"job_id: {result.reviewed_job.job_id}",
         f"decision: {result.analysis.decision}",
         f"match_score: {result.analysis.match_score}",
