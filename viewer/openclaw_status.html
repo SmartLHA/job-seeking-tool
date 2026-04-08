@@ -288,9 +288,9 @@
     <div class="card">
       <div class="card-header">
         <span class="status-dot dot-gray" id="cli-dot"></span>
-        <h2>🔧 OpenClaw CLI</h2>
+        <h2>🕐 Recent Sessions</h2>
       </div>
-      <div id="cli-status">Loading...</div>
+      <div id="recent-sessions-list">Loading...</div>
     </div>
   </div>
 
@@ -344,15 +344,15 @@
       document.body.classList.add('loading');
       document.getElementById('message-time').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
 
-      const [health, roleStatus, help] = await Promise.all([
+      const [health, roleStatus, recentSessions] = await Promise.all([
         fetchJSON('/api/health'),
         fetchJSON('/api/role-status'),
-        fetchJSON('/api/help')
+        fetchJSON('/api/recent-sessions')
       ]);
 
       renderHealth(health);
       renderRoleStatus(roleStatus);
-      renderHelp(help);
+      renderRecentSessions(recentSessions);
 
       document.body.classList.remove('loading');
     }
@@ -532,16 +532,37 @@
       }
     }
 
-    function renderHelp(data) {
-      const cliDot = document.getElementById('cli-dot');
-      const cliStatus = document.getElementById('cli-status');
-      if (data.error) {
-        cliStatus.innerHTML = `<span class="error">✗ ${data.error}</span>`;
-        setDot(cliDot, 'red');
-      } else {
-        cliStatus.innerHTML = `<span style="color:var(--green)">✓ CLI accessible</span>`;
-        setDot(cliDot, 'green');
+    function renderRecentSessions(data) {
+      const container = document.getElementById('recent-sessions-list');
+      const dot = document.getElementById('cli-dot');
+      if (data.error || !data.sessions) {
+        container.innerHTML = `<span class="error">✗ ${data.error || 'No data'}</span>`;
+        setDot(dot, 'red');
+        return;
       }
+      const sessions = data.sessions || [];
+      if (sessions.length === 0) {
+        container.innerHTML = '<span style="color:var(--muted);font-size:0.8rem">No recent sessions</span>';
+        setDot(dot, 'yellow');
+        return;
+      }
+      setDot(dot, 'green');
+      container.innerHTML = '<div style="display:grid;gap:0.5rem">' +
+        sessions.map(s => {
+          const shortId = s.id.length > 16 ? s.id.slice(0, 8) + '…' + s.id.slice(-6) : s.id;
+          const agentColor = s.agent === 'main' ? 'var(--green)' : s.agent === 'codex' ? 'var(--yellow)' : 'var(--blue, #3b82f6)';
+          const modelShort = s.model ? s.model.replace(/minimax\/|ollama\//g, '') : '—';
+          return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.25rem;padding:0.5rem;background:#0f172a;border-radius:6px;border:1px solid var(--border);font-size:0.75rem">
+            <div style="display:flex;flex-direction:column;gap:0.1rem">
+              <span style="color:${agentColor};font-weight:600">${s.agent}</span>
+              <span style="color:var(--text)">${shortId}</span>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.1rem">
+              <span style="color:var(--muted)">${modelShort}</span>
+              <span style="color:var(--yellow)">${s.age}</span>
+            </div>
+          </div>`;
+        }).join('') + '</div>';
     }
 
     fetchAll();

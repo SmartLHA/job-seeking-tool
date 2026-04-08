@@ -221,6 +221,52 @@ def _get_ollama_usage() -> dict:
     return result
 
 
+def _recent_sessions() -> dict:
+    """Get the 5 most recent sessions across all agents."""
+    now_ms = datetime.now().timestamp() * 1000
+    ONE_WEEK = 604800000
+    all_sessions = []
+
+    for agent in ["main", "codex", "qa"]:
+        sessions_file = Path(f"/Users/lhaclaw/.openclaw/agents/{agent}/sessions/sessions.json")
+        if sessions_file.exists():
+            try:
+                with open(sessions_file) as f:
+                    data = json.load(f)
+                for sid, val in data.items():
+                    updated = val.get("updatedAt", 0)
+                    age = now_ms - updated
+                    if age < ONE_WEEK:
+                        all_sessions.append({
+                            "agent": agent,
+                            "id": sid,
+                            "updatedAt": updated,
+                            "age_ms": age,
+                            "model": val.get("model", "—"),
+                            "status": val.get("status", "—"),
+                        })
+            except Exception:
+                pass
+
+    # Sort by updatedAt descending, take 5
+    all_sessions.sort(key=lambda x: x["updatedAt"], reverse=True)
+    recent = all_sessions[:5]
+
+    return {
+        "sessions": [
+            {
+                "agent": s["agent"],
+                "id": s["id"],
+                "model": s["model"],
+                "age": _age(s["age_ms"]),
+                "status": s["status"],
+            }
+            for s in recent
+        ],
+        "fetched_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+
+
 def handle_api_health() -> bytes:
     data = {
         "ollama": {"available": [], "running": [], "error": None},
@@ -301,6 +347,10 @@ def handle_api_health() -> bytes:
 
 def handle_api_role_status() -> bytes:
     return json.dumps(_role_status()).encode()
+
+
+def handle_api_recent_sessions() -> bytes:
+    return json.dumps(_recent_sessions()).encode()
 
 
 def handle_api_help() -> bytes:
@@ -424,6 +474,19 @@ def handle_request(sock: socket.socket) -> None:
 
         if path == "/api/help":
             data = handle_api_help()
+            resp = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " + str(len(data)).encode() + b"\r\n"
+                b"Access-Control-Allow-Origin: *\r\n"
+                b"Connection: close\r\n"
+                b"\r\n" + data
+            )
+            sock.sendall(resp)
+            return
+
+        if path == "/api/recent-sessions":
+            data = handle_api_recent_sessions()
             resp = (
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
