@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 # Scoring policy belongs in config so later tuning can happen without scattering
@@ -67,3 +68,14 @@ class DecisionPolicy:
 
 
 DEFAULT_DECISION_POLICY = DecisionPolicy()
+
+
+@dataclass(frozen=True, slots=True)
+class TailoringPolicy:
+    require_manual_selection_for_review: bool = True
+    include_keyword_summary: bool = True
+    max_evidence_points: int = 8
+    output_dir: Path = Path("output/tailored_cvs")
+
+
+DEFAULT_TAILORING_POLICY = TailoringPolicy()

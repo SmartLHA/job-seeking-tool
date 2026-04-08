@@ -3,8 +3,10 @@ from __future__ import annotations
 from src.config import (
     DEFAULT_DECISION_POLICY,
     DEFAULT_SCORING_POLICY,
+    DEFAULT_TAILORING_POLICY,
     DecisionPolicy,
     ScoringPolicy,
+    TailoringPolicy,
 )
 from src.decision import decide_application
 from src.models import Blocker, CandidateProfile, JobAnalysis, JobPosting
@@ -21,6 +23,8 @@ def evaluate_reviewed_job(
     blockers: list[Blocker] | None = None,
     scoring_policy: ScoringPolicy = DEFAULT_SCORING_POLICY,
     decision_policy: DecisionPolicy = DEFAULT_DECISION_POLICY,
+    tailoring_policy: TailoringPolicy = DEFAULT_TAILORING_POLICY,
+    review_selected_for_tailoring: bool = False,
 ) -> JobAnalysis:
     scoring_result = score_job(profile, job, policy=scoring_policy)
     blocker_list = list(blockers or [])
@@ -31,7 +35,11 @@ def evaluate_reviewed_job(
         policy=decision_policy,
     )
 
-    tailoring_ready, tailoring_notes = _derive_tailoring_state(decision_result.decision)
+    tailoring_ready, tailoring_notes = _derive_tailoring_state(
+        decision_result.decision,
+        tailoring_policy=tailoring_policy,
+        review_selected_for_tailoring=review_selected_for_tailoring,
+    )
 
     return JobAnalysis(
         job_id=job.job_id,
@@ -52,9 +60,16 @@ def evaluate_reviewed_job(
 
 # Tailoring stays downstream of evaluation. For MVP, apply decisions are ready
 # by default; review decisions need explicit manual selection later.
-def _derive_tailoring_state(decision: str) -> tuple[bool, str]:
+def _derive_tailoring_state(
+    decision: str,
+    *,
+    tailoring_policy: TailoringPolicy,
+    review_selected_for_tailoring: bool,
+) -> tuple[bool, str]:
     if decision == "apply":
         return True, "Evaluation supports tailoring from approved profile and CV facts only."
     if decision == "review":
-        return False, "Manual selection is required before tailoring a review decision."
+        if tailoring_policy.require_manual_selection_for_review and not review_selected_for_tailoring:
+            return False, "Manual selection is required before tailoring a review decision."
+        return True, "Review decision was manually selected for tailoring from approved profile and CV facts only."
     return False, "Skipped jobs are not tailoring-ready."
