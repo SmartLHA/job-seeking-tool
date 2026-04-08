@@ -41,6 +41,21 @@
             <button id="refresh-btn" type="button">Refresh</button>
           </header>
 
+          <section id="prefill-shell" class="status" hidden>
+            <div class="tab-row" role="tablist" aria-label="Prefill method tabs">
+              <button id="prefill-tab-paste" type="button" data-prefill-tab="paste">Paste</button>
+              <button id="prefill-tab-url" type="button" data-prefill-tab="url">URL</button>
+            </div>
+            <div id="prefill-panel-paste" data-prefill-panel="paste">
+              <textarea id="prefill-job-text" rows="10" placeholder="Paste raw job text"></textarea>
+              <button id="prefill-paste-btn" type="button">Prefill from paste</button>
+            </div>
+            <div id="prefill-panel-url" data-prefill-panel="url" hidden>
+              <input id="prefill-job-url" type="url" placeholder="https://example.com/job" />
+              <button id="prefill-url-btn" type="button">Prefill from URL</button>
+            </div>
+            <p id="prefill-status-text"></p>
+          </section>
           <section id="status" class="status">Loading document list…</section>
           <article id="viewer" class="viewer"></article>
         </div>

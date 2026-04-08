@@ -4,6 +4,7 @@ import argparse
 import html
 import sys
 from dataclasses import dataclass
+import json
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import Any, Sequence
 from urllib.parse import parse_qs, urlparse
 
 from src.orchestrator import LocalEvaluationRunResult, run_local_evaluation_flow_from_payload
+from src.parsing import parse_job_from_text, parse_job_from_url
 from src.outcomes import ALLOWED_OUTCOME_STATUSES, create_outcome_record, update_outcome
 from src.profile import load_candidate_profile
 from src.storage import (
@@ -104,6 +106,9 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             if parsed.path == "/evaluate":
                 self._handle_evaluate(form)
                 return
+            if parsed.path == "/prefill":
+                self._handle_prefill(form)
+                return
             if parsed.path == "/outcome":
                 self._handle_outcome(form)
                 return
@@ -190,6 +195,31 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             )
             self._send_html(page)
 
+        def _handle_prefill(self, form: dict[str, str]) -> None:
+            mode = form.get("prefill_mode", "").strip()
+            try:
+                if mode == "paste":
+                    payload = parse_job_from_text(form.get("job_text", ""))
+                elif mode == "url":
+                    payload = parse_job_from_url(form.get("job_url", ""))
+                else:
+                    raise ValueError("prefill_mode must be paste or url")
+            except Exception as exc:
+                self._send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            values = default_form_values()
+            values.update({key: stringify_form_value(value) for key, value in payload.items() if key in values})
+            if mode == "paste":
+                values["input_method"] = "copied_text"
+                values["copied_text"] = form.get("job_text", "")
+            else:
+                submitted_url = form.get("job_url", "").strip()
+                values["input_method"] = "url"
+                values["job_url"] = submitted_url
+                values["source_ref"] = submitted_url or values.get("source_ref", "")
+            self._send_json({"ok": True, "values": values})
+
         def _handle_outcome(self, form: dict[str, str]) -> None:
             job_id = form.get("job_id", "").strip()
             if not job_id:
@@ -223,6 +253,14 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             encoded = body.encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def _send_json(self, payload: dict[str, Any], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+            encoded = json.dumps(payload).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(encoded)))
             self.end_headers()
             self.wfile.write(encoded)
@@ -333,7 +371,7 @@ def render_home_page(*, profile: Any, history: list[dict[str, Any]], values: dic
         <h2>Enter and review one job</h2>
         <p><strong>Input method</strong> means how you brought the job in here first. <strong>Source type</strong> means what kind of source the saved reviewed record should represent for scoring and history.</p>
         <p><strong>Original pasted/context text</strong> is saved as reference only. <strong>Reviewed description used for scoring</strong> is the cleaned version you want the evaluation to use.</p>
-        <form method="post" action="/evaluate">
+        <form method="post" action="/evaluate" id="job-form">
           {render_input_form(values)}
           <div class="actions"><button type="submit">Evaluate and save locally</button></div>
         </form>
@@ -355,6 +393,22 @@ def render_input_form(values: dict[str, str]) -> str:
         return f'<label><span>{escape(label)}</span><input name="{escape(name)}" value="{value}" placeholder="{escape(placeholder)}"></label>'
 
     return f"""
+      <section class="panel subtle" id="prefill-panel">
+        <h3>Quick prefill</h3>
+        <div class="tab-row" role="tablist" aria-label="Prefill method tabs">
+          <button type="button" class="tab-button active" data-prefill-tab="paste">Paste</button>
+          <button type="button" class="tab-button" data-prefill-tab="url">URL</button>
+        </div>
+        <div class="tab-panel active" data-prefill-panel="paste">
+          <label><span>Paste job text</span><textarea id="prefill-job-text" placeholder="Paste the raw job advert here"></textarea></label>
+          <div class="actions"><button type="button" id="prefill-paste-btn">Prefill from paste</button></div>
+        </div>
+        <div class="tab-panel" data-prefill-panel="url" hidden>
+          <label><span>Job posting URL</span><input id="prefill-job-url" type="url" placeholder="https://example.com/job"></label>
+          <div class="actions"><button type="button" id="prefill-url-btn">Prefill from URL</button></div>
+        </div>
+        <p id="prefill-status" class="prefill-status" aria-live="polite"></p>
+      </section>
       <div class="grid two-col">
         {field('job_id', 'Job id')}
         {field('input_method', 'Input method used to enter this job', placeholder='url or copied_text')}
@@ -530,6 +584,12 @@ def render_page(title: str, body: str) -> str:
     .flash.error {{ border-left-color: #b91c1c; background: #fef2f2; }}
     .grid {{ display: grid; gap: 12px; }}
     .two-col {{ grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }}
+    .subtle {{ background: #f8fafc; box-shadow: inset 0 0 0 1px #e2e8f0; }}
+    .tab-row {{ display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }}
+    .tab-button {{ background: #e2e8f0; color: #0f172a; }}
+    .tab-button.active {{ background: #0f172a; color: white; }}
+    .tab-panel[hidden] {{ display: none; }}
+    .prefill-status {{ min-height: 1.25rem; margin: 8px 0 0; color: #475569; }}
     .summary-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }}
     .detail-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; }}
     label {{ display: block; margin-bottom: 12px; }}
@@ -546,6 +606,59 @@ def render_page(title: str, body: str) -> str:
 </head>
 <body>
 {body}
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {{
+      const tabs = document.querySelectorAll('[data-prefill-tab]');
+      const panels = document.querySelectorAll('[data-prefill-panel]');
+      const status = document.getElementById('prefill-status');
+      const form = document.getElementById('job-form');
+
+      function setStatus(message, isError = false) {{
+        if (!status) return;
+        status.textContent = message;
+        status.style.color = isError ? '#b91c1c' : '#475569';
+      }}
+
+      function showTab(name) {{
+        tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.prefillTab === name));
+        panels.forEach((panel) => {{
+          const active = panel.dataset.prefillPanel === name;
+          panel.classList.toggle('active', active);
+          panel.hidden = !active;
+        }});
+      }}
+
+      async function prefill(mode) {{
+        const payload = new URLSearchParams();
+        payload.set('prefill_mode', mode);
+        if (mode === 'paste') payload.set('job_text', document.getElementById('prefill-job-text')?.value || '');
+        if (mode === 'url') payload.set('job_url', document.getElementById('prefill-job-url')?.value || '');
+        setStatus('Prefilling...');
+        try {{
+          const response = await fetch('/prefill', {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }},
+            body: payload.toString(),
+          }});
+          const data = await response.json();
+          if (!response.ok || !data.ok) throw new Error(data.error || 'Prefill failed');
+          Object.entries(data.values || {{}}).forEach(([name, value]) => {{
+            const field = form?.elements.namedItem(name);
+            if (!field) return;
+            field.value = value ?? '';
+          }});
+          setStatus('Form prefilled. Review before saving.');
+        }} catch (error) {{
+          setStatus(error.message || 'Prefill failed', true);
+        }}
+      }}
+
+      tabs.forEach((tab) => tab.addEventListener('click', () => showTab(tab.dataset.prefillTab)));
+      document.getElementById('prefill-paste-btn')?.addEventListener('click', () => prefill('paste'));
+      document.getElementById('prefill-url-btn')?.addEventListener('click', () => prefill('url'));
+      showTab('paste');
+    }});
+  </script>
 </body>
 </html>
 """
@@ -574,6 +687,14 @@ def default_form_values() -> dict[str, str]:
         "preferred_skills": "",
         "notes": "",
     }
+
+
+def stringify_form_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return "\n".join(str(item) for item in value)
+    return str(value)
 
 
 def split_lines_or_commas(value: str) -> list[str]:

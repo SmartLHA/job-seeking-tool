@@ -475,6 +475,52 @@ searchInput.addEventListener('input', () => {
   }
 });
 
+function setPrefillStatus(message, isError = false) {
+  const el = document.getElementById('prefill-status-text');
+  if (!el) return;
+  el.textContent = message;
+  el.style.color = isError ? '#b91c1c' : '';
+}
+
+function showPrefillTab(name) {
+  document.querySelectorAll('[data-prefill-tab]').forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.prefillTab === name);
+  });
+  document.querySelectorAll('[data-prefill-panel]').forEach((panel) => {
+    panel.hidden = panel.dataset.prefillPanel !== name;
+  });
+}
+
+async function prefillForm(mode) {
+  const payload = new URLSearchParams();
+  payload.set('prefill_mode', mode);
+  if (mode === 'paste') payload.set('job_text', document.getElementById('prefill-job-text')?.value || '');
+  if (mode === 'url') payload.set('job_url', document.getElementById('prefill-job-url')?.value || '');
+  setPrefillStatus('Prefilling...');
+  try {
+    const response = await fetch('/prefill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: payload.toString(),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || 'Prefill failed');
+    Object.entries(data.values || {}).forEach(([name, value]) => {
+      const field = document.querySelector(`[name="${CSS.escape(name)}"]`);
+      if (field) field.value = value ?? '';
+    });
+    setPrefillStatus('Form prefilled. Review before saving.');
+  } catch (error) {
+    setPrefillStatus(error.message || 'Prefill failed', true);
+  }
+}
+
+document.getElementById('prefill-tab-paste')?.addEventListener('click', () => showPrefillTab('paste'));
+document.getElementById('prefill-tab-url')?.addEventListener('click', () => showPrefillTab('url'));
+document.getElementById('prefill-paste-btn')?.addEventListener('click', () => prefillForm('paste'));
+document.getElementById('prefill-url-btn')?.addEventListener('click', () => prefillForm('url'));
+showPrefillTab('paste');
+
 const initialDoc = new URL(window.location.href).searchParams.get('doc') || HOME_PATH;
 setStatus('Loading manifest...');
 fetchManifest()
