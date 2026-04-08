@@ -109,13 +109,28 @@ def _role_status() -> dict:
         session_key, session_val = get_recent_session(ROLE_AGENT_MAP.get(key.lower(), key))
         if not session_key:
             return {"key": key, "label": label, "status": "amber", "age": "—", "summary": f"No recent {label} session", "session_key": "—"}
+        
         updated = session_val.get("updatedAt", 0)
-        age_str = _age(now_ms - updated)
+        age_ms = now_ms - updated
+        age_str = _age(age_ms)
         session_short = session_key.split(":")[-1][:12]
+        
+        # Determine status: running (green) if active recently + running state
+        # error (red) if failed/aborted, idle (amber) otherwise
+        sess_status = session_val.get("status", "")
+        aborted = session_val.get("abortedLastRun", False)
+        
+        if aborted or sess_status in ("failed", "error"):
+            status = "red"
+        elif sess_status == "running" and age_ms < 120000:  # updated within 2 min
+            status = "green"
+        else:
+            status = "amber"
+        
         return {
             "key": key,
             "label": label,
-            "status": "green",
+            "status": status,
             "age": age_str,
             "summary": f"Session {session_short}…",
             "session_key": session_key,
