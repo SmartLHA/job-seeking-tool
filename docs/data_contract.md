@@ -106,6 +106,12 @@ Each score field should support:
 - numeric contribution
 - short explanation
 
+Skills scoring rule:
+- Partial matches score proportionally: `(matched / total) * weight`
+- Full matches keep the base weight, then add a configurable bonus for each extra matched skill beyond the first
+- Required skills use `bonus_per_extra_required`
+- Preferred skills use `bonus_per_extra_preferred`
+
 ## Blocker Contract
 
 Each blocker should be represented as a structured item:

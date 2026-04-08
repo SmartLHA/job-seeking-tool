@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 class ScoringWeights:
     skills_required: float = 35.0
     skills_preferred: float = 5.0
+    bonus_per_extra_required: float = 3.5
+    bonus_per_extra_preferred: float = 0.25
     experience: float = 20.0
     location: float = 10.0
     salary: float = 10.0

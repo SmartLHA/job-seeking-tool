@@ -56,15 +56,15 @@ def score_job(
         notes=notes,
     )
 
-    match_score = round(
+    raw_match_score = (
         skills_score
         + experience_score
         + location_score
         + salary_score
         + domain_score
-        + work_mode_score,
-        2,
+        + work_mode_score
     )
+    match_score = round(min(raw_match_score, 100.0), 2)
     confidence = _derive_confidence(job, policy)
 
     strengths = sorted(set(matched_required + matched_preferred))
@@ -93,8 +93,12 @@ def _score_required_skills(
     if not required_list:
         return 0.0, "No required skills were provided in the reviewed job data", [], []
 
-    ratio = len(matched) / len(required_list)
-    score = policy.weights.skills_required * ratio
+    score = _score_skill_bucket(
+        matched_count=len(matched),
+        total_count=len(required_list),
+        weight=policy.weights.skills_required,
+        bonus_per_extra_match=policy.weights.bonus_per_extra_required,
+    )
     reason = f"Matched {len(matched)} of {len(required_list)} required skills"
     return score, reason, matched, missing
 
@@ -109,10 +113,27 @@ def _score_preferred_skills(
     if not preferred_list:
         return 0.0, "No preferred skills were provided in the reviewed job data", [], []
 
-    ratio = len(matched) / len(preferred_list)
-    score = policy.weights.skills_preferred * ratio
+    score = _score_skill_bucket(
+        matched_count=len(matched),
+        total_count=len(preferred_list),
+        weight=policy.weights.skills_preferred,
+        bonus_per_extra_match=policy.weights.bonus_per_extra_preferred,
+    )
     reason = f"Matched {len(matched)} of {len(preferred_list)} preferred skills"
     return score, reason, matched, missing
+
+
+def _score_skill_bucket(
+    matched_count: int,
+    total_count: int,
+    weight: float,
+    bonus_per_extra_match: float,
+) -> float:
+    if total_count <= 0 or matched_count <= 0:
+        return 0.0
+    if matched_count < total_count:
+        return weight * (matched_count / total_count)
+    return weight + ((matched_count - 1) * bonus_per_extra_match)
 
 
 # Important scoring section: unknown job data should lower confidence before it

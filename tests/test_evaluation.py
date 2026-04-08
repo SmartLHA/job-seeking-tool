@@ -48,7 +48,7 @@ def test_evaluate_reviewed_job_builds_apply_analysis_from_scoring_and_decision()
     analysis = evaluate_reviewed_job(build_candidate(), build_job())
 
     assert analysis.job_id == "job-001"
-    assert analysis.match_score == 97.5
+    assert analysis.match_score == 100.0
     assert analysis.confidence == "high"
     assert analysis.decision == "apply"
     assert analysis.blockers == []
@@ -86,7 +86,7 @@ def test_evaluate_reviewed_job_allows_blockers_to_override_score() -> None:
         ],
     )
 
-    assert analysis.match_score == 97.5
+    assert analysis.match_score == 100.0
     assert analysis.decision == "skip"
     assert len(analysis.blockers) == 1
     assert analysis.blockers[0].code == "work_authorization"
@@ -120,7 +120,7 @@ def test_evaluate_reviewed_job_defaults_low_salary_mismatch_to_review() -> None:
         build_job(salary_min_gbp=45000, salary_max_gbp=48000),
     )
 
-    assert analysis.match_score == 87.5
+    assert analysis.match_score == 91.0
     assert analysis.decision == "review"
     assert analysis.tailoring_ready is False
     assert any(flag.code == "salary-below-floor" for flag in analysis.risk_flags)
