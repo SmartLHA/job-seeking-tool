@@ -263,7 +263,7 @@
         <strong>👋 Boss Mic</strong><br/>
         <span id="latest-message">All systems operational.</span>
       </div>
-      <p class="timestamp" id="message-time"></p>
+      <p class="timestamp" id="message-time" style="display:none"></p>
     </div>
 
     <!-- Sessions -->
@@ -347,15 +347,17 @@
       document.body.classList.add('loading');
       document.getElementById('last-refresh').textContent = 'Last refresh: ' + new Date().toLocaleTimeString();
 
-      const [health, roleStatus, recentSessions] = await Promise.all([
+      const [health, roleStatus, recentSessions, latestMsg] = await Promise.all([
         fetchJSON('/api/health'),
         fetchJSON('/api/role-status'),
-        fetchJSON('/api/recent-sessions')
+        fetchJSON('/api/recent-sessions'),
+        fetchJSON('/api/latest-message')
       ]);
 
       renderHealth(health);
       renderRoleStatus(roleStatus);
       renderRecentSessions(recentSessions);
+      renderLatestMessage(latestMsg);
 
       document.body.classList.remove('loading');
     }
@@ -499,6 +501,13 @@
           </li>`;
         }).join('');
         setDot(cronDot, hasError ? 'red' : 'green');
+      }
+    }
+
+    function renderLatestMessage(data) {
+      const el = document.getElementById('latest-message');
+      if (data && data.text) {
+        el.textContent = data.text;
       }
     }
 

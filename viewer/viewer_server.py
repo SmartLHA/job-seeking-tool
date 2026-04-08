@@ -349,6 +349,62 @@ def handle_api_role_status() -> bytes:
     return json.dumps(_role_status()).encode()
 
 
+def _latest_message() -> dict:
+    """Get the most recent meaningful message from the main session that needs Mic's review."""
+    try:
+        sessions_file = Path(f"/Users/lhaclaw/.openclaw/agents/main/sessions/sessions.json")
+        if not sessions_file.exists():
+            return {"text": "All systems operational.", "error": None}
+        with open(sessions_file) as f:
+            data = json.load(f)
+        # Find most recent main session
+        sorted_sessions = sorted(data.items(), key=lambda x: x[1].get("updatedAt", 0), reverse=True)
+        main_sessions = [(k, v) for k, v in sorted_sessions if k.startswith("agent:main:")]
+        if not main_sessions:
+            return {"text": "All systems operational.", "error": None}
+        session_key, session_val = main_sessions[0]
+        # Find the JSONL file
+        sid = session_val.get("sessionId", "")
+        jsonl_pattern = f"/Users/lhaclaw/.openclaw/agents/main/sessions/{sid}*.jsonl"
+        files = glob.glob(jsonl_pattern)
+        if not files:
+            return {"text": "All systems operational.", "error": None}
+        jsonl_path = files[0]
+        lines = open(jsonl_path).readlines()
+        # Scan from end for last assistant text message (not thinking/toolCall)
+        for line in reversed(lines):
+            try:
+                m = json.loads(line)
+                if m.get("type") != "message":
+                    continue
+                msg = m.get("message", {})
+                if msg.get("role") != "assistant":
+                    continue
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    # Extract only text blocks, skip thinking and tool calls
+                    text_parts = []
+                    for c in content:
+                        if isinstance(c, dict) and c.get("type") == "text":
+                            text_parts.append(c.get("text", ""))
+                    content = " ".join(text_parts)
+                if content and content.strip():
+                    # Skip if it looks like internal housekeeping
+                    stripped = content.strip()
+                    if stripped.startswith("<<<"):
+                        continue
+                    return {"text": stripped[:500], "error": None}  # cap at 500 chars
+            except Exception:
+                continue
+        return {"text": "All systems operational.", "error": None}
+    except Exception as e:
+        return {"text": "All systems operational.", "error": str(e)}
+
+
+def handle_api_latest_message() -> bytes:
+    return json.dumps(_latest_message()).encode()
+
+
 def handle_api_recent_sessions() -> bytes:
     return json.dumps(_recent_sessions()).encode()
 
@@ -487,6 +543,19 @@ def handle_request(sock: socket.socket) -> None:
 
         if path == "/api/recent-sessions":
             data = handle_api_recent_sessions()
+            resp = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " + str(len(data)).encode() + b"\r\n"
+                b"Access-Control-Allow-Origin: *\r\n"
+                b"Connection: close\r\n"
+                b"\r\n" + data
+            )
+            sock.sendall(resp)
+            return
+
+        if path == "/api/latest-message":
+            data = handle_api_latest_message()
             resp = (
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
