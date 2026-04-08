@@ -160,6 +160,29 @@ def _openclaw_status() -> dict:
         return {"ok": False, "error": str(e)}
 
 
+def _get_active_sessions() -> dict:
+    """Get active session counts (updated within 1 hour) per agent."""
+    now_ms = datetime.now().timestamp() * 1000
+    ONE_HOUR = 3600000
+    agents = ["main", "codex", "qa"]
+    result = {}
+    for agent in agents:
+        sessions_file = Path(f"/Users/lhaclaw/.openclaw/agents/{agent}/sessions/sessions.json")
+        count = 0
+        if sessions_file.exists():
+            try:
+                with open(sessions_file) as f:
+                    data = json.load(f)
+                for val in data.values():
+                    updated = val.get("updatedAt", 0)
+                    if now_ms - updated < ONE_HOUR:
+                        count += 1
+            except Exception:
+                pass
+        result[agent] = count
+    return result
+
+
 def handle_api_health() -> bytes:
     data = {
         "ollama": {"available": [], "running": [], "error": None},
@@ -216,6 +239,9 @@ def handle_api_health() -> bytes:
         ]
     except Exception:
         data["cron_jobs"] = []
+
+    # Add active session counts (updated within 1 hour)
+    data["active_sessions"] = _get_active_sessions()
 
     return json.dumps(data).encode()
 

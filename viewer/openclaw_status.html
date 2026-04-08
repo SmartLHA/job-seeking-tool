@@ -360,15 +360,15 @@
       const available = ollama.available || [];
       const sessions = openclaw.sessions || {};
       const byAgent = sessions.byAgent || [];
+      const activeSessions = d.active_sessions || {};
 
-      // MiniMax
-      const mainAgent = byAgent.find(a => a.agentId === 'main');
-      const minimaxCount = mainAgent?.count || 0;
-      document.getElementById('minimax-count').textContent = minimaxCount;
+      // MiniMax - only count sessions updated in last 1 hour
+      const minimaxActive = activeSessions.main || 0;
+      document.getElementById('minimax-count').textContent = minimaxActive;
       const minimaxDot = document.getElementById('minimax-dot');
       const minimaxBadge = document.getElementById('minimax-badge');
       const minimaxMetric = document.getElementById('minimax-count');
-      if (minimaxCount > 0) {
+      if (minimaxActive > 0) {
         minimaxBadge.className = 'llm-badge badge-green';
         minimaxBadge.textContent = 'ACTIVE';
         setDot(minimaxDot, 'green');
@@ -408,14 +408,13 @@
       }
       document.getElementById('e4b-size').textContent = e4bAvailable?.size || '—';
 
-      // Codex
-      const codexAgent = byAgent.find(a => a.agentId === 'codex');
-      const codexCount = codexAgent?.count || 0;
-      document.getElementById('codex-sessions').textContent = codexCount;
+      // Codex - only count sessions updated in last 1 hour
+      const codexActive = activeSessions.codex || 0;
+      document.getElementById('codex-sessions').textContent = codexActive;
       const codexDot = document.getElementById('codex-dot');
       const codexBadge = document.getElementById('codex-badge');
       const codexMetric = document.getElementById('codex-sessions');
-      if (codexCount > 0) {
+      if (codexActive > 0) {
         codexBadge.className = 'llm-badge badge-green';
         codexBadge.textContent = 'ONLINE';
         setDot(codexDot, 'green');
@@ -427,18 +426,20 @@
         setMetricColor(codexMetric, 'yellow');
       }
 
-      // Sessions
+      // Sessions - total count still shows all
       const totalSessions = sessions.count || 0;
       document.getElementById('session-count').textContent = totalSessions;
       const sessionsDot = document.getElementById('sessions-dot');
       setDot(sessionsDot, totalSessions > 0 ? 'green' : 'red');
 
+      // Active sessions per agent in last hour
       const agentList = document.getElementById('agent-list');
       agentList.innerHTML = byAgent.map(a => {
-        const color = a.count > 0 ? 'var(--green)' : 'var(--muted)';
+        const active = activeSessions[a.agentId] || 0;
+        const color = active > 0 ? 'var(--green)' : 'var(--muted)';
         return `<div style="display:flex;justify-content:space-between;padding:0.25rem 0;border-bottom:1px solid var(--border)">
           <span style="color:${color}">${a.agentId}</span>
-          <span>${a.count} sessions</span>
+          <span>${a.count} total (${active} active)</span>
         </div>`;
       }).join('');
 
