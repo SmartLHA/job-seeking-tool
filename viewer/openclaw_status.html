@@ -473,7 +473,7 @@
       // Active sessions per agent in last hour
       const agentList = document.getElementById('agent-list');
       agentList.innerHTML = byAgent.map(a => {
-        const active = activeSessions[a.agentId] || 0;
+        const active = (activeSessions[a.agentId] || {}).active_2h || 0;
         const color = active > 0 ? 'var(--green)' : 'var(--muted)';
         return `<div style="display:flex;justify-content:space-between;padding:0.25rem 0;border-bottom:1px solid var(--border)">
           <span style="color:${color}">${a.agentId}</span>
