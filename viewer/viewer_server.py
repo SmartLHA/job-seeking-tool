@@ -93,6 +93,7 @@ def _role_status() -> dict:
         "silverhand": "main",
         "handy": "codex",
         "scout": "qa",
+        "wiser": "wiser",
     }
     now_ms = datetime.now().timestamp() * 1000
 
@@ -151,6 +152,8 @@ def _role_status() -> dict:
             build_role("silverhand", "SilverHand"),
             build_role("handy", "Handy"),
             build_role("scout", "Scout"),
+            build_role("wiser", "Wiser"),
+            build_role("scout-dev", "Scout-Dev"),
         ],
         "fetched_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
     }
