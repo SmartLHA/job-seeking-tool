@@ -1,4 +1,4 @@
-# Scout Task Template — Combined (v6)
+# Scout Task Template — Combined (v7)
 
 > Routing rule is for SilverHand (planner) only. Scout receives tasks that are already pre-scored and pre-routed.
 
@@ -6,9 +6,9 @@
 
 ## Part A — Task Routing (SilverHand only — DO NOT send to Scout)
 
-Before assigning any task to Scout, SilverHand MUST score complexity:
+Before assigning any task, SilverHand MUST:
 
-### Complexity Score (6 factors)
+### Step 1 — Score Complexity (6 factors)
 +1 if multi-step logic required
 +1 if external dependency exists
 +1 if requirements are ambiguous
@@ -16,21 +16,39 @@ Before assigning any task to Scout, SilverHand MUST score complexity:
 +1 if correctness is critical
 +1 if involves async/concurrency/state
 
-### Classification
-- Score 0-1 → LOW → assign to Scout (Gemma OK)
-- Score 2-3 → MEDIUM → assign to Handy (DEV) — risky for Scout
-- Score 4-6 → HIGH → assign to Handy (DEV) only
+### Step 2 — Classify
+- Score 0-2 → LOW → Gemma Dev OK
+- Score 3 → MEDIUM → Gemma risky, Codex fallback
+- Score 4-6 → HIGH → Codex Dev only
 
-### Gemma Assignment Gate
-Scout (Gemma) OK ONLY if ALL true:
-- Score ≤ 1
+### Step 3 — Assign Dev Model
+**Gemma Dev** ONLY if ALL true:
+- Score ≤ 2
 - Single function or small script
 - No external systems (API, DB, auth, network)
 - No async/concurrency/stateful logic
-- Requirements are clear and specific
-- Output is easy to verify
+- Requirements clear and specific
+- Output easy to verify
 
-**If ANY violated → route to Handy (DEV) instead.**
+**Otherwise → Codex Dev**
+
+### Step 4 — QA Always Uses Gemma
+QA (Scout) always uses Gemma with strict 12-point checklist (Part E).
+Fail on any uncertainty.
+
+### Step 5 — Escalation
+If QA FAIL → Re-run Dev on Codex → QA must still pass strict checklist.
+
+### Output format for routing decision:
+```yaml
+task_type: coding
+complexity: low|medium|high
+score: 0-6
+use_gemma_dev: true|false
+use_gemma_qa: true
+escalate_to_codex: true|false
+reason: "max 10 words"
+```
 
 ---
 
@@ -45,6 +63,7 @@ Scout (Gemma) OK ONLY if ALL true:
 6. **Code reviewer mindset: assume code is WRONG until proven correct**
 7. **Actively try to find edge cases, logical errors, missing handling**
 8. **If ANY doubt exists → FAIL. Do NOT be lenient.**
+9. **JSON output ONLY for final QA report**
 
 ---
 
@@ -59,14 +78,14 @@ focus: [what to verify]
 ### Checks
 [exact commands to run]
 
-### Report — EXACT YAML
-```yaml
-task_id: scout-qa-<name>
-status: pass|fail
-check_1: "EXACT output | FAIL"
-check_2: "EXACT output | FAIL"
-failures: []
-```
+### Report — EXACT JSON
+{
+  "result": "pass" | "fail",
+  "check_X": "EXACT output | FAIL",
+  "check_Y": "EXACT output | FAIL",
+  "failed_checks": [],
+  "reason": "short specific reason"
+}
 ```
 
 ### Simple Dev Task Format
@@ -123,35 +142,46 @@ You are a strict code reviewer. Act like one.
 
 ---
 
-## Part E — QA Checklist (apply to every QA task)
+## Part E — QA Strict Checklist (12-point — apply to every QA task)
 
-For every QA task, verify ALL of the following:
+For every QA task, verify ALL 12 points:
 
-- [ ] Does it fully meet the requirement?
-- [ ] Any edge case missing?
-- [ ] Any incorrect assumptions?
-- [ ] Any syntax or runtime issue?
-- [ ] Does the code handle empty input correctly?
-- [ ] Does the code handle None values correctly?
-- [ ] Does the code handle boundary conditions correctly?
-- [ ] Does the test output actually prove correctness (not just "no error")?
-
-**If ANY item cannot be verified as YES → FAIL.**
+1. **REQUIREMENT MATCH**: Does it fully satisfy the task? Fail if any requirement missing, misinterpreted, or extra behaviour exists.
+2. **LOGIC CORRECTNESS**: Check algorithms, branching, loops, conditions. Fail if incorrect for valid input.
+3. **EDGE CASES**: Evaluate empty, null, zero, negative, large, unexpected inputs. Fail if unhandled.
+4. **INPUT/OUTPUT VALIDATION**: Confirm types and format match requirement exactly. Fail on type mismatch or wrong structure.
+5. **EXECUTION SAFETY**: Detect runtime errors (division by zero, index out of range, null refs). Fail if can crash under normal use.
+6. **STATE & SIDE EFFECTS**: Check variable mutations, shared state, order-dependent behaviour. Fail if hidden state dependency.
+7. **ASYNC/CONCURRENCY** (if applicable): Ensure proper await, avoid race conditions. Fail if misused.
+8. **EXTERNAL DEPENDENCIES**: Validate API/DB/network error handling. Fail if unexpected responses ignored.
+9. **CODE QUALITY** (light): Assess readability, unnecessary complexity, redundancy. Fail if confusing or overly complex.
+10. **SELF-CHECK**: Ask "Am I 100% confident this code is correct?" Fail if any doubt exists.
+11. **MENTAL TEST CASE SIMULATION**: Run 1-2 mental test cases. Fail if output cannot be confidently predicted.
+12. **FINAL DECISION**: Pass only if all above checks passed with no uncertainty. Otherwise fail.
 
 ### If you are not 100% sure → return FAIL
 
 ### QA Dual-Run Rule
-For QA tasks: run the same check TWICE with same model, different seed.
-- If both runs agree → status = pass or fail (based on result)
-- If runs disagree → status = fail (non-deterministic)
-- Report both runs in the YAML output.
+Run the same check TWICE with same model.
+- Both agree → result stands
+- Disagree → status = fail (non-deterministic)
+- Report both runs.
+
+### Final QA Report — JSON ONLY
+```json
+{
+  "result": "pass" | "fail",
+  "reason": "short specific reason",
+  "failed_checks": ["list of failed items from 1-12"]
+}
+```
 
 ---
 
 ## Common Issues Fixed
 
-### Issue: Scout returns prose instead of YAML
-Fix: Start reply with `task_id:` line. Nothing else before it.
+### Issue: Scout returns prose instead of YAML/JSON
+Fix: Start reply with `task_id:` or `{` line. Nothing else before it.
 
 ### Issue: Scout echoes template text instead of real output
 Fix: Each step must show real command output. If template text appears → treat as FAIL.
