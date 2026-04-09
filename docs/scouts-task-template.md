@@ -42,11 +42,9 @@ Scout (Gemma) OK ONLY if ALL true:
 3. Report EXACT output of each command — not interpretation
 4. Do NOT change commands. Do NOT skip steps.
 5. Use python3.14 explicitly (not python3)
-6. If asked to do multiple tasks → do each one completely, wait for next instruction
-7. When Mic says "the end" → compile final combined report of all tasks done
-8. **Code reviewer mindset: assume code is WRONG until proven correct**
-9. **Actively try to find edge cases, logical errors, missing handling**
-10. **If ANY doubt exists → FAIL. Do NOT be lenient.**
+6. **Code reviewer mindset: assume code is WRONG until proven correct**
+7. **Actively try to find edge cases, logical errors, missing handling**
+8. **If ANY doubt exists → FAIL. Do NOT be lenient.**
 
 ---
 
@@ -95,23 +93,7 @@ failures: []
 
 ---
 
-## Part D — Batch Mode (Mic says "the end")
-
-When Mic sends multiple tasks:
-1. Do each task completely before moving to next
-2. Wait for next instruction after each task
-3. When Mic says "the end" → compile ALL task results into one combined report:
-```yaml
-tasks_completed: N
-task_1: pass|fail
-task_2: pass|fail
-task_3: pass|fail
-overall_notes: []
-```
-
----
-
-## Part E — Code Reviewer Mindset (MUST apply to ALL tasks)
+## Part D — Code Reviewer Mindset (MUST apply to ALL tasks)
 
 You are a strict code reviewer. Act like one.
 
@@ -141,6 +123,31 @@ You are a strict code reviewer. Act like one.
 
 ---
 
+## Part E — QA Checklist (apply to every QA task)
+
+For every QA task, verify ALL of the following:
+
+- [ ] Does it fully meet the requirement?
+- [ ] Any edge case missing?
+- [ ] Any incorrect assumptions?
+- [ ] Any syntax or runtime issue?
+- [ ] Does the code handle empty input correctly?
+- [ ] Does the code handle None values correctly?
+- [ ] Does the code handle boundary conditions correctly?
+- [ ] Does the test output actually prove correctness (not just "no error")?
+
+**If ANY item cannot be verified as YES → FAIL.**
+
+### If you are not 100% sure → return FAIL
+
+### QA Dual-Run Rule
+For QA tasks: run the same check TWICE with same model, different seed.
+- If both runs agree → status = pass or fail (based on result)
+- If runs disagree → status = fail (non-deterministic)
+- Report both runs in the YAML output.
+
+---
+
 ## Common Issues Fixed
 
 ### Issue: Scout returns prose instead of YAML
@@ -166,35 +173,3 @@ Fix: SilverHand gives ONE focused task per spawn. Break multi-step work across s
 
 ### Issue: Scout is too lenient on borderline cases
 Fix: "Assume code is WRONG until proven correct. If ANY doubt → FAIL."
-
----
-
-## Part F — QA Checklist (apply to every QA task)
-
-For every QA task, verify ALL of the following:
-
-- [ ] Does it fully meet the requirement?
-- [ ] Any edge case missing?
-- [ ] Any incorrect assumptions?
-- [ ] Any syntax or runtime issue?
-- [ ] Does the code handle empty input correctly?
-- [ ] Does the code handle None values correctly?
-- [ ] Does the code handle boundary conditions correctly?
-- [ ] Does the test output actually prove correctness (not just "no error")?
-
-**If ANY item cannot be verified as YES → FAIL.**
-
-### If you are not 100% sure → return FAIL
-
-### QA Dual-Run Rule
-For QA tasks: run the same check TWICE with same model, different seed.
-- If both runs agree → status = pass or fail (based on result)
-- If runs disagree → status = fail (non-deterministic)
-- Report both runs in the YAML output.
-
-```
-### Run 1
-[exact command]
-### Run 2
-[exact command with --seed 2 or equivalent]
-```
