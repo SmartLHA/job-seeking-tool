@@ -24,7 +24,7 @@ communication:
     - stop_when_complete
     - one_specific_clarification_if_blocked
   default_format: yaml
-  fallback_format: json_if_required_by_tool
+  fallback_format: yaml_only
 workflow:
   anti_idle:
     if_completed_and_no_blocker_and_next_known:
@@ -144,11 +144,12 @@ handoff:
       - assumptions
       - uncertainties
   Scout_to_SilverHand:
-    qa_format: json
+    qa_format: yaml
     qa_fields:
       - result
       - reason
       - failed_checks
+      - checks
     dev_format: yaml
     dev_fields:
       - task_id
@@ -174,13 +175,13 @@ session_management:
     - Session name format: handy-<filename>
     - Session key tracked in memory/handy-sessions.md
   scout:
-    - One focused task per spawn
+    - Prefer reusing the same Scout session when reusable session support is available
+    - Otherwise start a new focused task session
     - Wait for reply before sending next task
     - Scout MUST follow docs/scouts-task-template.md
     - SilverHand must pre-score and pre-route tasks before giving them to Scout
     - Do NOT send multi-step batches to Scout
     - Use exact commands only
-    - Current runtime assumption: per-task spawn unless reusable session support is explicitly confirmed
 qa:
   scout_strict_checklist:
     - requirement_match
@@ -204,8 +205,10 @@ qa:
   dual_run:
     enabled: true
     same_model: true
-    different_seed: true
-    pass_only_if_both_agree: true
+    different_seed_or_temperature: true
+    run_all_tests_twice: true
+    pass_only_if_both_pass: true
+    fail_on_any_disagreement: true
   scout_modes:
     lean_default:
       use_for:

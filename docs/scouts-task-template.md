@@ -59,8 +59,8 @@ Fail on any uncertainty.
 6. Code reviewer mindset: assume code is WRONG until proven correct
 7. Actively try to find edge cases, logical errors, missing handling
 8. If ANY doubt exists → FAIL. Do NOT be lenient.
-9. QA verdicts return JSON only
-10. Simple dev task results return YAML only
+9. All communication returns YAML only
+10. Simple dev task and QA task results both return YAML only
 
 ---
 
@@ -76,17 +76,14 @@ checks:
 - [exact command 2]
 ```
 
-### QA Report — EXACT JSON ONLY
-```json
-{
-  "result": "pass" | "fail",
-  "reason": "short specific reason",
-  "failed_checks": ["list of failed items from Part E"],
-  "checks": {
-    "check_1": "EXACT output | FAIL",
-    "check_2": "EXACT output | FAIL"
-  }
-}
+### QA Report — EXACT YAML ONLY
+```yaml
+result: pass|fail
+reason: short specific reason
+failed_checks: []
+checks:
+  check_1: "EXACT output | FAIL"
+  check_2: "EXACT output | FAIL"
 ```
 
 ### Simple Dev Task Format
@@ -160,16 +157,17 @@ For every QA task, verify ALL 12 points:
 12. FINAL DECISION — pass only if all above checks are clear
 
 ### QA Dual-Run Rule
-- Run the same QA check twice with the same model and different seed
-- Pass only if both runs agree
-- If runs disagree → FAIL as non-deterministic
+- Ask Scout to run all required tests twice
+- Use the same model with different seed or temperature between run 1 and run 2
+- Pass only if both runs return pass
+- If either run fails or runs disagree → FAIL
 
 ---
 
 ## Common Issues Fixed
 
 ### Issue: Scout returns prose instead of required format
-Fix: QA starts with `{` and dev starts with `task_id:`. Nothing else before it.
+Fix: All replies start with YAML keys immediately. Nothing else before it.
 
 ### Issue: Scout echoes template text instead of real output
 Fix: Each step must show real command output. If template text appears → FAIL.
