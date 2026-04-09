@@ -1,4 +1,4 @@
-version: 1
+version: 2
 mode:
   default: lean
   non_office_hour:
@@ -38,7 +38,7 @@ workflow:
     subagent_5min_rule:
       - SilverHand must check subagent status if no reply in 5 minutes
       - If failed or silent: take action (diagnose, fix, or rerun)
-      - Report to Mic immediately when taking action — do not wait silently
+      - Report to Mic immediately when taking action, do not wait silently
   continuation:
     auto_continue_if:
       - prior_slice_reviewed
@@ -57,6 +57,38 @@ roles:
       - keep_team_moving
       - escalate_real_decisions_to_user
       - apply_qa_feedback_to_prompt_and_process
+      - score task complexity before assigning dev work
+      - choose dev model using routing rules
+      - verify commands before handing tasks to Scout
+    routing_rules:
+      complexity_factors:
+        - multi_step_logic
+        - external_dependency
+        - ambiguous_requirements
+        - multi_file_or_system_impact
+        - correctness_risk
+        - async_concurrency_state
+      scoring:
+        rule: "+1 per factor present"
+        classes:
+          low: "0-2"
+          medium: "3"
+          high: "4-6"
+      dev_assignment:
+        gemma_only_if_all_true:
+          - score <= 2
+          - single_function_or_small_script
+          - no_external_dependencies
+          - no_async_concurrency_stateful_logic
+          - clear_specific_requirements
+          - output_easy_to_verify
+        otherwise: Codex
+      qa_assignment:
+        model: Gemma
+        strict_checklist_required: true
+      escalation:
+        - if QA fails, rerun Dev on Codex
+        - Codex output must still pass Gemma QA
   Handy:
     role:
       - dev_agent
@@ -72,18 +104,24 @@ roles:
     role:
       - qa_agent
       - handoff_intake_checker
+      - simple_dev_executor_for_low_complexity_only
     must:
-      - validate_only
+      - validate_only unless SilverHand explicitly routes a low-complexity dev task
       - run_test_command_if_defined
       - report_structured_findings
       - plan_tests_when_idle_if_timing_is_right
+      - assume code is wrong until proven correct
+      - actively try to find bugs, edge cases, missing handling
+      - fail on any uncertainty
+      - use python3.14 explicitly
+      - report exact command output, not interpretation
+      - return JSON only for QA verdicts
     must_not:
-      - modify_app_source
-      - implement_product_features
-      - implement_core_modules
-      - install_dependencies
-      - change_config
       - guess_requirements
+      - investigate beyond assigned scope
+      - explain away anomalous output
+      - accept close_enough_as_correct
+      - change commands
 handoff:
   SilverHand_to_Handy:
     format: yaml
@@ -105,17 +143,17 @@ handoff:
       - assumptions
       - uncertainties
   Scout_to_SilverHand:
-    format: yaml
-    fields:
+    qa_format: json
+    qa_fields:
+      - result
+      - reason
+      - failed_checks
+    dev_format: yaml
+    dev_fields:
+      - task_id
       - status
-      - score
-      - hard_gates
-      - test_results
+      - changed_files
       - failures
-      - gaps
-      - ambiguities
-      - actions
-      - confidence
   Handy_to_SilverHand:
     format: yaml
     fields:
@@ -132,35 +170,45 @@ session_management:
     - If idle and recent: reuse it. If busy or stale: start new
     - Stale threshold: idle >120 min OR turns >25 → start fresh
     - Multi-file task: use session of primary/most-changed file
-    - Session name format: handy-<filename> (e.g. handy-src-ui)
+    - Session name format: handy-<filename>
     - Session key tracked in memory/handy-sessions.md
   scout:
-    - Scout QA tasks are short and deterministic — sessions close after task
-    - For complex QA (multi-step): SilverHand creates own subagent session
-    - Scout task session format: scout-<task_id>
-    - Scout sessions do not need reuse — each QA task is independent
-    - Max Scout session age: 30 min idle OR turns >15 → close
-    - Complex QA subagent: silverhand-<task_id>, follows anti_idle rules
-    - Scout MUST follow improved task template: docs/scouts-task-template.md
-    - Scout rule: if unsure → FAIL. Never guess.
-    - Scout rule: write to /tmp/scout_<task>.txt first, then cat
-    - Scout rule: reply MUST be valid YAML starting with task_id line — no prose before it
-    - Scout rule: do NOT investigate failures — report FAIL and stop
-    - Scout rule: exact grep/cut commands only — no "check if reasonable" vague instructions
-    - Scout rule: use python3.14 explicitly (not python3)
+    - One focused task per spawn
+    - Wait for reply before sending next task
+    - Scout MUST follow docs/scouts-task-template.md
+    - SilverHand must pre-score and pre-route tasks before giving them to Scout
+    - Do NOT send multi-step batches to Scout
+    - Use exact commands only
 qa:
+  scout_strict_checklist:
+    - requirement_match
+    - logic_correctness
+    - edge_cases
+    - input_output_validation
+    - execution_safety
+    - state_and_side_effects
+    - async_concurrency_if_applicable
+    - external_dependency_handling
+    - code_quality_light
+    - self_check_100_percent_confident
+    - mental_test_case_simulation
+    - final_decision_pass_only_if_all_clear
+  rules:
+    - default_to_fail
+    - if_uncertain_fail
+    - if_not_100_percent_sure_fail
+    - do_not_assume_correctness
+    - do_not_provide_extra_text_outside_required_format
+  dual_run:
+    enabled: true
+    same_model: true
+    different_seed: true
+    pass_only_if_both_agree: true
   scout_modes:
     lean_default:
       use_for:
         - normal_slices
         - focused_followups
-      output:
-        - status
-        - test_results
-        - gaps
-        - failures
-        - actions
-        - confidence
     full_scoring:
       use_for:
         - milestone_review
@@ -178,11 +226,6 @@ qa:
         fail:
           max_score: 59
           or_hard_gate_breach: true
-      hard_gates:
-        requirements_adherence: 15
-        code_correctness: 10
-        security_hygiene: 15
-        deliverable_completeness: 5
       categories:
         requirements_adherence: 20
         code_correctness: 15
@@ -211,30 +254,23 @@ project_specific:
     - truthful_output_boundary
   conventions:
     gemma_usage:
-      - gemma is a small fast local model — best for deterministic execution
-      - Good for gemma: shell commands, file parsing, structured output checks
-      - Bad for gemma: judgement, reasoning, multi-step planning, ambiguous tasks
-      - Rule: if task requires judgement/reasoning → route to MiniMax or Handy
-      - Rule: if task is deterministic execution → gemma can handle it
-      - Scout QA tasks to gemma must be ultra-structured: exact commands, exact format, file write
+      - gemma is a small fast local model best for deterministic, low-complexity tasks
+      - good_for_gemma: shell commands, file parsing, structured output checks, small single-file edits
+      - bad_for_gemma: judgment-heavy work, ambiguous debugging, architecture, multi-file changes
+      - SilverHand decides Gemma vs Codex before assignment
     complex_qa:
       - SilverHand may create own subagent for complex QA tasks
-      - Complex QA: multi-step analysis, failure investigation, cross-module verification
-      - If Scout cannot handle it and it is not product development → SilverHand handles via subagent
-      - SilverHand subagent follows same anti-idle, write-to-file, and result_first rules
-
-      - QA tasks (shell-based checks): use codexbar exec directly
-      - Dev tasks: route to Handy agent via ACP or subagent
-      - If acpx unavailable: use codexbar exec for Scout QA tasks
+      - Complex QA means multi-step analysis, failure investigation, or cross-module verification
     subagent_output:
       - long_tasks_write_result_to_file: |
           Any subagent task expected to produce significant output (>30 lines)
           must write results to a temp file and return only the file path.
           SilverHand reads the file after to deliver the result.
-          This avoids WebSocket buffer overflow causing 1006 closures.
-    reply_format:
-      - use_write_to_file_for: ["long_task_result", "verbose_test_output", "multi_check_result"]
-
+    task_delivery:
+      - one task at a time to Scout
+      - wait for reply before sending next task
+      - SilverHand verifies commands before handoff
+      - break complex work into separate tasks
     low_salary_default: review
   idle_scout_behavior:
     do:
