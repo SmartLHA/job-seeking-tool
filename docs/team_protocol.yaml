@@ -89,6 +89,7 @@ roles:
       escalation:
         - if QA fails, rerun Dev on Codex
         - Codex output must still pass Gemma QA
+        - if Codex output still fails QA, escalate to Mic and stop automatic retries
   Handy:
     role:
       - dev_agent
@@ -179,6 +180,7 @@ session_management:
     - SilverHand must pre-score and pre-route tasks before giving them to Scout
     - Do NOT send multi-step batches to Scout
     - Use exact commands only
+    - Current runtime assumption: per-task spawn unless reusable session support is explicitly confirmed
 qa:
   scout_strict_checklist:
     - requirement_match

@@ -1,4 +1,4 @@
-# Scout Task Template — Combined (v7)
+# Scout Task Template — Combined (v8)
 
 > Routing rule is for SilverHand (planner) only. Scout receives tasks that are already pre-scored and pre-routed.
 
@@ -37,18 +37,14 @@ QA (Scout) always uses Gemma with strict 12-point checklist (Part E).
 Fail on any uncertainty.
 
 ### Step 5 — Escalation
-If QA FAIL → Re-run Dev on Codex → QA must still pass strict checklist.
+- If QA FAIL on Gemma Dev output → rerun Dev on Codex
+- Codex output must still pass Gemma QA
+- If Codex output still FAILS QA → escalate to Mic, stop automatic retries
 
-### Output format for routing decision:
-```yaml
-task_type: coding
-complexity: low|medium|high
-score: 0-6
-use_gemma_dev: true|false
-use_gemma_qa: true
-escalate_to_codex: true|false
-reason: "max 10 words"
-```
+### Routing notes
+- Routing is internal planner policy only
+- Do NOT send routing JSON/YAML instructions to Scout
+- SilverHand applies routing, then sends Scout only the executable task
 
 ---
 
@@ -60,66 +56,69 @@ reason: "max 10 words"
 3. Report EXACT output of each command — not interpretation
 4. Do NOT change commands. Do NOT skip steps.
 5. Use python3.14 explicitly (not python3)
-6. **Code reviewer mindset: assume code is WRONG until proven correct**
-7. **Actively try to find edge cases, logical errors, missing handling**
-8. **If ANY doubt exists → FAIL. Do NOT be lenient.**
-9. **JSON output ONLY for final QA report**
+6. Code reviewer mindset: assume code is WRONG until proven correct
+7. Actively try to find edge cases, logical errors, missing handling
+8. If ANY doubt exists → FAIL. Do NOT be lenient.
+9. QA verdicts return JSON only
+10. Simple dev task results return YAML only
 
 ---
 
 ## Part C — Task Types Scout Handles
 
 ### QA Task Format
-```yaml
+```text
 task_id: scout-qa-<name>
 task_type: qa
 focus: [what to verify]
+checks:
+- [exact command 1]
+- [exact command 2]
+```
 
-### Checks
-[exact commands to run]
-
-### Report — EXACT JSON
+### QA Report — EXACT JSON ONLY
+```json
 {
   "result": "pass" | "fail",
-  "check_X": "EXACT output | FAIL",
-  "check_Y": "EXACT output | FAIL",
-  "failed_checks": [],
-  "reason": "short specific reason"
+  "reason": "short specific reason",
+  "failed_checks": ["list of failed items from Part E"],
+  "checks": {
+    "check_1": "EXACT output | FAIL",
+    "check_2": "EXACT output | FAIL"
+  }
 }
 ```
 
 ### Simple Dev Task Format
-```yaml
+```text
 task_id: scout-dev-<name>
 task_type: coding
 goal: [what to implement]
-
-### Steps
+steps:
 1. [exact command]
 2. [verify command]
 3. [test command]
+```
 
-### Report — EXACT YAML
+### Dev Report — EXACT YAML ONLY
 ```yaml
 task_id: scout-dev-<name>
 status: pass|fail
-step_X: "EXACT output | FAIL"
-step_Y: "EXACT output | FAIL"
+step_1: "EXACT output | FAIL"
+step_2: "EXACT output | FAIL"
+step_3: "EXACT output | FAIL"
 changed_files: []
 failures: []
-```
 ```
 
 ---
 
 ## Part D — Code Reviewer Mindset (MUST apply to ALL tasks)
 
-You are a strict code reviewer. Act like one.
-
 ### Core principle
-**Assume the code is WRONG until proven correct.**
+Assume the code is WRONG until proven correct.
 
-### What you MUST actively check
+### What Scout MUST actively check
 - Edge cases: empty input, None, zero, negative values, very large values
 - Logical errors: does the condition actually match what the comment says?
 - Missing handling: what happens if X is None? If the list is empty?
@@ -127,18 +126,19 @@ You are a strict code reviewer. Act like one.
 - Type errors: wrong type passed, None passed where not allowed
 - Exception paths: does the code handle the error case or just assume success?
 
-### FAIL if ANY of these exist
+### Automatic FAIL conditions
 - A potential bug you cannot rule out
 - Missing validation you cannot verify is unnecessary
 - Ambiguous test output you cannot interpret
 - A test that seems to pass but produces wrong-looking data
 - ANY doubt about correctness
+- Not 100% sure
 
 ### Do NOT
 - Assume the original developer handled it
-- Accept "close enough" as correct
+- Accept close enough as correct
 - Explain away anomalous output
-- Suggest fixes (report FAIL only)
+- Suggest fixes in the QA verdict
 
 ---
 
@@ -146,51 +146,39 @@ You are a strict code reviewer. Act like one.
 
 For every QA task, verify ALL 12 points:
 
-1. **REQUIREMENT MATCH**: Does it fully satisfy the task? Fail if any requirement missing, misinterpreted, or extra behaviour exists.
-2. **LOGIC CORRECTNESS**: Check algorithms, branching, loops, conditions. Fail if incorrect for valid input.
-3. **EDGE CASES**: Evaluate empty, null, zero, negative, large, unexpected inputs. Fail if unhandled.
-4. **INPUT/OUTPUT VALIDATION**: Confirm types and format match requirement exactly. Fail on type mismatch or wrong structure.
-5. **EXECUTION SAFETY**: Detect runtime errors (division by zero, index out of range, null refs). Fail if can crash under normal use.
-6. **STATE & SIDE EFFECTS**: Check variable mutations, shared state, order-dependent behaviour. Fail if hidden state dependency.
-7. **ASYNC/CONCURRENCY** (if applicable): Ensure proper await, avoid race conditions. Fail if misused.
-8. **EXTERNAL DEPENDENCIES**: Validate API/DB/network error handling. Fail if unexpected responses ignored.
-9. **CODE QUALITY** (light): Assess readability, unnecessary complexity, redundancy. Fail if confusing or overly complex.
-10. **SELF-CHECK**: Ask "Am I 100% confident this code is correct?" Fail if any doubt exists.
-11. **MENTAL TEST CASE SIMULATION**: Run 1-2 mental test cases. Fail if output cannot be confidently predicted.
-12. **FINAL DECISION**: Pass only if all above checks passed with no uncertainty. Otherwise fail.
-
-### If you are not 100% sure → return FAIL
+1. REQUIREMENT MATCH — fail if any requirement missing, misinterpreted, or extra behaviour exists
+2. LOGIC CORRECTNESS — fail if algorithms, branching, loops, or conditions produce wrong results
+3. EDGE CASES — fail if empty, null, zero, negative, large, or unexpected inputs are unhandled
+4. INPUT/OUTPUT VALIDATION — fail on type mismatch, missing validation, or wrong structure
+5. EXECUTION SAFETY — fail if code can crash under normal use
+6. STATE & SIDE EFFECTS — fail if output depends on hidden state or unintended mutation
+7. ASYNC/CONCURRENCY — fail if await/race/state logic is misused when applicable
+8. EXTERNAL DEPENDENCIES — fail if API/DB/network error handling is missing
+9. CODE QUALITY — fail if confusing or unnecessarily complex for the task
+10. SELF-CHECK — fail if not 100% confident
+11. MENTAL TEST CASE SIMULATION — fail if expected output cannot be confidently predicted
+12. FINAL DECISION — pass only if all above checks are clear
 
 ### QA Dual-Run Rule
-Run the same check TWICE with same model.
-- Both agree → result stands
-- Disagree → status = fail (non-deterministic)
-- Report both runs.
-
-### Final QA Report — JSON ONLY
-```json
-{
-  "result": "pass" | "fail",
-  "reason": "short specific reason",
-  "failed_checks": ["list of failed items from 1-12"]
-}
-```
+- Run the same QA check twice with the same model and different seed
+- Pass only if both runs agree
+- If runs disagree → FAIL as non-deterministic
 
 ---
 
 ## Common Issues Fixed
 
-### Issue: Scout returns prose instead of YAML/JSON
-Fix: Start reply with `task_id:` or `{` line. Nothing else before it.
+### Issue: Scout returns prose instead of required format
+Fix: QA starts with `{` and dev starts with `task_id:`. Nothing else before it.
 
 ### Issue: Scout echoes template text instead of real output
-Fix: Each step must show real command output. If template text appears → treat as FAIL.
+Fix: Each step must show real command output. If template text appears → FAIL.
 
 ### Issue: Scout guesses instead of FAIL
-Fix: Rule: "If unsure → FAIL. Never guess."
+Fix: If unsure → FAIL. Never guess.
 
 ### Issue: Scout self-investigates when it should just report
-Fix: "If check fails → report FAIL. Do NOT investigate. Do NOT suggest fixes."
+Fix: If check fails → report FAIL. Do NOT investigate. Do NOT suggest fixes.
 
 ### Issue: Scout uses wrong Python interpreter
 Fix: Always use python3.14 explicitly.
@@ -198,8 +186,5 @@ Fix: Always use python3.14 explicitly.
 ### Issue: Scout invents file content
 Fix: Verify file write with tail/cat commands. Report EXACT output.
 
-### Issue: Scout handles complex multi-step task as a batch
-Fix: SilverHand gives ONE focused task per spawn. Break multi-step work across separate spawns.
-
 ### Issue: Scout is too lenient on borderline cases
-Fix: "Assume code is WRONG until proven correct. If ANY doubt → FAIL."
+Fix: Assume code is wrong until proven correct. If ANY doubt → FAIL.
