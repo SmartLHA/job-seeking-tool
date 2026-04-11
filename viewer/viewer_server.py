@@ -517,17 +517,22 @@ def handle_api_help() -> bytes:
         return json.dumps({"ok": False, "error": str(e)}).encode()
 
 
-def _sse_chunk(sock: socket.socket, data: str) -> None:
-    """Send one SSE chunk over a chunked transfer connection."""
+def _send_sse_event(sock: socket.socket, model: str, content: str, done: bool) -> None:
+    """Send one SSE event as a single HTTP chunk."""
+    event_id = f"{model}-{time.time()}"
+    event_text = (
+        f"event: message\r\n"
+        f"id: {event_id}\r\n"
+        f"data: {json.dumps({'model': model, 'content': content, 'done': done})}\r\n"
+        f"\r\n"
+    )
+    encoded = event_text.encode("utf-8")
     try:
-        sock.sendall(f"{len(data.encode()):x}\r\n{data}\r\n".encode())
+        sock.sendall(f"{len(encoded):x}\r\n".encode())
+        sock.sendall(encoded)
+        sock.sendall(b"\r\n")
     except Exception:
         pass
-
-
-def _sse_event(sock: socket.socket, model: str, content: str, done: bool) -> None:
-    event_id = f"{model}-{time.time():.0f}"
-    _sse_chunk(sock, f"event: message\nid: {event_id}\ndata: {json.dumps({'model': model, 'content': content, 'done': done})}\n")
 
 
 def _call_gemma(message: str, history: list, out_q: list) -> None:
@@ -708,7 +713,7 @@ def handle_api_multi_chat(sock: socket.socket, post_body: bytes) -> None:
                 rid = id(r)
                 if rid not in sent:
                     sent.add(rid)
-                    _sse_event(sock, r["model"], r["content"], r.get("done", True))
+                    _send_sse_event(sock, r["model"], r["content"], r.get("done", True))
         if len(sent) >= 3:
             break
         time.sleep(0.2)
@@ -719,11 +724,11 @@ def handle_api_multi_chat(sock: socket.socket, post_body: bytes) -> None:
             rid = id(r)
             if rid not in sent:
                 sent.add(rid)
-                _sse_event(sock, r["model"], r["content"], r.get("done", True))
+                _send_sse_event(sock, r["model"], r["content"], r.get("done", True))
 
-    # SSE stream terminator: send a final comment line to signal end
+    # SSE stream terminator: final blank chunk
     try:
-        sock.sendall(b":\n\n")
+        sock.sendall(b"0\r\n\r\n")
     except Exception:
         pass
 
