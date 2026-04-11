@@ -14,8 +14,8 @@ communication:
   rules:
     - result_first
     - bullet_or_yaml_only
-    - max_5_items_per_list
-    - max_1_line_per_item
+    - max_8_items_per_list
+    - max_8_lines_per_item
     - no_filler
     - no_repetition
     - no_examples_unless_required
@@ -90,6 +90,63 @@ roles:
         - if QA fails, rerun Dev on Codex
         - Codex output must still pass Gemma QA
         - if Codex output still fails QA, escalate to Mic and stop automatic retries
+        - after Codex plus QA fail, show summary to Mic
+  pipeline_stages:
+    order:
+      - office_hours    # sharpen problem before planning
+      - plan_ceo_review # challenge scope and product decision
+      - plan_eng_review # lock architecture and test plan
+      - implementation  # Handy / Codex builds
+      - review          # SilverHand correctness review
+      - qa              # Scout runs tests
+      - ship            # SilverHand final gate for Mic sign-off
+    stage_rules:
+      office_hours:
+        use_when:
+          - problem feels fuzzy
+          - user has idea but unclear wedge
+          - request sounds like "could we build..."
+          - vague feature request without clear pain
+        skip_if:
+          - already sharp, well-scoped request
+          - bug report with clear reproduction
+          - minor tweak to known-working feature
+        owner: SilverHand
+      plan_ceo_review:
+        use_when:
+          - product direction needs sharpening
+          - scope too broad or value unclear
+          - multiple plausible product cuts
+        skip_if:
+          - scope already clear from office_hours
+          - tiny well-bounded change
+        owner: SilverHand
+      plan_eng_review:
+        use_when:
+          - problem defined, needs implementation plan
+          - architecture, edge cases, validation matter
+        skip_if:
+          - already locked from prior session
+          - single-line change
+        owner: SilverHand
+      implementation:
+        owner: Handy (dev)
+        after: notify SilverHand on complete
+      review:
+        use_when:
+          - implementation done
+          - code has logic, branching, state, or side effects
+        skip_if:
+          - purely mechanical change (formatting, typos)
+          - already-reviewed module
+        owner: SilverHand
+        gate: must PASS before QA
+      qa:
+        owner: Scout
+        gate: must PASS before ship
+      ship:
+        owner: SilverHand
+        gate: all prior stages PASS + Mic sign-off
   Handy:
     role:
       - dev_agent
@@ -150,6 +207,7 @@ handoff:
       - reason
       - failed_checks
       - checks
+      - evidence
     dev_format: yaml
     dev_fields:
       - task_id

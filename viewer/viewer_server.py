@@ -11,6 +11,8 @@ import subprocess
 import glob
 import threading
 import socket
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from datetime import datetime
 
@@ -29,6 +31,10 @@ PROJECT_ROOT = VIEWER_DIR.parent.resolve()
 PORT = 8765
 VIEWER_HOST = "0.0.0.0"
 MAIN_SESSIONS_FILE = Path("/Users/lhaclaw/.openclaw/agents/main/sessions/sessions.json")
+
+# Cache for expensive health check (10s TTL)
+_HEALTH_CACHE = {"data": None, "ts": 0.0}
+_HEALTH_TTL = 30.0
 
 
 def _age(ms: int) -> str:
@@ -91,9 +97,10 @@ def _role_status() -> dict:
     # Map role -> agent folder
     ROLE_AGENT_MAP = {
         "silverhand": "main",
-        "handy": "codex",
+        "handy": "dev",
         "scout": "qa",
         "wiser": "wiser",
+        "scout-dev": "dev",
     }
     now_ms = datetime.now().timestamp() * 1000
 
@@ -202,6 +209,39 @@ def _get_active_sessions() -> dict:
         result[agent] = {"total": total, "active_2h": active_2h, "recent_5m": recent_5m}
     return result
 
+def _get_model_usage() -> dict:
+    """Get token usage per model over the past 5 hours across all agents."""
+    now_ms = datetime.now().timestamp() * 1000
+    FIVE_HOURS = 5 * 3600000
+    result = {}
+    for agent in ["main", "codex", "qa", "dev", "wiser"]:
+        sessions_file = Path(f"/Users/lhaclaw/.openclaw/agents/{agent}/sessions/sessions.json")
+        if not sessions_file.exists():
+            continue
+        try:
+            with open(sessions_file) as f:
+                data = json.load(f)
+            for val in data.values():
+                updated = val.get("updatedAt", 0)
+                if now_ms - updated > FIVE_HOURS:
+                    continue
+                model = val.get("model", "")
+                if not model:
+                    continue
+                key = model.replace("minimax/", "").replace("ollama/", "")
+                inp = val.get("inputTokens", 0) or 0
+                out = val.get("outputTokens", 0) or 0
+                tot = inp + out
+                if key not in result:
+                    result[key] = {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0, "count": 0}
+                result[key]["inputTokens"] += inp
+                result[key]["outputTokens"] += out
+                result[key]["totalTokens"] += tot
+                result[key]["count"] += 1
+        except Exception:
+            pass
+    return result
+
 
 def _get_ollama_usage() -> dict:
     """Get last used time for Ollama models from session history."""
@@ -257,6 +297,9 @@ def _recent_sessions() -> dict:
                             "age_ms": age,
                             "model": val.get("model", "—"),
                             "status": val.get("status", "—"),
+                            "inputTokens": val.get("inputTokens", 0) or 0,
+                            "outputTokens": val.get("outputTokens", 0) or 0,
+                            "totalTokens": val.get("totalTokens", 0) or 0,
                         })
             except Exception:
                 pass
@@ -273,6 +316,9 @@ def _recent_sessions() -> dict:
                 "model": s["model"],
                 "age": _age(s["age_ms"]),
                 "status": s["status"],
+                "inputTokens": s.get("inputTokens", 0),
+                "outputTokens": s.get("outputTokens", 0),
+                "totalTokens": s.get("totalTokens", 0),
             }
             for s in recent
         ],
@@ -281,137 +327,169 @@ def _recent_sessions() -> dict:
 
 
 def handle_api_health() -> bytes:
+    global _HEALTH_CACHE
+    now = time.time()
+    if _HEALTH_CACHE["data"] is not None and (now - _HEALTH_CACHE["ts"]) < _HEALTH_TTL:
+        return _HEALTH_CACHE["data"]
+
+    # Shared result dict for thread-safe parallel collection
+    results = {"ollama": None, "openclaw": None, "cron": None}
+
+    def fetch_ollama():
+        try:
+            api_result = subprocess.run(
+                ["curl", "-s", "http://127.0.0.1:11434/api/tags"],
+                capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL
+            )
+            list_result = subprocess.run(
+                ["ollama", "list"], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL
+            )
+            available = []
+            if api_result.returncode == 0:
+                for m in json.loads(api_result.stdout).get("models", []):
+                    available.append({"name": m.get("name", "?"), "size": m.get("size", 0), "details": m.get("details", {})})
+            running = []
+            for line in list_result.stdout.split("\n"):
+                if line.strip() and not line.startswith("NAME") and "running" in line:
+                    parts = re.split(r"\s+", line.strip())
+                    if parts:
+                        running.append(parts[0])
+            results["ollama"] = {"available": available, "running": running, "error": None}
+        except Exception as e:
+            results["ollama"] = {"available": [], "running": [], "error": str(e)}
+
+    def fetch_openclaw_status():
+        try:
+            status = _openclaw_status()
+            if isinstance(status, dict) and status.get("ok") is not False:
+                results["openclaw"] = {
+                    "default_model": status.get("model"),
+                    "sessions": status.get("sessions", []),
+                    "error": None,
+                }
+            else:
+                results["openclaw"] = {"default_model": None, "sessions": [], "error": None}
+        except Exception as e:
+            results["openclaw"] = {"default_model": None, "sessions": [], "error": str(e)}
+
+    def fetch_cron():
+        try:
+            cron_result = subprocess.run(
+                ["/opt/homebrew/bin/openclaw", "cron", "list", "--json"],
+                capture_output=True, text=True, timeout=15,
+                stdin=subprocess.DEVNULL,
+                env=dict(os.environ, PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"),
+            )
+            cron_data = json.loads(cron_result.stdout) if cron_result.returncode == 0 else {}
+            cron_list = cron_data.get("jobs", [])
+            results["cron"] = [
+                {
+                    "name": j.get("name", "?"),
+                    "last_run": j.get("state", {}).get("lastRunAtMs"),
+                    "last_status": j.get("state", {}).get("lastRunStatus", "?"),
+                    "error": j.get("state", {}).get("lastError"),
+                }
+                for j in cron_list
+            ]
+        except Exception:
+            results["cron"] = []
+
+    # Run all 3 slow calls in parallel
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        executor.submit(fetch_ollama)
+        executor.submit(fetch_openclaw_status)
+        executor.submit(fetch_cron)
+
     data = {
-        "ollama": {"available": [], "running": [], "error": None},
-        "openclaw": {"default_model": None, "sessions": [], "error": None},
-        "cron_jobs": [],
+        "ollama": results.get("ollama") or {"available": [], "running": [], "error": None},
+        "openclaw": results.get("openclaw") or {"default_model": None, "sessions": [], "error": None},
+        "cron_jobs": results.get("cron") or [],
+        "active_sessions": _get_active_sessions(),
+        "ollama_usage": _get_ollama_usage(),
+        "model_usage": _get_model_usage(),
         "fetched_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
     }
 
-    try:
-        # Use Ollama API to get detailed model info
-        api_result = subprocess.run(
-            ["curl", "-s", "http://127.0.0.1:11434/api/tags"],
-            capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL
-        )
-        ollama_available = []
-        ollama_running = []
-        if api_result.returncode == 0:
-            models_data = json.loads(api_result.stdout)
-            for m in models_data.get("models", []):
-                ollama_available.append({
-                    "name": m.get("name", "?"),
-                    "size": m.get("size", 0),
-                    "details": m.get("details", {})
-                })
-        # Also check running models via ollama list
-        list_result = subprocess.run(
-            ["ollama", "list"], capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL
-        )
-        for line in list_result.stdout.split("\n"):
-            if line.strip() and not line.startswith("NAME") and "running" in line:
-                parts = re.split(r"\s+", line.strip())
-                if len(parts) >= 1:
-                    ollama_running.append(parts[0])
-        data["ollama"] = {"available": ollama_available, "running": ollama_running, "error": None}
-    except Exception as e:
-        data["ollama"] = {"available": [], "running": [], "error": str(e)}
-
-    try:
-        status = _openclaw_status()
-        if isinstance(status, dict) and status.get("ok") is not False:
-            data["openclaw"] = {
-                "default_model": status.get("model"),
-                "sessions": status.get("sessions", []),
-                "error": None,
-            }
-    except Exception as e:
-        data["openclaw"] = {"default_model": None, "sessions": [], "error": str(e)}
-
-    try:
-        cron_result = subprocess.run(
-            ["/opt/homebrew/bin/openclaw", "cron", "list", "--json"],
-            capture_output=True, text=True, timeout=10,
-            stdin=subprocess.DEVNULL,
-            env=dict(os.environ, PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"),
-        )
-        cron_data = json.loads(cron_result.stdout) if cron_result.returncode == 0 else {}
-        cron_list = cron_data.get("jobs", [])
-        data["cron_jobs"] = [
-            {
-                "name": j.get("name", "?"),
-                "last_run": j.get("state", {}).get("lastRunAtMs"),
-                "last_status": j.get("state", {}).get("lastRunStatus", "?"),
-                "error": j.get("state", {}).get("lastError"),
-            }
-            for j in cron_list
-        ]
-    except Exception:
-        data["cron_jobs"] = []
-
-    # Add active session counts (updated within 1 hour)
-    data["active_sessions"] = _get_active_sessions()
-    
-    # Add Ollama model usage from session history
-    data["ollama_usage"] = _get_ollama_usage()
-
-    return json.dumps(data).encode()
+    result = json.dumps(data).encode()
+    _HEALTH_CACHE = {"data": result, "ts": now}
+    return result
 
 
 def handle_api_role_status() -> bytes:
     return json.dumps(_role_status()).encode()
 
 
-def _latest_message() -> dict:
-    """Get the most recent meaningful message from the main session that needs Mic's review."""
+def handle_api_model_usage() -> bytes:
+    return json.dumps(_get_model_usage()).encode()
+
+
+    """Get the 3 most recent meaningful messages from the main session."""
     try:
         sessions_file = Path(f"/Users/lhaclaw/.openclaw/agents/main/sessions/sessions.json")
         if not sessions_file.exists():
-            return {"text": "All systems operational.", "error": None}
+            return {"messages": [{"text": "All systems operational.", "error": None}], "error": None}
         with open(sessions_file) as f:
             data = json.load(f)
-        # Find most recent main session
         sorted_sessions = sorted(data.items(), key=lambda x: x[1].get("updatedAt", 0), reverse=True)
         main_sessions = [(k, v) for k, v in sorted_sessions if k.startswith("agent:main:")]
         if not main_sessions:
-            return {"text": "All systems operational.", "error": None}
-        session_key, session_val = main_sessions[0]
-        # Find the JSONL file
-        sid = session_val.get("sessionId", "")
-        jsonl_pattern = f"/Users/lhaclaw/.openclaw/agents/main/sessions/{sid}*.jsonl"
-        files = glob.glob(jsonl_pattern)
-        if not files:
-            return {"text": "All systems operational.", "error": None}
-        jsonl_path = files[0]
-        lines = open(jsonl_path).readlines()
-        # Scan from end for last assistant text message (not thinking/toolCall)
-        for line in reversed(lines):
-            try:
-                m = json.loads(line)
-                if m.get("type") != "message":
-                    continue
-                msg = m.get("message", {})
-                if msg.get("role") != "assistant":
-                    continue
-                content = msg.get("content", "")
-                if isinstance(content, list):
-                    # Extract only text blocks, skip thinking and tool calls
-                    text_parts = []
-                    for c in content:
-                        if isinstance(c, dict) and c.get("type") == "text":
-                            text_parts.append(c.get("text", ""))
-                    content = " ".join(text_parts)
-                if content and content.strip():
-                    # Skip if it looks like internal housekeeping
-                    stripped = content.strip()
-                    if stripped.startswith("<<<"):
-                        continue
-                    return {"text": stripped[:500], "error": None}  # cap at 500 chars
-            except Exception:
+            return {"messages": [{"text": "All systems operational.", "error": None}], "error": None}
+
+        results = []
+        # Check most recent 3 main sessions
+        for session_key, session_val in main_sessions[:3]:
+            sid = session_val.get("sessionId", "")
+            jsonl_pattern = f"/Users/lhaclaw/.openclaw/agents/main/sessions/{sid}*.jsonl"
+            files = glob.glob(jsonl_pattern)
+            if not files:
                 continue
-        return {"text": "All systems operational.", "error": None}
+            jsonl_path = files[0]
+            lines = open(jsonl_path).readlines()
+            # Scan from end for last assistant text message
+            for line in reversed(lines):
+                try:
+                    m = json.loads(line)
+                    if m.get("type") != "message":
+                        continue
+                    msg = m.get("message", {})
+                    if msg.get("role") != "assistant":
+                        continue
+                    content = msg.get("content", "")
+                    if isinstance(content, list):
+                        text_parts = []
+                        for c in content:
+                            if isinstance(c, dict) and c.get("type") == "text":
+                                text_parts.append(c.get("text", ""))
+                        content = " ".join(text_parts)
+                    if content and content.strip():
+                        stripped = content.strip()
+                        if stripped.startswith("<<<"):
+                            continue
+                        # Get age from session
+                        age_ms = session_val.get("updatedAt", 0)
+                        now_ms = datetime.now().timestamp() * 1000
+                        ago_ms = now_ms - age_ms
+                        mins = int(ago_ms / 60000)
+                        hours = int(ago_ms / 3600000)
+                        days = int(ago_ms / 86400000)
+                        if days > 0:
+                            age_str = f"{days}d ago"
+                        elif hours > 0:
+                            age_str = f"{hours}h ago"
+                        else:
+                            age_str = f"{mins}m ago"
+                        results.append({"text": stripped[:500], "age": age_str, "session": session_key.split(":")[-1][:12], "error": None})
+                        break
+                except Exception:
+                    continue
+            if len(results) >= 3:
+                break
+
+        if not results:
+            return {"messages": [{"text": "All systems operational.", "error": None}], "error": None}
+        return {"messages": results, "error": None}
     except Exception as e:
-        return {"text": "All systems operational.", "error": str(e)}
+        return {"messages": [{"text": "All systems operational.", "error": str(e)}], "error": str(e)}
 
 
 def handle_api_latest_message() -> bytes:
@@ -437,6 +515,221 @@ def handle_api_help() -> bytes:
             return json.dumps({"ok": False, "error": result.stderr[:200]}).encode()
     except Exception as e:
         return json.dumps({"ok": False, "error": str(e)}).encode()
+
+
+def _sse_chunk(sock: socket.socket, data: str) -> None:
+    """Send one SSE chunk over a chunked transfer connection."""
+    try:
+        sock.sendall(f"{len(data.encode()):x}\r\n{data}\r\n".encode())
+    except Exception:
+        pass
+
+
+def _sse_event(sock: socket.socket, model: str, content: str, done: bool) -> None:
+    event_id = f"{model}-{time.time():.0f}"
+    _sse_chunk(sock, f"event: message\nid: {event_id}\ndata: {json.dumps({'model': model, 'content': content, 'done': done})}\n")
+
+
+def _call_gemma(message: str, history: list, out_q: list) -> None:
+    """Call Ollama Gemma and put result in out_q."""
+    try:
+        # Build Ollama messages format
+        ollama_msgs = history + [{'role': 'user', 'content': message}]
+        payload = {
+            "model": "gemma4:e4b",
+            "messages": ollama_msgs,
+            "stream": False
+        }
+        r = subprocess.run(
+            ["curl", "-s", "-X", "POST", "http://127.0.0.1:11434/api/chat",
+             "-H", "Content-Type: application/json",
+             "-d", json.dumps(payload),
+             "--max-time", "60"],
+            capture_output=True, text=True, timeout=65
+        )
+        if r.returncode == 0:
+            data = json.loads(r.stdout)
+            content = data.get("message", {}).get("content", "")
+            out_q.append({"model": "gemma", "content": content, "done": True})
+        else:
+            out_q.append({"model": "gemma", "content": f"Error: curl exit {r.returncode}", "done": True, "error": True})
+    except Exception as e:
+        out_q.append({"model": "gemma", "content": f"Error: {e}", "done": True, "error": True})
+
+
+def _call_minimax(message: str, history: list, out_q: list) -> None:
+    """Call MiniMax-M2.7 via gateway's OpenAI-compatible /v1/chat/completions endpoint."""
+    try:
+        gateway_token = "8184f5fc629903f19ff5dfaffc456950bbcc3a96b56fc6ad"
+        
+        # Build messages including history
+        msgs = []
+        for h in history:
+            msgs.append({"role": h.get("role", "user"), "content": h.get("content", "")})
+        msgs.append({"role": "user", "content": message})
+        
+        payload = {
+            "model": "openclaw",
+            "messages": msgs,
+            "max_tokens": 1024
+        }
+        
+        r = subprocess.run(
+            ["curl", "-s", "-X", "POST",
+             "http://127.0.0.1:18789/v1/chat/completions",
+             "-H", "Content-Type: application/json",
+             "-H", f"Authorization: Bearer {gateway_token}",
+             "-d", json.dumps(payload),
+             "--max-time", "45"],
+            capture_output=True, text=True, timeout=50, stdin=subprocess.DEVNULL
+        )
+        
+        if r.returncode == 0:
+            try:
+                data = json.loads(r.stdout)
+                choices = data.get("choices", [])
+                if choices:
+                    content = choices[0].get("message", {}).get("content", "")
+                    out_q.append({"model": "minimax", "content": content, "done": True})
+                else:
+                    out_q.append({"model": "minimax", "content": f"No response: {r.stdout[:200]}", "done": True, "error": True})
+            except json.JSONDecodeError:
+                out_q.append({"model": "minimax", "content": f"Parse error: {r.stdout[:200]}", "done": True, "error": True})
+        else:
+            out_q.append({"model": "minimax", "content": f"curl error {r.returncode}: {r.stderr[:200]}", "done": True, "error": True})
+    except Exception as e:
+        out_q.append({"model": "minimax", "content": f"Error: {e}", "done": True, "error": True})
+
+
+def _call_gpt(message: str, history: list, out_q: list) -> None:
+    """Call GPT-5.4 via gateway's OpenAI-compatible endpoint using openclaw/codex (Codex agent)."""
+    try:
+        gateway_token = "8184f5fc629903f19ff5dfaffc456950bbcc3a96b56fc6ad"
+        
+        msgs = []
+        for h in history:
+            msgs.append({"role": h.get("role", "user"), "content": h.get("content", "")})
+        msgs.append({"role": "user", "content": message})
+        
+        payload = {
+            "model": "openclaw/codex",
+            "messages": msgs,
+            "stream": True,
+            "max_tokens": 1024
+        }
+        
+        r = subprocess.run(
+            ["curl", "-s", "-X", "POST",
+             "http://127.0.0.1:18789/v1/chat/completions",
+             "-H", "Content-Type: application/json",
+             "-H", f"Authorization: Bearer {gateway_token}",
+             "-d", json.dumps(payload),
+             "--max-time", "60"],
+            capture_output=True, text=True, timeout=65, stdin=subprocess.DEVNULL
+        )
+        
+        if r.returncode == 0:
+            # Parse SSE streaming response
+            content = ""
+            for line in r.stdout.split("\n"):
+                if line.startswith("data: "):
+                    data_str = line[6:].strip()
+                    if data_str == "[DONE]" or not data_str:
+                        continue
+                    try:
+                        data = json.loads(data_str)
+                        delta = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                        if delta:
+                            content += delta
+                    except json.JSONDecodeError:
+                        pass
+            out_q.append({"model": "gpt", "content": content or r.stdout[:200], "done": True})
+        else:
+            out_q.append({"model": "gpt", "content": f"curl error {r.returncode}: {r.stderr[:200]}", "done": True, "error": True})
+    except Exception as e:
+        out_q.append({"model": "gpt", "content": f"Error: {e}", "done": True, "error": True})
+
+
+def handle_api_multi_chat(sock: socket.socket, post_body: bytes) -> None:
+    """Stream a multi-LLM chat response via SSE.
+    POST body: {"message": "...", "history": [...]}
+    SSE stream: one event per model as it completes.
+    """
+    try:
+        body = json.loads(post_body.decode("utf-8"))
+    except Exception:
+        sock.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
+        return
+
+    message = body.get("message", "")
+    history = body.get("history", [])
+
+    if not message:
+        sock.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
+        return
+
+    # SSE header: chunked transfer
+    hdrs = (
+        b"HTTP/1.1 200 OK\r\n"
+        b"Content-Type: text/event-stream\r\n"
+        b"Transfer-Encoding: chunked\r\n"
+        b"Access-Control-Allow-Origin: *\r\n"
+        b"Cache-Control: no-cache\r\n"
+        b"Connection: keepalive\r\n"
+        b"\r\n"
+    )
+    sock.sendall(hdrs)
+
+    # Queue for results from 3 threads
+    results = []
+    results_lock = threading.Lock()
+
+    def synchronized_append(r):
+        with results_lock:
+            results.append(r)
+            # Notify main thread by sending a ping through the socket
+            # We'll poll the results list instead
+
+    # Start 3 concurrent threads
+    threads = [
+        threading.Thread(target=_call_gemma, args=(message, history, results)),
+        threading.Thread(target=_call_minimax, args=(message, history, results)),
+        threading.Thread(target=_call_gpt, args=(message, history, results)),
+    ]
+
+    for t in threads:
+        t.start()
+
+    # Poll for results and stream them as they arrive
+    sent = set()
+    while any(t.is_alive() for t in threads) or len(sent) < len(results):
+        with results_lock:
+            for r in results:
+                rid = id(r)
+                if rid not in sent:
+                    sent.add(rid)
+                    _sse_event(sock, r["model"], r["content"], r.get("done", True))
+        if len(sent) >= 3:
+            break
+        time.sleep(0.2)
+
+    # Final flush
+    with results_lock:
+        for r in results:
+            rid = id(r)
+            if rid not in sent:
+                sent.add(rid)
+                _sse_event(sock, r["model"], r["content"], r.get("done", True))
+
+    # SSE stream terminator: send a final comment line to signal end
+    try:
+        sock.sendall(b":\n\n")
+    except Exception:
+        pass
+
+    # Wait for threads to finish
+    for t in threads:
+        t.join(timeout=5)
 
 
 def serve_file(sock: socket.socket, path: str) -> bool:
@@ -583,6 +876,19 @@ def handle_request(sock: socket.socket) -> None:
             sock.sendall(resp)
             return
 
+        if path == "/api/model-usage":
+            data = handle_api_model_usage()
+            resp = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " + str(len(data)).encode() + b"\r\n"
+                b"Access-Control-Allow-Origin: *\r\n"
+                b"Connection: close\r\n"
+                b"\r\n" + data
+            )
+            sock.sendall(resp)
+            return
+
         if path == "/api/latest-message":
             data = handle_api_latest_message()
             resp = (
@@ -677,6 +983,10 @@ def handle_request(sock: socket.socket) -> None:
                 b"\r\n" + data
             )
             sock.sendall(resp)
+            return
+
+        if path == "/api/multi-chat" and method == "POST":
+            handle_api_multi_chat(sock, post_body)
             return
 
         if serve_file(sock, path):

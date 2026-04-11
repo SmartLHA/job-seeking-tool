@@ -1,10 +1,10 @@
 {
   "job_id": "test-job-tech-ba",
-  "match_score": 40.0,
+  "match_score": 76.25,
   "score_breakdown": {
     "skills_score": {
-      "value": 0.0,
-      "reason": "Matched 0 of 4 required skills; Matched 0 of 2 preferred skills"
+      "value": 26.25,
+      "reason": "Matched 3 of 4 required skills; Matched 0 of 2 preferred skills"
     },
     "experience_score": {
       "value": 20.0,
@@ -12,15 +12,15 @@
     },
     "location_score": {
       "value": 10.0,
-      "reason": "Remote role reduces location importance"
+      "reason": "Job location matches candidate preferences"
     },
     "salary_score": {
       "value": 0.0,
       "reason": "Known salary data appears below the candidate floor"
     },
     "domain_score": {
-      "value": 0.0,
-      "reason": "Job domain is outside the candidate's known industries"
+      "value": 10.0,
+      "reason": "Job domain matches candidate experience"
     },
     "work_mode_score": {
       "value": 10.0,
@@ -33,12 +33,13 @@
     ]
   },
   "blockers": [],
-  "strengths": [],
-  "missing_required_skills": [
-    "SQL",
-    "Python",
+  "strengths": [
     "Data Analysis",
-    "Jira"
+    "Jira",
+    "SQL"
+  ],
+  "missing_required_skills": [
+    "Python"
   ],
   "missing_preferred_skills": [
     "Machine Learning",
@@ -48,7 +49,7 @@
     {
       "code": "missing-required-skills",
       "label": "Required skill gap",
-      "reason": "Missing required skills: SQL, Python, Data Analysis, Jira"
+      "reason": "Missing required skills: Python"
     },
     {
       "code": "missing-preferred-skills",
@@ -62,7 +63,7 @@
     }
   ],
   "decision": "review",
-  "decision_reason": "Score 40 would otherwise qualify for apply, but critical risks require review: Required skill gap, Salary below floor",
+  "decision_reason": "Score 76 is promising but still needs manual review",
   "confidence": "high",
   "tailoring_ready": false,
   "tailoring_notes": "Manual selection is required before tailoring a review decision."

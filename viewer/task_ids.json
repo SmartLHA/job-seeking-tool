@@ -1,1 +1,7 @@
-{}
+{
+  "scout-qa-url-ingestion-edge-cases": {
+    "session_key": "agent:qa:subagent:c67207fa-b5c7-4e73-986f-4c27e9a8456f",
+    "role": "qa",
+    "spawned_at": "2026-04-10T22:32:00Z"
+  }
+}

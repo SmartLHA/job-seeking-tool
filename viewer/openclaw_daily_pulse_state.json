@@ -1,0 +1,1303 @@
+{
+  "generated_at": "2026-04-10 22:42 UTC",
+  "_has_discussions": true,
+  "summary": {
+    "total_items": 50,
+    "new_items": 17,
+    "gh_issues": 33,
+    "gh_discussions": 2,
+    "reddit": 15,
+    "critical_count": 0,
+    "issues_count": 8,
+    "features_count": 10,
+    "discussions_count": 1
+  },
+  "all_items": [
+    {
+      "source": "github_issues",
+      "title": "Feature: Agent default delivery target for cross-session message calls",
+      "url": "https://github.com/openclaw/openclaw/issues/64507",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "## Problem\n\nWhen an agent session is created programmatically (via `sessions_send`, webchat routing, or cron), the session `origin` is empty, so `toolContext.currentChannelId` is `null`. This means the `message` tool **requires** an explicit `target` parameter for every `send` action \u2014 the auto-infe",
+      "repo": "openclaw_core",
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "Security/deps: npm audit flags axios (@larksuiteoapi/node-sdk), tar (discordjs node-pre-gyp), @hono/node-server (carbon)",
+      "url": "https://github.com/openclaw/openclaw/issues/64506",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "### Context\nAfter updating to **OpenClaw 2026.4.9**, running `npm audit` in a clean install still reports vulnerabilities in transitive dependencies.\n\nThis report is *not* about the recent malicious axios publish incident (axios 1.14.1 / 0.30.4). We verified those versions are not installed and `pla",
+      "repo": "openclaw_core",
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Bug]: globalCircuitBreakerThreshold blocks per-tool, not per-pair \u2014 ping-pong loops survive circuit breaker",
+      "url": "https://github.com/openclaw/openclaw/issues/64500",
+      "labels": [],
+      "comments": 1,
+      "created": "2026-04-10",
+      "body_preview": "## Summary\n\nThe `globalCircuitBreakerThreshold` in `tools.loopDetection` blocks individual tools when the threshold is reached, but does **not** block the paired tool in a ping-pong pattern. This allows the agent to seamlessly switch to the alternate tool, effectively restarting the loop and renderi",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "macOS companion node missing system.run.prepare breaks exec host=node",
+      "url": "https://github.com/openclaw/openclaw/issues/64499",
+      "labels": [
+        "bug",
+        "bug:behavior"
+      ],
+      "comments": 1,
+      "created": "2026-04-10",
+      "body_preview": "### Bug type\n\nBehavior bug (incorrect output/state without crash)\n\n### Beta release blocker\n\nNo\n\n### Summary\n\nAfter setting up Openclaw on a Raspberry Pi 5 with Ubuntu (64 bit) there is an issue with controlling a Macbook through Node\n\n### Steps to reproduce\n\n1. Set up openclaw on a Raspberry Pi\n2. ",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Bug]: Isolated cron job sessions fail to spawn after main session inactivity",
+      "url": "https://github.com/openclaw/openclaw/issues/64497",
+      "labels": [
+        "bug",
+        "regression"
+      ],
+      "comments": 1,
+      "created": "2026-04-10",
+      "body_preview": "### Bug type\n\nRegression (worked before, now fails)\n\n### Beta release blocker\n\nNo\n\n### Summary\n\nIsolated `agentTurn` cron jobs intermittently fail to spawn a session at all. The cron scheduler fires, waits 6\u201317 minutes, then reports `\"cron: job execution timed out\"` with no `sessionId`, no `model`, ",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Bug]:",
+      "url": "https://github.com/openclaw/openclaw/issues/64496",
+      "labels": [
+        "bug",
+        "bug:crash"
+      ],
+      "comments": 1,
+      "created": "2026-04-10",
+      "body_preview": "### Bug type\n\nCrash (process/app exits or hangs)\n\n### Beta release blocker\n\nNo\n\n### Summary\n\n[10/04/2026 22:49] OPENCLAW: S\u00ed. H\u00e1galo aqu\u00ed:\n\nGitHub del proyecto OpenClaw\n\n\u2022 https://github.com/openclaw/openclaw/issues\n\nPulse New issue y pegue esto.\n\n\u2500\u2500\u2500\n\nIssue 1, Remote Control UI still requires pairi",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "Bug: isolated cron agentTurn on Claude Sonnet can consume full timeout before script starts; same job succeeds on gpt-5.4-mini",
+      "url": "https://github.com/openclaw/openclaw/issues/64495",
+      "labels": [],
+      "comments": 2,
+      "created": "2026-04-10",
+      "body_preview": "## Summary\n\nOn **OpenClaw v2026.4.9**, multiple isolated cron jobs using `payload.kind=\"agentTurn\"` with `model: \"anthropic/claude-sonnet-4-6\"` timed out for the full job budget, but **the shell pipeline never actually started**.\n\nThe same exact cron payload, same script, same machine, same data, wh",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "Cannot signin. First time trying to publish",
+      "url": "https://github.com/openclaw/clawhub/issues/1621",
+      "labels": [],
+      "comments": 4,
+      "created": "2026-04-10",
+      "body_preview": "I am trying to login to ClawHub. \n\nI did get redirected to github and authorized it. ClawdHub shows as authorized in my github account.\n\nGithub username:\nimmrlucky\n\nNow every time I click on Signin with Github button it just refreshes the page. I have tried using an incognito browser window as well.",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "Cannot sign in with GitHub after accidentally deleting my account",
+      "url": "https://github.com/openclaw/clawhub/issues/1620",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "I accidentally deleted my Clawhub account recently. Now, I am trying to sign back in / re-register using my GitHub account, but the process fails and I cannot access Clawhub anymore.\n\n<img width=\"859\" height=\"280\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/4551b9c1-b3be-4518-b2bd-7c",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "Attempting to publishing a skill. Stuck on \"Sign in failed. Please try again.\"",
+      "url": "https://github.com/openclaw/clawhub/issues/1619",
+      "labels": [],
+      "comments": 6,
+      "created": "2026-04-10",
+      "body_preview": "I'm trying to publish a skill but can't login in. I'm getting a generic - \"Sign in failed. Please try again.\" Happens to both logging in from the web UI and running `clawdhub login` from the CLI.\n\nCleared cached, tried Chrome and Safari. Revoked token from Github and reconnected again. \n\nUser is:\nht",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "[False Positive] olostep skill flagged as Suspicious \u2014 OLOSTEP_API_KEY correctly declared in metadata.openclaw",
+      "url": "https://github.com/openclaw/clawhub/issues/1618",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "## Skill\n- **Slug:** olostep\n- **Version:** 1.0.3\n- **URL:** https://clawhub.ai/skills/olostep\n- **Owner:** @ZeeshanAdilButt (published on behalf of [Olostep](https://olostep.com))\n\n## Issue\nThe skill is flagged as **Suspicious (medium confidence)** by the OpenClaw scanner despite correctly declarin",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "Skill format: unclear how to declare optional env variables",
+      "url": "https://github.com/openclaw/clawhub/issues/1617",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "## Problem\n\nThe skill format spec supports `metadata.openclaw.requires.env` for declaring required environment variables. However, many skills have optional env variables \u2014 the skill functions with or without them, but the underlying CLI/tool reads them if present.\n\n**Example:** The `alby-bitcoin-pa",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "False positive \"suspicious\" flag on verdikta-bounties-onboarding v1.4.1 \u2014 both scanners report Benign",
+      "url": "https://github.com/openclaw/clawhub/issues/1616",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "## Skill\n\n- **Name:** verdikta-bounties-onboarding\n- **Version:** 1.4.1\n- **Author:** @nigelon11\n- **ClawHub URL:** https://clawhub.ai/nigelon11/verdikta-bounties-onboarding\n- **Source:** https://github.com/verdikta/verdikta-applications/tree/main/skills/verdikta-bounties-onboarding\n\n## Issue\n\nThe s",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "False Positive: Memory Never Forget v3.2.1 incorrectly flagged as Suspicious",
+      "url": "https://github.com/openclaw/clawhub/issues/1615",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "Hi ClawHub Security team,\n\nMy skill **Memory Never Forget v3.2.1** (https://clawhub.ai/jujitao/memory-never-forget) has been incorrectly flagged as **Suspicious**, while the OpenClaw scan clearly marks it as **Benign with high confidence**. I believe this is a false positive.\n\n### Basic Skill Info\n-",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "Error when using Plugins search: Something went wrong Server Error",
+      "url": "https://github.com/openclaw/clawhub/issues/1614",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "<img width=\"536\" height=\"270\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/e9ab1156-8a6c-448a-8d14-ef15aa97e31c\" />\n\nTried in multiple browsers, logged in and out.  Same no matter what is done.\n\nPlugin search is straight up broken.",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "False positive: neuro-humble skill flagged as suspicious",
+      "url": "https://github.com/openclaw/clawhub/issues/1613",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "Hi! My skill `neuro-humble` (https://clawhub.ai/sparrowpanton/neuro-humble) was flagged as suspicious after publishing.\n\nI believe this is a false positive. The skill is a pedagogical formation tool \u2014 it teaches AI agents to hold a disability justice posture when encountering human distress, especia",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "Skill flagged as \"Suspicious\" despite VirusTotal 0/65 \u2014 possible VT status parsing issue",
+      "url": "https://github.com/openclaw/clawhub/issues/1612",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "My skill [ekybot-connector](https://clawhub.ai/regiomag/ekybot-connector) (v6.1.0) shows \"Skill flagged \u2014 suspicious patterns detected\" on ClawHub.\n\nHowever, when I check the actual VirusTotal report linked from the page, the result is **0 / 65** (zero detections across all 65 engines):\n\n- v6.0.4 ha",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "\u6211\u7684\u6280\u80fd\u88ab\u6807\u8bb0\u4e86\u53ef\u7591\uff0c\u8bf7\u67e5\u5b9e\u540e\u89e3\u9664\u53ef\u7591\u6807\u8bb0\uff1aauto-backup-openclaw-user-data",
+      "url": "https://github.com/openclaw/clawhub/issues/1611",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "## \u6280\u80fd\u94fe\u63a5\n\u6211\u53d1\u5e03\u7684\u6280\u80fd\uff1aauto-backup-openclaw-user-data\n\u6280\u80fd\u5730\u5740\uff1ahttps://clawhub.ai/hjj345/auto-backup-openclaw-user-data\nGithub\u5f00\u6e90\u5730\u5740\uff1ahttps://github.com/hjj345/auto-backup-openclaw-user-data\n\n## \u6280\u80fd\u7b80\u8981\u4ecb\u7ecd\uff1a\n- \u672c\u6280\u80fd\u4e3b\u8981\u662f\u4f9d\u8d56Node\u670d\u52a1\u6765\u6267\u884c\u81ea\u52a8\u5907\u4efdOpenClaw\u5b8c\u6574\u6216\u81ea\u5b9a\u4e49\u76ee\u5f55\u6587\u4ef6\n- \u81ea\u52a8\u6267\u884c\u538b\u7f29\u4e3a.zip\u6587\u4ef6\u4fdd\u5b58\n- \u53ef\u81ea\u5b9a\u4e49.zip\u6587\u4ef6\u7684\u5b58\u50a8\u8def\u5f84\n- \u53ef\u5b9a\u65f6\u6267\u884c\u5907\u4efd\n- \u65e5\u5fd7\u8bb0\u5f55\u5907\u4efd\u8fc7\u7a0b\u548c\u7ed3\u679c\n- \u53ef\u81ea\u52a8\u6e05\u7406\u4fdd\u7559\u5907",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "wolverine-ai skill flagged as suspicious \u2014 requesting guidance",
+      "url": "https://github.com/openclaw/clawhub/issues/1610",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "Hi ClawHub team,\n\nOur skill `wolverine-ai` (https://clawhub.ai/skills/wolverine-ai) was flagged as suspicious after publishing. We'd appreciate guidance on what specifically triggered the flag so we can bring it in line with ClawHub's standards.\n\n**What the skill does:**\nWolverine is a supervised cr",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "My ClawHub Skill\uff08Philosophy Dialogue\uff09is incorrectly flagged\uff0cPlease Remove restrictions",
+      "url": "https://github.com/openclaw/clawhub/issues/1609",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "Skill flagged \u2014 suspicious patterns detected\nClawHub Security flagged this skill as suspicious. Review the scan results before using.\n\nIf you believe this skill has been incorrectly flagged, please [submit an issue on GitHub](https://github.com/openclaw/clawhub/issues) and we'll break down why it wa",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "Skill flagged \u2014 suspicious patterns detected ClawHub Security flagged this skill as suspicious. Review the scan results before using.",
+      "url": "https://github.com/openclaw/clawhub/issues/1608",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "https://clawhub.ai/leilizhang/processon-diagram-generator\nhttps://clawhub.ai/leilizhang/processon-diagramgen\n\nI believe my skill has been incorrectly flagged. I guarantee there is no risk. Please review it again. Also, how can I merge these two skills? I just updated the version, and it turned into ",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "ClawHub Security flagged skill as suspicious",
+      "url": "https://github.com/openclaw/clawhub/issues/1607",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "This skill [https://clawhub.ai/leocdchina/zhongguo-nongli-huangli-jixiong ](https://clawhub.ai/leocdchina/zhongguo-nongli-huangli-jixiong ) has been flagged as suspicious. \n\nCould you please review and share the reason why and what I can do to change this status?\n\nThanks\uff01",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "[RFC] CLI + Plugin System for OpenClaw Hub",
+      "url": "https://github.com/openclaw-community/openclaw-hub/issues/54",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "## Summary\n\nProposal to add a first-class **CLI** (`openclaw`) and **plugin system** to OpenClaw Hub, enabling the community to extend the Hub without forking the repo.\n\nThe project topics already include `openclaw-plugin`, but there is currently no runtime for third-party plugins. This RFC proposes",
+      "repo": "openclaw_hub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: Support new openrouter/stepfun/step-3.5-flash:free model",
+      "url": "https://github.com/openclaw/openclaw/issues/7322",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 3,
+      "created": "2026-02-02",
+      "body_preview": "## Summary\n\nI would like to use the new Step 3.5 model that was released under a free endpoint on Openrouter last night (openrouter/stepfun/step-3.5-flash:free) as it sees quite powerful (and free).\n\n## Proposed solution\n\nI would like for the openrouter provider implementation to support the above m",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "Feature Request: Real-time Voice Conversation Support",
+      "url": "https://github.com/openclaw/openclaw/issues/7200",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 17,
+      "created": "2026-02-02",
+      "body_preview": "# Summary\nAdd native support for real-time voice conversations (bidirectional streaming audio) to enable phone-like interactions via Twilio/WebRTC integration.\n\n## Motivation / Use Case\nCurrently, OpenClaw supports text messaging and voice messages (pre-recorded audio files). However, many users wan",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: Multi-agent trust boundaries for claw",
+      "url": "https://github.com/openclaw/openclaw/issues/63430",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 5,
+      "created": "2026-04-08",
+      "body_preview": "### Summary\n\nWhen multiple claw instances need to collaborate, the only trust mechanism today is the system prompt. PAP is an open protocol that enforces context boundaries and authorization at the transport layer \u2014 before execution, not after.\n\n### Problem to solve\n\nMulti-instance orchestration has",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: feat: native Anthropic Advisor Tool support via model params config",
+      "url": "https://github.com/openclaw/openclaw/issues/64363",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "### Summary\n\nEnable per-agent Anthropic Advisor Tool (advisor-tool-2026-03-01) via openclaw.json model params \u2014 auto-inject beta header + tool definition into API requests.\n\n\n### Problem to solve\n\nThe Anthropic Advisor Tool lets a cheap executor (Haiku/Sonnet) consult Opus mid-generation for strateg",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: Evaluate simplifying the sandbox browser CDP path",
+      "url": "https://github.com/openclaw/openclaw/issues/64383",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 1,
+      "created": "2026-04-10",
+      "body_preview": "### Summary\n\nEvaluate whether the sandbox browser CDP path still needs the socat intermediate layer.\n\n### Problem to solve\n\nThe current sandbox browser startup path uses an intermediate socat layer plus a CDP port offset. This makes readiness harder to reason about, introduces an extra process that ",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "Feature Request: Slash command subagent with isolated execution context",
+      "url": "https://github.com/openclaw/openclaw/issues/64323",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "### Summary\n\nAllow subagents to be triggered directly via slash commands (e.g. /rename, /extract) with their own system prompt and clean context, without polluting the main agent's session.\n\n### Problem to solve\n\nWhen a user wants to invoke a subagent for a specific lightweight task (e.g. file renam",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: Lightweight context mode for heartbeat/cron tasks (cost saving addition)",
+      "url": "https://github.com/openclaw/openclaw/issues/7957",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 3,
+      "created": "2026-02-03",
+      "body_preview": "## Summary\nHeartbeats and cron jobs currently receive the full agent context (AGENTS.md, SOUL.md, USER.md, TOOLS.md, IDENTITY.md, etc.). For simple automated tasks, this is unnecessary overhead that:\n\n- Burns tokens on context that won't be used\n- Makes local/small models unusable (they truncate and",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: Support per-run tool allowlists for spawned subagents",
+      "url": "https://github.com/openclaw/openclaw/issues/62695",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 2,
+      "created": "2026-04-07",
+      "body_preview": "### Summary\n\nAllow sessions_spawn / spawned subagent runs to restrict the available tool set on a per-run basis, similar to cron toolsAllow.\n\n### Problem to solve\n\nToday, spawned subagents appear to rely on agent-level/static tool policy plus subagent role/depth filtering. In other words, you can de",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: \u5e0c\u671b\u652f\u6301\u654f\u611f\u6570\u636e\u8131\u654f",
+      "url": "https://github.com/openclaw/openclaw/issues/64046",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 6,
+      "created": "2026-04-10",
+      "body_preview": "### Summary\n\n1. \u5f53\u524dopenclaw.json\u7b49\u914d\u7f6e\u6587\u4ef6\u91ccapikey\u3001token\u3001secretkey\u7b49\u654f\u611f\u4fe1\u606f\u90fd\u662f\u660e\u6587\u5b58\u50a8\n2. openclaw\u65e5\u5fd7\u3001gateway\u65e5\u5fd7\u4e2d\u654f\u611f\u4fe1\u606f\u672a\u8131\u654f\u5c55\u793a\uff0c\u5f53\u524d\u4ec5\u652f\u6301\u63a7\u5236\u53f0\u6253\u5370\u8131\u654f\n3. \u81ea\u5e26UI\u91cc\u654f\u611f\u4fe1\u606f\u660e\u6587\u5c55\u793a\n\n<img width=\"1871\" height=\"537\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/9e26e08a-f06e-494b-9fa9-11e791e02fad\" />\n\n\u7efc\u4e0a\uff0c\u5e0c\u671b\u80fd\u591f\u652f\u6301\u654f\u611f\u6570\u636e\u8131\u654f\n\n### Problem to",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: Split chat session picker into Agent + Agent Sessions",
+      "url": "https://github.com/openclaw/openclaw/issues/64121",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "### Summary\n\nSplit the combined chat session picker into separate Agent and Agent Session controls, while keeping Model and Thinking bound to the active session.\n\n### Problem to solve\n\nProblem to solve\nThe current chat header uses one combined session picker for everything. Once an agent accumulates",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_discussions",
+      "title": "Pinclaw \u2013 the first wearable hardware built for OpenClaw",
+      "url": "https://github.com/openclaw-community/openclaw-hub/discussions/53",
+      "category": "discussions",
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "## The last mile for your OpenClaw agent\n\nEvery AI wearable so far tried to be a standalone device \u2014 screen, camera, cellular, on-device AI. They all failed. Physics said no.\n\nPinclaw takes the opposite approach: **subtraction**.\n\nNo screen (your phone has one). No camera (privacy). No cellular (you",
+      "is_new": false
+    },
+    {
+      "source": "github_discussions",
+      "title": "First fully local LLM phone automation \u2014 PokeClaw runs Gemma 4 entirely on-device to control Android, no cloud (inspired by OpenClaw \ud83e\udd9e)",
+      "url": "https://github.com/openclaw-community/openclaw-hub/discussions/52",
+      "category": "general",
+      "comments": 0,
+      "created": "2026-04-06",
+      "body_preview": "Hey everyone \ud83d\udc4b\n\nBig fan of what OpenClaw has built \u2014 the lobster way \ud83e\udd9e inspired me to build something for Android phones.\n\nI noticed a lot of people trying to run OpenClaw on Android (Termux, proot, ClawPhone, etc.) but it's always a workaround \u2014 running a desktop agent inside a Linux container on a",
+      "is_new": false
+    },
+    {
+      "source": "reddit",
+      "title": "I ported Anthropic's official skill-creator from Claude Code to OpenCode \u2014 now you can create and evaluate AI agent skills with any model",
+      "url": "https://reddit.com/r/LocalLLaMA/comments/1si03l9/i_ported_anthropics_official_skillcreator_from/",
+      "subreddit": "LocalLLaMA",
+      "score": 2,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "Hey r/LocalLLaMA \u2014 I open-sourced a tool that brings eval-driven development to AI agent skills. It's based on Anthropic's official skill-creator for Claude Code, but rewritten in TypeScript to work with OpenCode (which supports 300+ models including local ones).\n\nThe problem: creating skills for AI",
+      "is_self": false,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "How to give AI Agents access to live Amazon, Walmart, Google, and YouTube data (2-minute setup)",
+      "url": "https://reddit.com/r/AI_Agents/comments/1si03by/how_to_give_ai_agents_access_to_live_amazon/",
+      "subreddit": "AI_Agents",
+      "score": 1,
+      "num_comments": 1,
+      "created": "2026-04-10",
+      "body_preview": "Scavio AI just dropped their MCP server which give Claude Code realtime search data from Google, Amazon, Walmart and Youtube. Omce connected you may ask claude questions like \"Find me top trending wireless earbuds on amazon under $50\" and it will go gets live results.\n\nThe MCP has 8 toos:\n\n\\- search",
+      "is_self": true,
+      "is_new": true,
+      "category": "best_practices"
+    },
+    {
+      "source": "reddit",
+      "title": "What Are Simple Solutions With Voice Agents That I Can Do To Get A Client Fast???",
+      "url": "https://reddit.com/r/AIVoice_Agents/comments/1si03bg/what_are_simple_solutions_with_voice_agents_that/",
+      "subreddit": "AIVoice_Agents",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "Hello all,\n\nI am completely new to this and not technical at all, but have been playing with various AI models since ChatGPT came out. I'm open to doing whatever, but I have been into voice agents lately. I have just been researching without taking any action. I'm in a free skool community for voice",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/VibeReviews/comments/1si02w6/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "VibeReviews",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/vibeprinting/comments/1si02v3/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "vibeprinting",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/LLM/comments/1si02s6/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "LLM",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "Applied to some colleges in EU and Ireland but got one admit dont know what to do",
+      "url": "https://reddit.com/r/Indians_StudyAbroad/comments/1si02q8/applied_to_some_colleges_in_eu_and_ireland_but/",
+      "subreddit": "Indians_StudyAbroad",
+      "score": 1,
+      "num_comments": 1,
+      "created": "2026-04-10",
+      "body_preview": "Recently my\\_qualifications led to me an offer from Uni of Birmingham for a ms in ai which i have to accept by April 30 I am a bit skeptical about accepting the offer my other options are not going well it seems I applied to Manchester which didn't reply UCD waitlisted me TCD did not reply UvA ( Uni",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/LLMDevs/comments/1si02ll/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "LLMDevs",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/WritingWithAI/comments/1si02et/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "WritingWithAI",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "Persistent memory system for AI agents \u2014 single SQLite file, no server, no API keys, Free and opensource - BrainCTL",
+      "url": "https://reddit.com/r/LocalLLaMA/comments/1si02b7/persistent_memory_system_for_ai_agents_single/",
+      "subreddit": "LocalLLaMA",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "Every agent I build forgets everything between sessions. I got tired of it and built brainctl.\n\n\n\npip install brainctl, then:\n\n\n\nfrom agentmemory import Brain\n\nbrain = Brain(agent\\_id=\"my-agent\")\n\ncontext = brain.orient()  # picks up where last session left off\n\n\n\n  One SQLite file. FTS5 search. Kno",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/vibeward/comments/1si020d/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "vibeward",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "Sentinel Claw \u2014 Open-Source Zero-Trust Security Layer for Autonomous AI Agents \ud83d\udee1\ufe0f\ud83e\udd80",
+      "url": "https://reddit.com/r/OpenSourceeAI/comments/1si01vo/sentinel_claw_opensource_zerotrust_security_layer/",
+      "subreddit": "OpenSourceeAI",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "With the rapid rise of autonomous AI agents capable of executing real tasks \u2014 running code, managing infrastructure, and handling complex workflows \u2014 one critical issue remains largely unsolved: \\*\\*security\\*\\*.  \n  \nRecent incidents have shown how vulnerable agents can be. Malicious prompts or com",
+      "is_self": true,
+      "is_new": true,
+      "category": "best_practices"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/vibecodingcommunity/comments/1si01pu/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "vibecodingcommunity",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/VibeCodersNest/comments/1si01ep/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "VibeCodersNest",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/VibeCodingList/comments/1si01aw/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "VibeCodingList",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    }
+  ],
+  "all_gh_issues": [
+    {
+      "source": "github_issues",
+      "title": "Feature: Agent default delivery target for cross-session message calls",
+      "url": "https://github.com/openclaw/openclaw/issues/64507",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "## Problem\n\nWhen an agent session is created programmatically (via `sessions_send`, webchat routing, or cron), the session `origin` is empty, so `toolContext.currentChannelId` is `null`. This means the `message` tool **requires** an explicit `target` parameter for every `send` action \u2014 the auto-infe",
+      "repo": "openclaw_core",
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "Security/deps: npm audit flags axios (@larksuiteoapi/node-sdk), tar (discordjs node-pre-gyp), @hono/node-server (carbon)",
+      "url": "https://github.com/openclaw/openclaw/issues/64506",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "### Context\nAfter updating to **OpenClaw 2026.4.9**, running `npm audit` in a clean install still reports vulnerabilities in transitive dependencies.\n\nThis report is *not* about the recent malicious axios publish incident (axios 1.14.1 / 0.30.4). We verified those versions are not installed and `pla",
+      "repo": "openclaw_core",
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Bug]: globalCircuitBreakerThreshold blocks per-tool, not per-pair \u2014 ping-pong loops survive circuit breaker",
+      "url": "https://github.com/openclaw/openclaw/issues/64500",
+      "labels": [],
+      "comments": 1,
+      "created": "2026-04-10",
+      "body_preview": "## Summary\n\nThe `globalCircuitBreakerThreshold` in `tools.loopDetection` blocks individual tools when the threshold is reached, but does **not** block the paired tool in a ping-pong pattern. This allows the agent to seamlessly switch to the alternate tool, effectively restarting the loop and renderi",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "macOS companion node missing system.run.prepare breaks exec host=node",
+      "url": "https://github.com/openclaw/openclaw/issues/64499",
+      "labels": [
+        "bug",
+        "bug:behavior"
+      ],
+      "comments": 1,
+      "created": "2026-04-10",
+      "body_preview": "### Bug type\n\nBehavior bug (incorrect output/state without crash)\n\n### Beta release blocker\n\nNo\n\n### Summary\n\nAfter setting up Openclaw on a Raspberry Pi 5 with Ubuntu (64 bit) there is an issue with controlling a Macbook through Node\n\n### Steps to reproduce\n\n1. Set up openclaw on a Raspberry Pi\n2. ",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Bug]: Isolated cron job sessions fail to spawn after main session inactivity",
+      "url": "https://github.com/openclaw/openclaw/issues/64497",
+      "labels": [
+        "bug",
+        "regression"
+      ],
+      "comments": 1,
+      "created": "2026-04-10",
+      "body_preview": "### Bug type\n\nRegression (worked before, now fails)\n\n### Beta release blocker\n\nNo\n\n### Summary\n\nIsolated `agentTurn` cron jobs intermittently fail to spawn a session at all. The cron scheduler fires, waits 6\u201317 minutes, then reports `\"cron: job execution timed out\"` with no `sessionId`, no `model`, ",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Bug]:",
+      "url": "https://github.com/openclaw/openclaw/issues/64496",
+      "labels": [
+        "bug",
+        "bug:crash"
+      ],
+      "comments": 1,
+      "created": "2026-04-10",
+      "body_preview": "### Bug type\n\nCrash (process/app exits or hangs)\n\n### Beta release blocker\n\nNo\n\n### Summary\n\n[10/04/2026 22:49] OPENCLAW: S\u00ed. H\u00e1galo aqu\u00ed:\n\nGitHub del proyecto OpenClaw\n\n\u2022 https://github.com/openclaw/openclaw/issues\n\nPulse New issue y pegue esto.\n\n\u2500\u2500\u2500\n\nIssue 1, Remote Control UI still requires pairi",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "Bug: isolated cron agentTurn on Claude Sonnet can consume full timeout before script starts; same job succeeds on gpt-5.4-mini",
+      "url": "https://github.com/openclaw/openclaw/issues/64495",
+      "labels": [],
+      "comments": 2,
+      "created": "2026-04-10",
+      "body_preview": "## Summary\n\nOn **OpenClaw v2026.4.9**, multiple isolated cron jobs using `payload.kind=\"agentTurn\"` with `model: \"anthropic/claude-sonnet-4-6\"` timed out for the full job budget, but **the shell pipeline never actually started**.\n\nThe same exact cron payload, same script, same machine, same data, wh",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "Cannot signin. First time trying to publish",
+      "url": "https://github.com/openclaw/clawhub/issues/1621",
+      "labels": [],
+      "comments": 4,
+      "created": "2026-04-10",
+      "body_preview": "I am trying to login to ClawHub. \n\nI did get redirected to github and authorized it. ClawdHub shows as authorized in my github account.\n\nGithub username:\nimmrlucky\n\nNow every time I click on Signin with Github button it just refreshes the page. I have tried using an incognito browser window as well.",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "Cannot sign in with GitHub after accidentally deleting my account",
+      "url": "https://github.com/openclaw/clawhub/issues/1620",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "I accidentally deleted my Clawhub account recently. Now, I am trying to sign back in / re-register using my GitHub account, but the process fails and I cannot access Clawhub anymore.\n\n<img width=\"859\" height=\"280\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/4551b9c1-b3be-4518-b2bd-7c",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "Attempting to publishing a skill. Stuck on \"Sign in failed. Please try again.\"",
+      "url": "https://github.com/openclaw/clawhub/issues/1619",
+      "labels": [],
+      "comments": 6,
+      "created": "2026-04-10",
+      "body_preview": "I'm trying to publish a skill but can't login in. I'm getting a generic - \"Sign in failed. Please try again.\" Happens to both logging in from the web UI and running `clawdhub login` from the CLI.\n\nCleared cached, tried Chrome and Safari. Revoked token from Github and reconnected again. \n\nUser is:\nht",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "[False Positive] olostep skill flagged as Suspicious \u2014 OLOSTEP_API_KEY correctly declared in metadata.openclaw",
+      "url": "https://github.com/openclaw/clawhub/issues/1618",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "## Skill\n- **Slug:** olostep\n- **Version:** 1.0.3\n- **URL:** https://clawhub.ai/skills/olostep\n- **Owner:** @ZeeshanAdilButt (published on behalf of [Olostep](https://olostep.com))\n\n## Issue\nThe skill is flagged as **Suspicious (medium confidence)** by the OpenClaw scanner despite correctly declarin",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "Skill format: unclear how to declare optional env variables",
+      "url": "https://github.com/openclaw/clawhub/issues/1617",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "## Problem\n\nThe skill format spec supports `metadata.openclaw.requires.env` for declaring required environment variables. However, many skills have optional env variables \u2014 the skill functions with or without them, but the underlying CLI/tool reads them if present.\n\n**Example:** The `alby-bitcoin-pa",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "False positive \"suspicious\" flag on verdikta-bounties-onboarding v1.4.1 \u2014 both scanners report Benign",
+      "url": "https://github.com/openclaw/clawhub/issues/1616",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "## Skill\n\n- **Name:** verdikta-bounties-onboarding\n- **Version:** 1.4.1\n- **Author:** @nigelon11\n- **ClawHub URL:** https://clawhub.ai/nigelon11/verdikta-bounties-onboarding\n- **Source:** https://github.com/verdikta/verdikta-applications/tree/main/skills/verdikta-bounties-onboarding\n\n## Issue\n\nThe s",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "False Positive: Memory Never Forget v3.2.1 incorrectly flagged as Suspicious",
+      "url": "https://github.com/openclaw/clawhub/issues/1615",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "Hi ClawHub Security team,\n\nMy skill **Memory Never Forget v3.2.1** (https://clawhub.ai/jujitao/memory-never-forget) has been incorrectly flagged as **Suspicious**, while the OpenClaw scan clearly marks it as **Benign with high confidence**. I believe this is a false positive.\n\n### Basic Skill Info\n-",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "Error when using Plugins search: Something went wrong Server Error",
+      "url": "https://github.com/openclaw/clawhub/issues/1614",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "<img width=\"536\" height=\"270\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/e9ab1156-8a6c-448a-8d14-ef15aa97e31c\" />\n\nTried in multiple browsers, logged in and out.  Same no matter what is done.\n\nPlugin search is straight up broken.",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "issues"
+    },
+    {
+      "source": "github_issues",
+      "title": "False positive: neuro-humble skill flagged as suspicious",
+      "url": "https://github.com/openclaw/clawhub/issues/1613",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "Hi! My skill `neuro-humble` (https://clawhub.ai/sparrowpanton/neuro-humble) was flagged as suspicious after publishing.\n\nI believe this is a false positive. The skill is a pedagogical formation tool \u2014 it teaches AI agents to hold a disability justice posture when encountering human distress, especia",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "Skill flagged as \"Suspicious\" despite VirusTotal 0/65 \u2014 possible VT status parsing issue",
+      "url": "https://github.com/openclaw/clawhub/issues/1612",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "My skill [ekybot-connector](https://clawhub.ai/regiomag/ekybot-connector) (v6.1.0) shows \"Skill flagged \u2014 suspicious patterns detected\" on ClawHub.\n\nHowever, when I check the actual VirusTotal report linked from the page, the result is **0 / 65** (zero detections across all 65 engines):\n\n- v6.0.4 ha",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "\u6211\u7684\u6280\u80fd\u88ab\u6807\u8bb0\u4e86\u53ef\u7591\uff0c\u8bf7\u67e5\u5b9e\u540e\u89e3\u9664\u53ef\u7591\u6807\u8bb0\uff1aauto-backup-openclaw-user-data",
+      "url": "https://github.com/openclaw/clawhub/issues/1611",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "## \u6280\u80fd\u94fe\u63a5\n\u6211\u53d1\u5e03\u7684\u6280\u80fd\uff1aauto-backup-openclaw-user-data\n\u6280\u80fd\u5730\u5740\uff1ahttps://clawhub.ai/hjj345/auto-backup-openclaw-user-data\nGithub\u5f00\u6e90\u5730\u5740\uff1ahttps://github.com/hjj345/auto-backup-openclaw-user-data\n\n## \u6280\u80fd\u7b80\u8981\u4ecb\u7ecd\uff1a\n- \u672c\u6280\u80fd\u4e3b\u8981\u662f\u4f9d\u8d56Node\u670d\u52a1\u6765\u6267\u884c\u81ea\u52a8\u5907\u4efdOpenClaw\u5b8c\u6574\u6216\u81ea\u5b9a\u4e49\u76ee\u5f55\u6587\u4ef6\n- \u81ea\u52a8\u6267\u884c\u538b\u7f29\u4e3a.zip\u6587\u4ef6\u4fdd\u5b58\n- \u53ef\u81ea\u5b9a\u4e49.zip\u6587\u4ef6\u7684\u5b58\u50a8\u8def\u5f84\n- \u53ef\u5b9a\u65f6\u6267\u884c\u5907\u4efd\n- \u65e5\u5fd7\u8bb0\u5f55\u5907\u4efd\u8fc7\u7a0b\u548c\u7ed3\u679c\n- \u53ef\u81ea\u52a8\u6e05\u7406\u4fdd\u7559\u5907",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "wolverine-ai skill flagged as suspicious \u2014 requesting guidance",
+      "url": "https://github.com/openclaw/clawhub/issues/1610",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "Hi ClawHub team,\n\nOur skill `wolverine-ai` (https://clawhub.ai/skills/wolverine-ai) was flagged as suspicious after publishing. We'd appreciate guidance on what specifically triggered the flag so we can bring it in line with ClawHub's standards.\n\n**What the skill does:**\nWolverine is a supervised cr",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "My ClawHub Skill\uff08Philosophy Dialogue\uff09is incorrectly flagged\uff0cPlease Remove restrictions",
+      "url": "https://github.com/openclaw/clawhub/issues/1609",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "Skill flagged \u2014 suspicious patterns detected\nClawHub Security flagged this skill as suspicious. Review the scan results before using.\n\nIf you believe this skill has been incorrectly flagged, please [submit an issue on GitHub](https://github.com/openclaw/clawhub/issues) and we'll break down why it wa",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "Skill flagged \u2014 suspicious patterns detected ClawHub Security flagged this skill as suspicious. Review the scan results before using.",
+      "url": "https://github.com/openclaw/clawhub/issues/1608",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "https://clawhub.ai/leilizhang/processon-diagram-generator\nhttps://clawhub.ai/leilizhang/processon-diagramgen\n\nI believe my skill has been incorrectly flagged. I guarantee there is no risk. Please review it again. Also, how can I merge these two skills? I just updated the version, and it turned into ",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "ClawHub Security flagged skill as suspicious",
+      "url": "https://github.com/openclaw/clawhub/issues/1607",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "This skill [https://clawhub.ai/leocdchina/zhongguo-nongli-huangli-jixiong ](https://clawhub.ai/leocdchina/zhongguo-nongli-huangli-jixiong ) has been flagged as suspicious. \n\nCould you please review and share the reason why and what I can do to change this status?\n\nThanks\uff01",
+      "repo": "clawhub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "[RFC] CLI + Plugin System for OpenClaw Hub",
+      "url": "https://github.com/openclaw-community/openclaw-hub/issues/54",
+      "labels": [],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "## Summary\n\nProposal to add a first-class **CLI** (`openclaw`) and **plugin system** to OpenClaw Hub, enabling the community to extend the Hub without forking the repo.\n\nThe project topics already include `openclaw-plugin`, but there is currently no runtime for third-party plugins. This RFC proposes",
+      "repo": "openclaw_hub",
+      "is_new": false,
+      "category": "general"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: Support new openrouter/stepfun/step-3.5-flash:free model",
+      "url": "https://github.com/openclaw/openclaw/issues/7322",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 3,
+      "created": "2026-02-02",
+      "body_preview": "## Summary\n\nI would like to use the new Step 3.5 model that was released under a free endpoint on Openrouter last night (openrouter/stepfun/step-3.5-flash:free) as it sees quite powerful (and free).\n\n## Proposed solution\n\nI would like for the openrouter provider implementation to support the above m",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "Feature Request: Real-time Voice Conversation Support",
+      "url": "https://github.com/openclaw/openclaw/issues/7200",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 17,
+      "created": "2026-02-02",
+      "body_preview": "# Summary\nAdd native support for real-time voice conversations (bidirectional streaming audio) to enable phone-like interactions via Twilio/WebRTC integration.\n\n## Motivation / Use Case\nCurrently, OpenClaw supports text messaging and voice messages (pre-recorded audio files). However, many users wan",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: Multi-agent trust boundaries for claw",
+      "url": "https://github.com/openclaw/openclaw/issues/63430",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 5,
+      "created": "2026-04-08",
+      "body_preview": "### Summary\n\nWhen multiple claw instances need to collaborate, the only trust mechanism today is the system prompt. PAP is an open protocol that enforces context boundaries and authorization at the transport layer \u2014 before execution, not after.\n\n### Problem to solve\n\nMulti-instance orchestration has",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: feat: native Anthropic Advisor Tool support via model params config",
+      "url": "https://github.com/openclaw/openclaw/issues/64363",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "### Summary\n\nEnable per-agent Anthropic Advisor Tool (advisor-tool-2026-03-01) via openclaw.json model params \u2014 auto-inject beta header + tool definition into API requests.\n\n\n### Problem to solve\n\nThe Anthropic Advisor Tool lets a cheap executor (Haiku/Sonnet) consult Opus mid-generation for strateg",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: Evaluate simplifying the sandbox browser CDP path",
+      "url": "https://github.com/openclaw/openclaw/issues/64383",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 1,
+      "created": "2026-04-10",
+      "body_preview": "### Summary\n\nEvaluate whether the sandbox browser CDP path still needs the socat intermediate layer.\n\n### Problem to solve\n\nThe current sandbox browser startup path uses an intermediate socat layer plus a CDP port offset. This makes readiness harder to reason about, introduces an extra process that ",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "Feature Request: Slash command subagent with isolated execution context",
+      "url": "https://github.com/openclaw/openclaw/issues/64323",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "### Summary\n\nAllow subagents to be triggered directly via slash commands (e.g. /rename, /extract) with their own system prompt and clean context, without polluting the main agent's session.\n\n### Problem to solve\n\nWhen a user wants to invoke a subagent for a specific lightweight task (e.g. file renam",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: Lightweight context mode for heartbeat/cron tasks (cost saving addition)",
+      "url": "https://github.com/openclaw/openclaw/issues/7957",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 3,
+      "created": "2026-02-03",
+      "body_preview": "## Summary\nHeartbeats and cron jobs currently receive the full agent context (AGENTS.md, SOUL.md, USER.md, TOOLS.md, IDENTITY.md, etc.). For simple automated tasks, this is unnecessary overhead that:\n\n- Burns tokens on context that won't be used\n- Makes local/small models unusable (they truncate and",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: Support per-run tool allowlists for spawned subagents",
+      "url": "https://github.com/openclaw/openclaw/issues/62695",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 2,
+      "created": "2026-04-07",
+      "body_preview": "### Summary\n\nAllow sessions_spawn / spawned subagent runs to restrict the available tool set on a per-run basis, similar to cron toolsAllow.\n\n### Problem to solve\n\nToday, spawned subagents appear to rely on agent-level/static tool policy plus subagent role/depth filtering. In other words, you can de",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: \u5e0c\u671b\u652f\u6301\u654f\u611f\u6570\u636e\u8131\u654f",
+      "url": "https://github.com/openclaw/openclaw/issues/64046",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 6,
+      "created": "2026-04-10",
+      "body_preview": "### Summary\n\n1. \u5f53\u524dopenclaw.json\u7b49\u914d\u7f6e\u6587\u4ef6\u91ccapikey\u3001token\u3001secretkey\u7b49\u654f\u611f\u4fe1\u606f\u90fd\u662f\u660e\u6587\u5b58\u50a8\n2. openclaw\u65e5\u5fd7\u3001gateway\u65e5\u5fd7\u4e2d\u654f\u611f\u4fe1\u606f\u672a\u8131\u654f\u5c55\u793a\uff0c\u5f53\u524d\u4ec5\u652f\u6301\u63a7\u5236\u53f0\u6253\u5370\u8131\u654f\n3. \u81ea\u5e26UI\u91cc\u654f\u611f\u4fe1\u606f\u660e\u6587\u5c55\u793a\n\n<img width=\"1871\" height=\"537\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/9e26e08a-f06e-494b-9fa9-11e791e02fad\" />\n\n\u7efc\u4e0a\uff0c\u5e0c\u671b\u80fd\u591f\u652f\u6301\u654f\u611f\u6570\u636e\u8131\u654f\n\n### Problem to",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    },
+    {
+      "source": "github_issues",
+      "title": "[Feature]: Split chat session picker into Agent + Agent Sessions",
+      "url": "https://github.com/openclaw/openclaw/issues/64121",
+      "labels": [
+        "enhancement"
+      ],
+      "comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "### Summary\n\nSplit the combined chat session picker into separate Agent and Agent Session controls, while keeping Model and Thinking bound to the active session.\n\n### Problem to solve\n\nProblem to solve\nThe current chat header uses one combined session picker for everything. Once an agent accumulates",
+      "repo": "openclaw_core",
+      "is_new": false,
+      "category": "features"
+    }
+  ],
+  "all_gh_discussions": [
+    {
+      "source": "github_discussions",
+      "title": "Pinclaw \u2013 the first wearable hardware built for OpenClaw",
+      "url": "https://github.com/openclaw-community/openclaw-hub/discussions/53",
+      "category": "discussions",
+      "comments": 0,
+      "created": "2026-04-09",
+      "body_preview": "## The last mile for your OpenClaw agent\n\nEvery AI wearable so far tried to be a standalone device \u2014 screen, camera, cellular, on-device AI. They all failed. Physics said no.\n\nPinclaw takes the opposite approach: **subtraction**.\n\nNo screen (your phone has one). No camera (privacy). No cellular (you",
+      "is_new": false
+    },
+    {
+      "source": "github_discussions",
+      "title": "First fully local LLM phone automation \u2014 PokeClaw runs Gemma 4 entirely on-device to control Android, no cloud (inspired by OpenClaw \ud83e\udd9e)",
+      "url": "https://github.com/openclaw-community/openclaw-hub/discussions/52",
+      "category": "general",
+      "comments": 0,
+      "created": "2026-04-06",
+      "body_preview": "Hey everyone \ud83d\udc4b\n\nBig fan of what OpenClaw has built \u2014 the lobster way \ud83e\udd9e inspired me to build something for Android phones.\n\nI noticed a lot of people trying to run OpenClaw on Android (Termux, proot, ClawPhone, etc.) but it's always a workaround \u2014 running a desktop agent inside a Linux container on a",
+      "is_new": false
+    }
+  ],
+  "all_reddit": [
+    {
+      "source": "reddit",
+      "title": "I ported Anthropic's official skill-creator from Claude Code to OpenCode \u2014 now you can create and evaluate AI agent skills with any model",
+      "url": "https://reddit.com/r/LocalLLaMA/comments/1si03l9/i_ported_anthropics_official_skillcreator_from/",
+      "subreddit": "LocalLLaMA",
+      "score": 2,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "Hey r/LocalLLaMA \u2014 I open-sourced a tool that brings eval-driven development to AI agent skills. It's based on Anthropic's official skill-creator for Claude Code, but rewritten in TypeScript to work with OpenCode (which supports 300+ models including local ones).\n\nThe problem: creating skills for AI",
+      "is_self": false,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "How to give AI Agents access to live Amazon, Walmart, Google, and YouTube data (2-minute setup)",
+      "url": "https://reddit.com/r/AI_Agents/comments/1si03by/how_to_give_ai_agents_access_to_live_amazon/",
+      "subreddit": "AI_Agents",
+      "score": 1,
+      "num_comments": 1,
+      "created": "2026-04-10",
+      "body_preview": "Scavio AI just dropped their MCP server which give Claude Code realtime search data from Google, Amazon, Walmart and Youtube. Omce connected you may ask claude questions like \"Find me top trending wireless earbuds on amazon under $50\" and it will go gets live results.\n\nThe MCP has 8 toos:\n\n\\- search",
+      "is_self": true,
+      "is_new": true,
+      "category": "best_practices"
+    },
+    {
+      "source": "reddit",
+      "title": "What Are Simple Solutions With Voice Agents That I Can Do To Get A Client Fast???",
+      "url": "https://reddit.com/r/AIVoice_Agents/comments/1si03bg/what_are_simple_solutions_with_voice_agents_that/",
+      "subreddit": "AIVoice_Agents",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "Hello all,\n\nI am completely new to this and not technical at all, but have been playing with various AI models since ChatGPT came out. I'm open to doing whatever, but I have been into voice agents lately. I have just been researching without taking any action. I'm in a free skool community for voice",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/VibeReviews/comments/1si02w6/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "VibeReviews",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/vibeprinting/comments/1si02v3/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "vibeprinting",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/LLM/comments/1si02s6/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "LLM",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "Applied to some colleges in EU and Ireland but got one admit dont know what to do",
+      "url": "https://reddit.com/r/Indians_StudyAbroad/comments/1si02q8/applied_to_some_colleges_in_eu_and_ireland_but/",
+      "subreddit": "Indians_StudyAbroad",
+      "score": 1,
+      "num_comments": 1,
+      "created": "2026-04-10",
+      "body_preview": "Recently my\\_qualifications led to me an offer from Uni of Birmingham for a ms in ai which i have to accept by April 30 I am a bit skeptical about accepting the offer my other options are not going well it seems I applied to Manchester which didn't reply UCD waitlisted me TCD did not reply UvA ( Uni",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/LLMDevs/comments/1si02ll/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "LLMDevs",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/WritingWithAI/comments/1si02et/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "WritingWithAI",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "Persistent memory system for AI agents \u2014 single SQLite file, no server, no API keys, Free and opensource - BrainCTL",
+      "url": "https://reddit.com/r/LocalLLaMA/comments/1si02b7/persistent_memory_system_for_ai_agents_single/",
+      "subreddit": "LocalLLaMA",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "Every agent I build forgets everything between sessions. I got tired of it and built brainctl.\n\n\n\npip install brainctl, then:\n\n\n\nfrom agentmemory import Brain\n\nbrain = Brain(agent\\_id=\"my-agent\")\n\ncontext = brain.orient()  # picks up where last session left off\n\n\n\n  One SQLite file. FTS5 search. Kno",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/vibeward/comments/1si020d/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "vibeward",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "Sentinel Claw \u2014 Open-Source Zero-Trust Security Layer for Autonomous AI Agents \ud83d\udee1\ufe0f\ud83e\udd80",
+      "url": "https://reddit.com/r/OpenSourceeAI/comments/1si01vo/sentinel_claw_opensource_zerotrust_security_layer/",
+      "subreddit": "OpenSourceeAI",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "With the rapid rise of autonomous AI agents capable of executing real tasks \u2014 running code, managing infrastructure, and handling complex workflows \u2014 one critical issue remains largely unsolved: \\*\\*security\\*\\*.  \n  \nRecent incidents have shown how vulnerable agents can be. Malicious prompts or com",
+      "is_self": true,
+      "is_new": true,
+      "category": "best_practices"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/vibecodingcommunity/comments/1si01pu/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "vibecodingcommunity",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/VibeCodersNest/comments/1si01ep/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "VibeCodersNest",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    },
+    {
+      "source": "reddit",
+      "title": "OmniRoute \u2014 open-source AI gateway that pools ALL your accounts, routes to 60+ providers, 13 combo strategies, 11 providers at $0 forever. One endpoint for Cursor, Claude Code, Codex, OpenClaw, and every tool. MCP Server (25 tools), A2A Protocol, Never pay for what you don't use, never stop coding.",
+      "url": "https://reddit.com/r/VibeCodingList/comments/1si01aw/omniroute_opensource_ai_gateway_that_pools_all/",
+      "subreddit": "VibeCodingList",
+      "score": 1,
+      "num_comments": 0,
+      "created": "2026-04-10",
+      "body_preview": "OmniRoute is a free, open-source local AI gateway. You install it once, connect all your AI accounts (free and paid), and it creates a single OpenAI-compatible endpoint at\u00a0`localhost:20128/v1`. Every AI tool you use \u2014 Cursor, Claude Code, Codex, OpenClaw, Cline, Kilo Code \u2014 connects there. OmniRoute",
+      "is_self": true,
+      "is_new": true,
+      "category": "general"
+    }
+  ]
+}

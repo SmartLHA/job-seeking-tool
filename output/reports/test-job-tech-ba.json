@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-07T17:31:33Z",
+  "generated_at": "2026-04-09T14:40:37Z",
   "summary": {
     "total_jobs": 1,
     "decision_counts": {
@@ -17,22 +17,23 @@
       "employment_type": "full-time",
       "source_type": "copied_text",
       "source_ref": "test",
-      "match_score": 40.0,
+      "match_score": 76.25,
       "confidence": "high",
       "decision": "review",
-      "decision_reason": "Score 40 would otherwise qualify for apply, but critical risks require review: Required skill gap, Salary below floor",
+      "decision_reason": "Score 76 is promising but still needs manual review",
       "blockers": [],
       "risk_flags": [
         "Required skill gap",
         "Preferred skill gap",
         "Salary below floor"
       ],
-      "strengths": [],
-      "missing_required_skills": [
-        "SQL",
-        "Python",
+      "strengths": [
         "Data Analysis",
-        "Jira"
+        "Jira",
+        "SQL"
+      ],
+      "missing_required_skills": [
+        "Python"
       ],
       "missing_preferred_skills": [
         "Machine Learning",

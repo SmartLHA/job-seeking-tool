@@ -220,6 +220,7 @@
       </div>
       <p class="llm-sub">Context: <span id="minimax-context">—</span> tokens</p>
       <p class="llm-sub" style="margin-top:0.25rem"><span id="minimax-active" style="color:var(--yellow)">—</span></p>
+      <p class="llm-sub">5h tokens: <span id="minimax-tokens-5h" style="color:var(--cyan)">—</span></p>
     </div>
 
     <!-- E4B -->
@@ -241,14 +242,15 @@
     <div class="llm-card">
       <div class="card-header">
         <span class="status-dot dot-gray" id="codex-dot"></span>
-        <h3>⚡ Codex CLI</h3>
+        <h3>⚡ ChatGPT Codex</h3>
       </div>
       <div class="llm-metric green" id="codex-sessions">—</div>
       <div>
         <span class="llm-badge badge-green" id="codex-badge">ONLINE</span>
       </div>
-      <p class="llm-sub">Dev agent sessions</p>
+      <p class="llm-sub">ChatGPT Codex sessions (dev + wiser)</p>
       <p class="llm-sub" style="margin-top:0.25rem"><span id="codex-active" style="color:var(--yellow)">—</span></p>
+      <p class="llm-sub" style="margin-top:0.25rem"><span id="codex-lastused" style="color:var(--muted)">—</span></p>
     </div>
   </div>
 
@@ -257,13 +259,9 @@
     <div class="card">
       <div class="card-header">
         <span class="status-dot dot-green"></span>
-        <h2>📌 Latest Message</h2>
+        <h2>📌 Latest Messages</h2>
       </div>
-      <div class="message-box">
-        <strong>👋 Boss Mic</strong><br/>
-        <span id="latest-message">All systems operational.</span>
-      </div>
-      <p class="timestamp" id="message-time" style="display:none"></p>
+      <div id="latest-messages">Loading...</div>
     </div>
 
     <!-- Sessions -->
@@ -371,6 +369,7 @@
       const sessions = openclaw.sessions || {};
       const byAgent = sessions.byAgent || [];
       const activeSessions = d.active_sessions || {};
+      const modelUsage = d.model_usage || {};
 
       // MiniMax - big number = recent 5m, small = active 2h
       const mainAgent = byAgent.find(a => a.agentId === 'main');
@@ -394,6 +393,11 @@
       }
       document.getElementById('minimax-context').textContent = sessions.defaults?.contextTokens?.toLocaleString() || '—';
       document.getElementById('minimax-active').textContent = `${minimaxActive2h} active (2h) · ${minimaxTotal} total`;
+      const mmTokens5h = modelUsage['MiniMax-M2.7'];
+      if (mmTokens5h) {
+        const totalK = (mmTokens5h.totalTokens / 1000).toFixed(1);
+        document.getElementById('minimax-tokens-5h').textContent = `${totalK}k (${mmTokens5h.count} sess)`;
+      }
 
       // E4B
       const e4bAvailable = available.find(m => m.name === 'gemma4:e4b');
@@ -423,30 +427,24 @@
       const e4bBytes = e4bAvailable?.size || 0;
       const e4bGB = e4bBytes > 0 ? (e4bBytes / (1024**3)).toFixed(1) + ' GB' : '—';
       document.getElementById('e4b-size').textContent = e4bGB;
-      const ollamaUsage = d.ollama_usage || {};
-      const e4bUsage = ollamaUsage['gemma4:e4b'] || {};
-      if (e4bUsage.ago_ms !== undefined) {
-        const inTok = e4bUsage.input_tokens ? e4bUsage.input_tokens.toLocaleString() : '—';
-        const outTok = e4bUsage.output_tokens ? e4bUsage.output_tokens.toLocaleString() : '—';
-        document.getElementById('e4b-tokens').textContent = inTok + ' / ' + outTok;
-        const mins = Math.floor(e4bUsage.ago_ms / 60000);
-        const hours = Math.floor(mins / 60);
-        const days = Math.floor(hours / 24);
-        let agoStr;
-        if (days > 0) agoStr = `${days}d ago`;
-        else if (hours > 0) agoStr = `${hours}h ago`;
-        else agoStr = `${mins}m ago`;
-        document.getElementById('e4b-active').textContent = `Last used: ${agoStr}`;
+      const e4bTokens5h = modelUsage['gemma4:e4b'];
+      if (e4bTokens5h) {
+        const totalK = (e4bTokens5h.totalTokens / 1000).toFixed(1);
+        document.getElementById('e4b-tokens').textContent = `${totalK}k (${e4bTokens5h.count} sess)`;
       } else {
         document.getElementById('e4b-tokens').textContent = '—';
-        document.getElementById('e4b-active').textContent = 'Not used today';
       }
 
-      // Codex - big number = recent 5m, small = active 2h
-      const codexAgent = byAgent.find(a => a.agentId === 'codex');
-      const codexTotal = codexAgent?.count || 0;
-      const codexActive2h = activeSessions.codex?.active_2h || 0;
-      const codexRecent5m = activeSessions.codex?.recent_5m || 0;
+      // ChatGPT Codex = codex + dev + wiser combined
+      const codexTotal = (byAgent.find(a => a.agentId === 'codex')?.count || 0)
+        + (byAgent.find(a => a.agentId === 'dev')?.count || 0)
+        + (byAgent.find(a => a.agentId === 'wiser')?.count || 0);
+      const codexActive2h = (activeSessions.codex?.active_2h || 0)
+        + (activeSessions.dev?.active_2h || 0)
+        + (activeSessions.wiser?.active_2h || 0);
+      const codexRecent5m = (activeSessions.codex?.recent_5m || 0)
+        + (activeSessions.dev?.recent_5m || 0)
+        + (activeSessions.wiser?.recent_5m || 0);
       document.getElementById('codex-sessions').textContent = codexRecent5m;
       const codexDot = document.getElementById('codex-dot');
       const codexBadge = document.getElementById('codex-badge');
@@ -463,6 +461,29 @@
         setMetricColor(codexMetric, 'yellow');
       }
       document.getElementById('codex-active').textContent = `${codexActive2h} active (2h) · ${codexTotal} total`;
+
+      // ChatGPT Codex last used — most recent session across codex + dev + wiser
+      const codexAgents = ['codex', 'dev', 'wiser'];
+      const nowMs = Date.now();
+      let codexLastUsed = null;
+      for (const entry of (sessions.byAgent || [])) {
+        if (codexAgents.includes(entry.agentId)) {
+          for (const s of (entry.recent || [])) {
+            if (!codexLastUsed || s.updatedAt > codexLastUsed) codexLastUsed = s.updatedAt;
+          }
+        }
+      }
+      const codexLastEl = document.getElementById('codex-lastused');
+      if (codexLastUsed) {
+        const agoMs = nowMs - codexLastUsed;
+        const mins = Math.floor(agoMs / 60000);
+        const hours = Math.floor(agoMs / 3600000);
+        const days = Math.floor(agoMs / 86400000);
+        const agoStr = days > 0 ? `${days}d ago` : hours > 0 ? `${hours}h ago` : mins > 0 ? `${mins}m ago` : 'just now';
+        codexLastEl.textContent = `Last used: ${agoStr}`;
+      } else {
+        codexLastEl.textContent = 'Last used: —';
+      }
 
       // Sessions - total count still shows all
       const totalSessions = sessions.count || 0;
@@ -505,10 +526,23 @@
     }
 
     function renderLatestMessage(data) {
-      const el = document.getElementById('latest-message');
-      if (data && data.text) {
-        el.textContent = data.text;
+      const el = document.getElementById('latest-messages');
+      if (!data || !data.messages || data.messages.length === 0) {
+        el.innerHTML = '<div class="message-box"><span style="color:var(--muted)">All systems operational.</span></div>';
+        return;
       }
+      el.innerHTML = data.messages.map(m => `
+        <div class="message-box" style="margin-bottom:0.75rem">
+          <span style="color:var(--yellow);font-size:0.7rem">${m.age || ''} · ${m.session || ''}…</span>
+          <span style="display:block;margin-top:0.25rem;color:var(--text)">${escapeHtml(m.text || '')}</span>
+        </div>
+      `).join('');
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
     }
 
     function renderRoleStatus(data) {
@@ -559,6 +593,7 @@
         sessions.map(s => {
           const agentColor = s.agent === 'main' ? 'var(--green)' : s.agent === 'codex' ? 'var(--yellow)' : 'var(--blue, #3b82f6)';
           const modelShort = s.model ? s.model.replace(/minimax\/|ollama\//g, '') : '—';
+          const tokens = s.totalTokens ? `${(s.totalTokens/1000).toFixed(1)}k tok` : '—';
           return `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:0.5rem;background:#0f172a;border-radius:6px;border:1px solid var(--border);font-size:0.75rem;gap:0.5rem">
             <div style="display:flex;flex-direction:column;gap:0.25rem;flex:1">
               <span style="color:${agentColor};font-weight:600">${s.agent}</span>
@@ -567,6 +602,7 @@
             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.1rem;flex-shrink:0;padding-top:0.1rem">
               <span style="color:var(--muted)">${modelShort}</span>
               <span style="color:var(--yellow)">${s.age}</span>
+              <span style="color:var(--muted);font-size:0.65rem">${tokens}</span>
             </div>
           </div>`;
         }).join('') + '</div>';

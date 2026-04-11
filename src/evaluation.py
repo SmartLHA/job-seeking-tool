@@ -73,3 +73,4 @@ def _derive_tailoring_state(
             return False, "Manual selection is required before tailoring a review decision."
         return True, "Review decision was manually selected for tailoring from approved profile and CV facts only."
     return False, "Skipped jobs are not tailoring-ready."
+__all__ = ["evaluate_reviewed_job", "evaluate_job_from_raw"]

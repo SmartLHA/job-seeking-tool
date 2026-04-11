@@ -79,3 +79,4 @@ class TailoringPolicy:
 
 
 DEFAULT_TAILORING_POLICY = TailoringPolicy()
+__all__ = ["ScoringWeights"]

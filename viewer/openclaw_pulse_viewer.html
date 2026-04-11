@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🦞 OpenClaw Daily Pulse</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --card: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #7d8590;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --red: #f85149;
+      --yellow: #d29922;
+      --purple: #bc8cff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; padding: 24px; max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 1.5rem; margin-bottom: 4px; }
+    .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 24px; }
+    .entry { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 32px; overflow: hidden; }
+    .entry-header { background: var(--card); padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+    .entry-header:hover { background: #1c2128; }
+    .entry-title { font-size: 1rem; font-weight: 600; }
+    .entry-date { color: var(--muted); font-size: 0.8rem; }
+    .entry-body { display: none; padding: 20px; }
+    .entry-body.open { display: block; }
+    .chevron { color: var(--muted); transition: transform 0.2s; font-size: 1.2rem; line-height: 1; }
+    .entry-header.open .chevron { transform: rotate(180deg); }
+    h2 { font-size: 0.95rem; color: var(--text); margin: 20px 0 10px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+    h2:first-child { margin-top: 0; }
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500; }
+    .tag-config { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+    .tag-minor { background: rgba(125, 133, 144, 0.15); color: var(--muted); }
+    .tag-clawhub { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
+    .tag-relevant { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+    .tag-new { background: rgba(188, 140, 255, 0.15); color: var(--purple); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 16px; }
+    th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
+    td { padding: 8px 10px; vertical-align: top; border-bottom: 1px solid #21262d; }
+    tr:last-child td { border-bottom: none; }
+    td.num { color: var(--muted); width: 50px; }
+    td.center { text-align: center; width: 50px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .bullet-list { list-style: none; padding: 0; }
+    .bullet-list li { padding: 4px 0; font-size: 0.88rem; }
+    .bullet-list li:before { content: "•"; color: var(--muted); margin-right: 8px; }
+    .summary-bar { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; display: flex; gap: 24px; flex-wrap: wrap; font-size: 0.85rem; }
+    .summary-item span { color: var(--muted); }
+    .summary-item strong { color: var(--text); margin-left: 6px; }
+    .section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 0.9rem; font-weight: 600; }
+    .refresh-btn { background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
+    .refresh-btn:hover { background: #1c2128; }
+    .footer { text-align: center; color: var(--muted); font-size: 0.75rem; margin-top: 32px; padding: 12px; }
+    .empty { color: var(--muted); font-size: 0.85rem; padding: 20px 0; text-align: center; }
+    .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    @media (max-width: 600px) { body { padding: 12px; } .summary-bar { flex-direction: column; gap: 8px; } }
+  </style>
+</head>
+<body>
+
+<div class="header-bar">
+  <div>
+    <h1>🦞 OpenClaw Daily Pulse</h1>
+    <p class="subtitle">Community intelligence — GitHub issues, discussions & Reddit</p>
+  </div>
+  <button class="refresh-btn" onclick="load()">↻ Refresh</button>
+</div>
+
+<div class="summary-bar" id="summaryBar">
+  <div class="summary-item"><span>Issues:</span><strong id="sIssues">—</strong></div>
+  <div class="summary-item"><span>Discussions:</span><strong id="sDisc">—</strong></div>
+  <div class="summary-item"><span>Reddit:</span><strong id="sReddit">—</strong></div>
+  <div class="summary-item"><span>Total signals:</span><strong id="sTotal">—</strong></div>
+  <div class="summary-item"><span>New today:</span><strong id="sNew">—</strong></div>
+</div>
+
+<div id="entries"></div>
+
+<div class="footer">
+  Auto-refreshes daily at 9AM London · Source: <span id="footerSrc">—</span>
+</div>
+
+<script>
+const DATA_FILE = 'openclaw_daily_pulse.json';
+
+function tagClass(tag) {
+  if (!tag) return 'tag-minor';
+  const t = tag.toLowerCase();
+  if (t.includes('config') || t.includes('🚨')) return 'tag-config';
+  if (t.includes('n/a') || t.includes('❌')) return 'tag-minor';
+  if (t.includes('clawhub')) return 'tag-clawhub';
+  if (t.includes('relevant') || t.includes('✅')) return 'tag-relevant';
+  if (t.includes('new')) return 'tag-new';
+  return 'tag-minor';
+}
+
+function tagLabel(tag) {
+  if (!tag) return '';
+  const t = tag.toLowerCase();
+  if (t.includes('config') || t.includes('⚠️')) return '⚠️ config';
+  if (t.includes('n/a') || t.includes('❌')) return '❌ n/a';
+  if (t.includes('relevant') || t.includes('✅')) return '✅ relevant';
+  return '🟡 ' + tag;
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderHighlights(allItems, issues, features, general) {
+  let html = '';
+
+  const critical = allItems.filter(i => i.category === 'critical');
+  const relevantIssues = issues.filter(i => tagClass(i._relevance || '') === 'tag-config');
+  const engagedIssues = issues.filter(i => (i.comments || 0) > 0);
+  const zeroReplies = issues.filter(i => (i.comments || 0) === 0 && tagClass(i._relevance || '') !== 'tag-config');
+
+  if (critical.length) {
+    html += `<div class="section-header">🚨 Critical Issues</div><ul class="bullet-list">`;
+    critical.slice(0, 5).forEach(i => {
+      const repo = (i.repo || '').replace('openclaw_core','core');
+      const sub = i.subreddit ? `r/${i.subreddit}` : repo;
+      html += `<li><a href="${esc(i.url)}" target="_blank">${esc(i.title)}</a> [${esc(sub)}]</li>`;
+    });
+    html += `</ul>`;
+  }
+
+  if (relevantIssues.length) {
+    html += `<div class="section-header" style="margin-top:16px">⚠️ Config-affecting bugs (${relevantIssues.length})</div><ul class="bullet-list">`;
+    relevantIssues.slice(0, 5).forEach(i => {
+      const repo = (i.repo || '').replace('openclaw_core','core');
+      const cmt = i.comments ? ` 💬${i.comments}` : '';
+      html += `<li><a href="${esc(i.url)}" target="_blank">${esc(i.title)}</a>${esc(cmt)}</li>`;
+    });
+    html += `</ul>`;
+  }
+
+  if (engagedIssues.length) {
+    html += `<div class="section-header" style="margin-top:16px">🐛 Most-engaged bugs</div><ul class="bullet-list">`;
+    engagedIssues.slice(0, 5).forEach(i => {
+      const repo = (i.repo || '').replace('openclaw_core','core');
+      const cmt = i.comments ? ` 💬${i.comments}` : '';
+      html += `<li><a href="${esc(i.url)}" target="_blank">${esc(i.title)}</a> [${esc(repo)}]${esc(cmt)}</li>`;
+    });
+    html += `</ul>`;
+  }
+
+  if (zeroReplies.length) {
+    html += `<div class="section-header" style="margin-top:16px">🆕 New bugs with 0 replies (${zeroReplies.length})</div><ul class="bullet-list">`;
+    zeroReplies.slice(0, 5).forEach(i => {
+      const repo = (i.repo || '').replace('openclaw_core','core');
+      html += `<li><a href="${esc(i.url)}" target="_blank">${esc(i.title)}</a> [${esc(repo)}]</li>`;
+    });
+    html += `</ul>`;
+  }
+
+  if (features.length) {
+    const relevant = features.filter(f => f._relevant);
+    html += `<div class="section-header" style="margin-top:16px">💡 Features (${features.length} — ${relevant.length} relevant)</div><ul class="bullet-list">`;
+    features.slice(0, 8).forEach(f => {
+      const mark = f._relevant ? ' ✅' : '';
+      html += `<li><a href="${esc(f.url)}" target="_blank">${esc(f.title)}</a>${esc(mark)}</li>`;
+    });
+    html += `</ul>`;
+  }
+
+  if (general.length) {
+    html += `<div class="section-header" style="margin-top:16px">📌 General (${general.length} items)</div><ul class="bullet-list">`;
+    general.slice(0, 5).forEach(g => {
+      const sub = g.subreddit ? `r/${g.subreddit}` : (g.repo || '');
+      html += `<li><a href="${esc(g.url)}" target="_blank">${esc(g.title)}</a> [${esc(sub)}]</li>`;
+    });
+    html += `</ul>`;
+  }
+
+  return html;
+}
+
+function renderBugTable(issues) {
+  if (!issues.length) return '<p class="empty">No bug reports.</p>';
+  let html = `<table><thead><tr><th>#</th><th>Bug</th><th>💬</th><th>Repo</th><th>Impact</th></tr></thead><tbody>`;
+  issues.slice(0, 10).forEach(i => {
+    const num = (i.url || '').split('/').pop();
+    const title = i.title.length > 65 ? i.title.slice(0, 65) + '…' : i.title;
+    const repo = (i.repo || '').replace('openclaw_core','core');
+    const relevance = i._relevance || '';
+    const tag = tagLabel(relevance);
+    const cls = tagClass(relevance);
+    const cmt = i.comments || 0;
+    html += `<tr>
+      <td class="num"><a href="${esc(i.url)}" target="_blank">${esc(num)}</a></td>
+      <td><a href="${esc(i.url)}" target="_blank">${esc(title)}</a></td>
+      <td class="center">${cmt}</td>
+      <td>${esc(repo)}</td>
+      <td><span class="tag ${esc(cls)}">${esc(tag)}</span></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+function renderFeatureTable(features) {
+  if (!features.length) return '<p class="empty">No features.</p>';
+  let html = `<table><thead><tr><th>#</th><th>Feature</th><th>Key</th></tr></thead><tbody>`;
+  features.slice(0, 10).forEach(f => {
+    const num = (f.url || '').split('/').pop();
+    const title = f.title.length > 60 ? f.title.slice(0, 60) + '…' : f.title;
+    const key = f._relevant ? '✅ relevant' : '🟡 watching';
+    const cls = f._relevant ? 'tag-relevant' : 'tag-minor';
+    html += `<tr>
+      <td class="num"><a href="${esc(f.url)}" target="_blank">${esc(num)}</a></td>
+      <td><a href="${esc(f.url)}" target="_blank">${esc(title)}</a></td>
+      <td><span class="tag ${esc(cls)}">${esc(key)}</span></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+function renderGeneralTable(general) {
+  if (!general.length) return '<p class="empty">No general items.</p>';
+  let html = `<table><thead><tr><th>Item</th><th>Source</th></tr></thead><tbody>`;
+  general.slice(0, 8).forEach(g => {
+    const title = g.title.length > 65 ? g.title.slice(0, 65) + '…' : g.title;
+    const sub = g.subreddit || g.repo || '';
+    html += `<tr>
+      <td><a href="${esc(g.url)}" target="_blank">${esc(title)}</a></td>
+      <td>${esc(sub)}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+function renderFeatureSummary(features) {
+  if (!features.length) return '';
+  let html = `<h2>💡 Features Summary</h2>`;
+  html += `<table><thead><tr><th>#</th><th>Feature</th><th>Summary</th><th></th></tr></thead><tbody>`;
+  features.slice(0, 15).forEach(f => {
+    const num = (f.url || '').split('/').pop();
+    const title = f.title.length > 50 ? f.title.slice(0, 50) + '…' : f.title;
+    const body = ((f.body_preview || '').replace(/### Summary|## Summary|### Problem|## Problem/g, '').replace(/\n/g, ' ').replace(/  +/g, ' ').trim() || '').slice(0, 90);
+    html += `<tr>
+      <td class="num">${esc(num)}</td>
+      <td>${esc(title)}</td>
+      <td style="color:var(--muted);font-size:0.8rem">${esc(body)}</td>
+      <td><a href="${esc(f.url)}" target="_blank">link</a></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+function addRelevance(items) {
+  const config_kw = ['doctor', 'truncat', 'config', 'startup', 'memory', 'context overflow'];
+  const feat_kw = ['octopus', 'timeout', 'lightweight', 'context mode', 'allowlist', 'subagent', 'slash'];
+  const critical_kw = ['cve-', 'security vulnerability', 'data corruption', 'memory leak', 'segfault', 'panic', 'remote code execution', '0-day', '0day'];
+  return items.map(i => {
+    const title = (i.title || '').toLowerCase();
+    const body = (i.body_preview || '').toLowerCase();
+    const text = title + ' ' + body;
+    if (critical_kw.some(k => text.includes(k))) { i._relevance = '⚠️ critical'; }
+    else if (config_kw.some(k => title.includes(k))) { i._relevance = '⚠️ config'; }
+    else if (title.includes('weixin') || title.includes('voice-call') || title.includes('slack')) { i._relevance = '❌ n/a'; }
+    else if ((i.repo || '') === 'clawhub') { i._relevance = '🟡 clawhub'; }
+    else { i._relevance = '🟡 minor'; }
+    i._relevant = feat_kw.some(k => title.includes(k));
+    return i;
+  });
+}
+
+function renderEntry(entry) {
+  const allItems = addRelevance(entry.all_items || []);
+  const issues = allItems.filter(i => i.category === 'issues');
+  const features = allItems.filter(i => i.category === 'features');
+  const general = allItems.filter(i => i.category === 'general');
+
+  const s = entry.summary || {};
+  const newCount = s.new_items || 0;
+
+  let html = `
+    <h2>🎯 Highlights</h2>
+    ${renderHighlights(allItems, issues, features, general)}
+    <h2>🐛 Bug Reports (${issues.length})</h2>
+    ${renderBugTable(issues)}
+    <h2>💡 Features & Enhancements (${features.length})</h2>
+    ${renderFeatureTable(features)}
+    <h2>📌 General (${general.length} items)</h2>
+    ${renderGeneralTable(general)}
+    ${renderFeatureSummary(features)}`;
+
+  return html;
+}
+
+async function load() {
+  try {
+    const res = await fetch(DATA_FILE + '?t=' + Date.now());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+
+    // summary bar
+    const s = data.summary || {};
+    document.getElementById('sIssues').textContent = s.gh_issues || 0;
+    document.getElementById('sDisc').textContent = data._has_discussions ? (s.gh_discussions || 0) : '—';
+    document.getElementById('sReddit').textContent = s.reddit || 0;
+    document.getElementById('sTotal').textContent = s.total_items || 0;
+    document.getElementById('sNew').textContent = (s.new_items || 0) + ' new';
+    document.getElementById('footerSrc').textContent = data.generated_at || '—';
+
+    // Build entries from historical state + current JSON
+    const entries = [];
+
+    // Load historical entries from localStorage
+    let history = [];
+    try {
+      history = JSON.parse(localStorage.getItem('pulse_history') || '[]');
+    } catch(e) {}
+
+    // If current data has a generated_at not in history, add it
+    const currentDate = data.generated_at || '';
+    if (currentDate && !history.some(e => e.generated_at === currentDate)) {
+      history.unshift(data);
+      if (history.length > 30) history = history.slice(0, 30);
+      try { localStorage.setItem('pulse_history', JSON.stringify(history)); } catch(e) {}
+    }
+
+    // Render entries (newest first)
+    const container = document.getElementById('entries');
+    container.innerHTML = '';
+
+    // Today's entry first (always expanded)
+    if (history.length > 0) {
+      const today = history[0];
+      const dateStr = today.generated_at || 'Today';
+      const newBadge = (today.summary || {}).new_items ? ` · ${(today.summary || {}).new_items} new` : '';
+
+      const div = document.createElement('div');
+      div.className = 'entry';
+      div.innerHTML = `
+        <div class="entry-header open" onclick="toggleEntry(this)">
+          <div>
+            <div class="entry-title">🦞 ${esc(dateStr)}${esc(newBadge)}</div>
+          </div>
+          <span class="chevron">▾</span>
+        </div>
+        <div class="entry-body open">${renderEntry(today)}</div>`;
+      container.appendChild(div);
+
+      // Past entries collapsed
+      for (let i = 1; i < history.length; i++) {
+        const entry = history[i];
+        const dateStr = entry.generated_at || `Entry ${i + 1}`;
+        const newBadge = (entry.summary || {}).new_items ? ` · ${(entry.summary || {}).new_items} new` : '';
+
+        const div = document.createElement('div');
+        div.className = 'entry';
+        div.innerHTML = `
+          <div class="entry-header" onclick="toggleEntry(this)">
+            <div>
+              <div class="entry-title">🦞 ${esc(dateStr)}${esc(newBadge)}</div>
+            </div>
+            <span class="chevron">▾</span>
+          </div>
+          <div class="entry-body">${renderEntry(entry)}</div>`;
+        container.appendChild(div);
+      }
+    }
+  } catch(err) {
+    document.getElementById('entries').innerHTML =
+      `<p class="empty">Cannot load data: ${esc(err.message)}. Make sure the JSON file is accessible.</p>`;
+  }
+}
+
+function toggleEntry(header) {
+  const wasOpen = header.classList.contains('open');
+  // Close all
+  document.querySelectorAll('.entry-header').forEach(h => h.classList.remove('open'));
+  document.querySelectorAll('.entry-body').forEach(b => b.classList.remove('open'));
+  // Toggle this one
+  if (!wasOpen) {
+    header.classList.add('open');
+    header.nextElementSibling.classList.add('open');
+  }
+}
+
+load();
+</script>
+</body>
+</html>

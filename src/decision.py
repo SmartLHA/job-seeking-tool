@@ -66,3 +66,4 @@ def _build_critical_risk_reason(match_score: float, critical_risks: list[RiskFla
     return (
         f"Score {match_score:.0f} would otherwise qualify for apply, but critical risks require review: {labels}"
     )
+__all__ = ["DecisionResult", "decide_application"]

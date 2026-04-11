@@ -211,3 +211,4 @@ def _validate_transition(current_status: OutcomeStatus, next_status: OutcomeStat
         raise OutcomeValidationError(
             f"invalid outcome transition: {current_status} -> {next_status}"
         )
+__all__ = ["OutcomeValidationError", "create_outcome_record", "update_outcome", "outcome_to_dict", "outcome_from_dict"]
