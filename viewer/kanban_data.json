@@ -275,6 +275,214 @@
           "link": "",
           "created_at": "2026-04-13T11:29:47",
           "updated_at": "2026-04-13T11:29:47"
+        },
+        {
+          "id": "card-124b6123",
+          "title": "🔍 SearXNG 自托管搜尋引擎",
+          "description": "聚合 Google/Bing/DuckDuckGo/Brave，無 rate limit，省 $45-75/月",
+          "priority": "high",
+          "tags": [
+            "openclaw",
+            "優先"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-164294a7",
+          "title": "🧭 OpenClaw Hub LLM 路由",
+          "description": "自動路由到最便宜 model，節省 90% 成本",
+          "priority": "medium",
+          "tags": [
+            "openclaw",
+            "優化"
+          ],
+          "link": "https://github.com/openclaw-community/openclaw-hub",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-4cf941b5",
+          "title": "📸 Screenshot Browsing 模式",
+          "description": "HTML -> 截圖模式，節省 50-80% token",
+          "priority": "medium",
+          "tags": [
+            "openclaw",
+            "效能"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-5ededaf1",
+          "title": "🛠 Local Skill 生成",
+          "description": "用 Ollama 生成 SKILL.md 模板，省 API token",
+          "priority": "medium",
+          "tags": [
+            "openclaw",
+            "skill"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-1b74a970",
+          "title": "🔌 API Server（OpenAI-compatible）",
+          "description": "FastAPI middleware（port 8766），Open WebUI、LobeChat 可連接",
+          "priority": "medium",
+          "tags": [
+            "openclaw",
+            "api"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-c61c8c5f",
+          "title": "📦 Code Execution RPC Sandbox",
+          "description": "Python script 中間結果不入 context window",
+          "priority": "medium",
+          "tags": [
+            "openclaw",
+            "安全"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-9d304997",
+          "title": "🧠 External Memory Providers",
+          "description": "MCP-based memory provider，QMD MCP 已有",
+          "priority": "medium",
+          "tags": [
+            "openclaw",
+            "記憶"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-f02105b7",
+          "title": "🔑 Credential Pools",
+          "description": "API key 自動輪換，Token Bucket rate limiter",
+          "priority": "medium",
+          "tags": [
+            "openclaw",
+            "api"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-09d5000e",
+          "title": "@ @ Context References",
+          "description": "@ 引用檔案/git diff/URL，slash command 先做",
+          "priority": "low",
+          "tags": [
+            "openclaw",
+            "ux"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-edb76547",
+          "title": "📧 獨立 AI Email Inbox",
+          "description": "專用 Gmail + Forward to OpenClaw，避免 lock-in",
+          "priority": "low",
+          "tags": [
+            "email",
+            "openclaw"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-40dd30e3",
+          "title": "📋 YAML Workflow Orchestration",
+          "description": "多步 pipeline 自動化，如 openclaw-hub workflows/",
+          "priority": "medium",
+          "tags": [
+            "openclaw",
+            "自動化"
+          ],
+          "link": "https://github.com/openclaw-community/openclaw-hub",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-dfa3052e",
+          "title": "🔗 MCP Tool Integration",
+          "description": "整合 QMD MCP + 其他 external tools",
+          "priority": "medium",
+          "tags": [
+            "openclaw",
+            "整合"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-247d6b69",
+          "title": "🔄 Self-Healing Provider Fallback",
+          "description": "OpenAI 掛了自動切換 Ollama",
+          "priority": "medium",
+          "tags": [
+            "openclaw",
+            "穩定性"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-ff53f760",
+          "title": "💰 Budget Enforcement per Connection",
+          "description": "每個 model 有獨立預算上限",
+          "priority": "medium",
+          "tags": [
+            "openclaw",
+            "成本"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-a7c2593f",
+          "title": "📊 Web Dashboard（OpenClaw Hub）",
+          "description": "視覺化用量、cost chart、per-model 分析",
+          "priority": "medium",
+          "tags": [
+            "openclaw",
+            "監控"
+          ],
+          "link": "https://github.com/openclaw-community/openclaw-hub",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-3cbf4362",
+          "title": "📢 Discord Rich Notifications",
+          "description": "Hub push notification 改到 Discord",
+          "priority": "low",
+          "tags": [
+            "discord",
+            "通知"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
         }
       ]
     },
@@ -362,12 +570,40 @@
     {
       "id": "in-progress",
       "title": "🔄 In Progress",
-      "cards": []
+      "cards": [
+        {
+          "id": "card-cbc02fa1",
+          "title": "📝 Multi-LLM Chat UI (ui.py)",
+          "description": "持久化模塊已建好，UI界面未完成，需等ui.py完成",
+          "priority": "high",
+          "tags": [
+            "infra",
+            "openclaw"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        }
+      ]
     },
     {
       "id": "blocked",
       "title": "🚫 Blocked",
-      "cards": []
+      "cards": [
+        {
+          "id": "card-df7027c3",
+          "title": "🔧 Cache Layer Design",
+          "description": "Wiser REVISE，2 gaps待修復，撞到2-revision上限",
+          "priority": "medium",
+          "tags": [
+            "design",
+            "wiser"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        }
+      ]
     },
     {
       "id": "done",
@@ -501,10 +737,89 @@
           "link": "",
           "created_at": "2026-04-13T11:29:47",
           "updated_at": "2026-04-13T11:29:47"
+        },
+        {
+          "id": "card-5ed80abe",
+          "title": "🔙 ClawBack Checkpoints & Rollback",
+          "description": "git checkpoint + rollback，危險操作前快照",
+          "priority": "high",
+          "tags": [
+            "openclaw",
+            "安全"
+          ],
+          "link": "https://github.com/mmoplanet/clawback-1",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-8c719e99",
+          "title": "🔣 QMD 向量記憶升級",
+          "description": "memory.backend: qmd，語義搜索，Tobi Lütke 建造",
+          "priority": "high",
+          "tags": [
+            "openclaw",
+            "記憶"
+          ],
+          "link": "https://github.com/tobi/qmd",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-222e1c7a",
+          "title": "🔐 SECURITY.md 安全邊界文件",
+          "description": "紅線和防護措施，Security Protocol v1.0 完成",
+          "priority": "high",
+          "tags": [
+            "安全",
+            "openclaw"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-c15789f7",
+          "title": "🗂 memory/ 目錄結構",
+          "description": "people/projects/decisions 分類，QMD operational",
+          "priority": "medium",
+          "tags": [
+            "openclaw",
+            "記憶"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-bf53f178",
+          "title": "🧪 Skill 創建自測",
+          "description": "\"明天消失會注意到嗎？\" checklist",
+          "priority": "low",
+          "tags": [
+            "openclaw",
+            "skill"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
+        },
+        {
+          "id": "card-e8d8cb4e",
+          "title": "🚌 Shared Message Bus（Agent 協作核心）",
+          "description": "SQLite message bus + pipeline_runs + stage_log，28/28 tests",
+          "priority": "high",
+          "tags": [
+            "infra",
+            "wiser",
+            "handy"
+          ],
+          "link": "",
+          "created_at": "2026-04-13T11:32:37",
+          "updated_at": "2026-04-13T11:32:37"
         }
       ]
     }
   ],
   "version": 1,
-  "updated_at": "2026-04-13T11:29:47"
+  "updated_at": "2026-04-13T11:32:37"
 }
