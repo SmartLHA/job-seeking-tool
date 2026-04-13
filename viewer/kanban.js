@@ -14,6 +14,43 @@ let searchQuery = '';
 document.addEventListener('DOMContentLoaded', () => {
   loadBoard();
   wireSearch();
+
+  // Modal event handlers — must be after DOM is ready
+  document.getElementById('cardModal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+  });
+  document.getElementById('modalClose').onclick = () => document.getElementById('cardModal').classList.remove('open');
+  document.getElementById('cancelBtn').onclick = () => document.getElementById('cardModal').classList.remove('open');
+  document.getElementById('deleteBtn').onclick = () => {
+    const id = document.getElementById('fCardId').value;
+    if (id && confirm('確定刪除？')) { deleteCard(id); closeModal(); }
+  };
+  document.getElementById('saveBtn').onclick = saveCard;
+  document.getElementById('fTitle').addEventListener('keydown', e => {
+    if (e.key === 'Enter') saveCard();
+  });
+  document.getElementById('priorityOptions').addEventListener('click', e => {
+    const opt = e.target.closest('.priority-option');
+    if (!opt) return;
+    document.querySelectorAll('.priority-option').forEach(o => o.classList.remove('selected'));
+    opt.classList.add('selected');
+    opt.querySelector('input')?.setAttribute('checked', 'true');
+  });
+  document.getElementById('tagInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = e.target.value.trim().replace(',', '');
+      if (val && !modalTags.includes(val)) {
+        modalTags.push(val);
+        e.target.value = '';
+        renderModalTags();
+      }
+    }
+    if (e.key === 'Backspace' && !e.target.value && modalTags.length) {
+      modalTags.pop();
+      renderModalTags();
+    }
+  });
 });
 
 async function loadBoard() {
@@ -169,21 +206,24 @@ async function moveCard(cardId, toCol, toIndex) {
 function wireCardEvents() {
   document.querySelectorAll('.card').forEach(card => {
     card.addEventListener('click', e => {
+      if (!board) return;
       if (e.target.closest('.card-action-btn') || e.target.closest('.card-link-chip')) return;
       const col = card.closest('.column-cards').dataset.column;
       const obj = findCard(card.dataset.cardId, col);
-      openModal(col, obj);
+      if (obj) openModal(col, obj);
     });
 
     card.querySelector('.edit-btn')?.addEventListener('click', e => {
       e.stopPropagation();
+      if (!board) return;
       const col = card.closest('.column-cards').dataset.column;
       const obj = findCard(card.dataset.cardId, col);
-      openModal(col, obj);
+      if (obj) openModal(col, obj);
     });
 
     card.querySelector('.delete-btn')?.addEventListener('click', e => {
       e.stopPropagation();
+      if (!board) return;
       const cardId = card.dataset.cardId;
       if (confirm('確定刪除這個任務？')) deleteCard(cardId);
     });
@@ -268,46 +308,6 @@ window.removeModalTag = function(i) {
   renderModalTags();
 };
 
-document.getElementById('priorityOptions').addEventListener('click', e => {
-  const opt = e.target.closest('.priority-option');
-  if (!opt) return;
-  document.querySelectorAll('.priority-option').forEach(o => o.classList.remove('selected'));
-  opt.classList.add('selected');
-  opt.querySelector('input')?.setAttribute('checked', 'true');
-});
-
-document.getElementById('tagInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter' || e.key === ',') {
-    e.preventDefault();
-    const val = e.target.value.trim().replace(',', '');
-    if (val && !modalTags.includes(val)) {
-      modalTags.push(val);
-      e.target.value = '';
-      renderModalTags();
-    }
-  }
-  if (e.key === 'Backspace' && !e.target.value && modalTags.length) {
-    modalTags.pop();
-    renderModalTags();
-  }
-});
-
-document.getElementById('cardModal').addEventListener('click', e => {
-  if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
-});
-document.getElementById('modalClose').onclick = () => document.getElementById('cardModal').classList.remove('open');
-document.getElementById('cancelBtn').onclick = () => document.getElementById('cardModal').classList.remove('open');
-
-document.getElementById('deleteBtn').onclick = () => {
-  const id = document.getElementById('fCardId').value;
-  if (id && confirm('確定刪除？')) { deleteCard(id); closeModal(); }
-};
-
-document.getElementById('saveBtn').onclick = saveCard;
-document.getElementById('fTitle').addEventListener('keydown', e => {
-  if (e.key === 'Enter') saveCard();
-});
-
 function closeModal() {
   document.getElementById('cardModal').classList.remove('open');
 }
@@ -361,13 +361,12 @@ async function deleteCard(cardId) {
 }
 
 // ─── Header Add Button ────────────────────────────────────────────────────────
-document.getElementById('addAnyBtn').addEventListener('click', () => {
-  openModal('backlog', null);
-});
+// (addAnyBtn not in HTML — skipped)
 
 // ─── Search ───────────────────────────────────────────────────────────────────
 function wireSearch() {
   const input = document.getElementById('searchInput');
+  if (!input) return;
   let timer;
   input.addEventListener('input', () => {
     clearTimeout(timer);
@@ -380,7 +379,8 @@ function wireSearch() {
 
 // ─── Status ───────────────────────────────────────────────────────────────────
 function setStatus(msg, type) {
-  const el = document.getElementById('footerStatus');
+  const el = document.getElementById('statusMsg');
+  if (!el) return;
   const cls = type === 'saved' ? 'status-saved' : type === 'saving' ? 'status-saving' : '';
   el.innerHTML = `<span class="status-pill ${cls}">${msg}</span>`;
 }
