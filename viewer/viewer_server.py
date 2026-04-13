@@ -44,6 +44,19 @@ MULTI_CHAT_SCHEMA_VERSION = 1
 MAX_TURNS = 40
 MAX_RESPONSE_CHARS = 8000
 MAX_THREAD_BYTES = 2 * 1024 * 1024
+def _load_gateway_config() -> dict:
+    cfg_path = Path.home() / ".openclaw" / "openclaw.json"
+    try:
+        cfg = json.loads(cfg_path.read_text())
+        gateway_cfg = cfg.get("gateway", {}) or {}
+        # gateway.auth is {"mode": "token", "token": "..."}
+        auth_cfg = gateway_cfg.get("auth", {}) or {}
+        token = auth_cfg.get("token", "") if isinstance(auth_cfg, dict) else ""
+        return {"token": token}
+    except Exception:
+        return {"token": ""}
+
+
 _THREAD_LOCKS: dict[str, threading.Lock] = {}
 _THREAD_LOCKS_GUARD = threading.Lock()
 
@@ -1109,8 +1122,7 @@ def _call_gemma(message: str, history: list, out_q: list) -> None:
 def _call_minimax(message: str, history: list, out_q: list) -> None:
     """Call MiniMax-M2.7 via gateway's OpenAI-compatible /v1/chat/completions endpoint."""
     try:
-        gateway_token = "8184f5fc629903f19ff5dfaffc456950bbcc3a96b56fc6ad"
-        
+        token = _load_gateway_config()["token"]
         payload = {
             "model": "openclaw",
             "messages": history,
@@ -1121,7 +1133,7 @@ def _call_minimax(message: str, history: list, out_q: list) -> None:
             ["curl", "-s", "-X", "POST",
              "http://127.0.0.1:18789/v1/chat/completions",
              "-H", "Content-Type: application/json",
-             "-H", f"Authorization: Bearer {gateway_token}",
+             "-H", f"Authorization: Bearer {token}",
              "-d", json.dumps(payload),
              "--max-time", "45"],
             capture_output=True, text=True, timeout=50, stdin=subprocess.DEVNULL
@@ -1147,8 +1159,7 @@ def _call_minimax(message: str, history: list, out_q: list) -> None:
 def _call_gpt(message: str, history: list, out_q: list) -> None:
     """Call GPT-5.4 via gateway's OpenAI-compatible endpoint using openclaw/codex (Codex agent)."""
     try:
-        gateway_token = "8184f5fc629903f19ff5dfaffc456950bbcc3a96b56fc6ad"
-        
+        token = _load_gateway_config()["token"]
         payload = {
             "model": "openclaw/codex",
             "messages": history,
@@ -1160,7 +1171,7 @@ def _call_gpt(message: str, history: list, out_q: list) -> None:
             ["curl", "-s", "-X", "POST",
              "http://127.0.0.1:18789/v1/chat/completions",
              "-H", "Content-Type: application/json",
-             "-H", f"Authorization: Bearer {gateway_token}",
+             "-H", f"Authorization: Bearer {token}",
              "-d", json.dumps(payload),
              "--max-time", "120"],
             capture_output=True, text=True, timeout=65, stdin=subprocess.DEVNULL
