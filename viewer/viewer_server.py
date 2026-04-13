@@ -16,8 +16,6 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from datetime import datetime
-from urllib.parse import parse_qs
 
 # Import kanban store
 import kanban_store
@@ -34,17 +32,6 @@ def _load_json(path: Path) -> dict:
 VIEWER_DIR = Path(__file__).parent.resolve()
 TASK_IDS_FILE = VIEWER_DIR / "task_ids.json"
 PROJECT_ROOT = VIEWER_DIR.parent.resolve()
-
-# Add Job Seeking Tool src to path for parsing imports
-import sys as _sys
-if str(PROJECT_ROOT) not in _sys.path:
-    _sys.path.insert(0, str(PROJECT_ROOT))
-try:
-    from src.parsing import parse_job_from_text, parse_job_from_url, JobParsingError
-except Exception:
-    parse_job_from_text = None
-    parse_job_from_url = None
-    JobParsingError = None
 PORT = 8765
 VIEWER_HOST = "0.0.0.0"
 MAIN_SESSIONS_FILE = Path("/Users/lhaclaw/.openclaw/agents/main/sessions/sessions.json")
@@ -521,80 +508,6 @@ def handle_api_model_usage() -> bytes:
 def handle_api_openrouter_status() -> bytes:
     return json.dumps(_get_openrouter_status()).encode()
 
-
-def _stringify_form_value(value):
-    """Match src/ui.py stringify_form_value for prefill response compatibility."""
-    if value is None:
-        return ""
-    if isinstance(value, list):
-        return "\n".join(str(item) for item in value)
-    return str(value)
-
-
-def _prefill_values() -> dict:
-    """Default form values that prefill can populate. Matches src/ui.py default_form_values."""
-    return {
-        "job_id": "",
-        "input_method": "",
-        "job_url": "",
-        "source_type": "",
-        "source_ref": "",
-        "job_title": "",
-        "company": "",
-        "location": "",
-        "work_mode": "",
-        "employment_type": "",
-        "required_years_experience": "",
-        "nice_to_have_years_experience": "",
-        "domain": "",
-        "salary_min_gbp": "",
-        "salary_max_gbp": "",
-        "copied_text": "",
-        "description_raw": "",
-        "required_skills": "",
-        "preferred_skills": "",
-        "notes": "",
-    }
-
-
-def handle_prefill(post_body: bytes) -> bytes:
-    """Handle POST /prefill — parse job text or URL and return form values."""
-    if parse_job_from_text is None:
-        return json.dumps({"ok": False, "error": "Parsing module unavailable"}).encode()
-
-    try:
-        # Parse URL-encoded form data
-        params = parse_qs(post_body.decode("utf-8"), keep_blank_values=True)
-        mode = params.get("prefill_mode", [""])[0]
-        job_text = params.get("job_text", [""])[0]
-        job_url = params.get("job_url", [""])[0]
-    except Exception as e:
-        return json.dumps({"ok": False, "error": f"Bad request: {e}"}).encode()
-
-    try:
-        if mode == "paste":
-            payload = parse_job_from_text(job_text)
-        elif mode == "url":
-            payload = parse_job_from_url(job_url)
-        else:
-            return json.dumps({"ok": False, "error": "prefill_mode must be 'paste' or 'url'"}).encode()
-    except Exception as e:
-        return json.dumps({"ok": False, "error": str(e)}).encode()
-
-    values = _prefill_values()
-    for key, value in payload.items():
-        if key in values:
-            values[key] = _stringify_form_value(value)
-
-    if mode == "paste":
-        values["input_method"] = "copied_text"
-        values["copied_text"] = job_text
-    else:
-        values["input_method"] = "url"
-        values["job_url"] = job_url
-        values["source_ref"] = job_url
-
-    return json.dumps({"ok": True, "values": values}).encode()
 
 
 def _latest_message() -> dict:
@@ -1602,20 +1515,6 @@ def handle_request(sock: socket.socket) -> None:
             if method == "DELETE":
                 handle_api_multi_chat_delete(sock, thread_id)
                 return
-
-        # POST /prefill — parse job text or URL, return form values
-        if path == "/prefill" and method == "POST":
-            body = handle_prefill(post_body)
-            resp = (
-                b"HTTP/1.1 200 OK\r\n"
-                b"Content-Type: application/json\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
-                b"Content-Length: " + str(len(body)).encode() + b"\r\n"
-                b"Connection: close\r\n"
-                b"\r\n" + body
-            )
-            sock.sendall(resp)
-            return
 
         if serve_file(sock, path):
             return
