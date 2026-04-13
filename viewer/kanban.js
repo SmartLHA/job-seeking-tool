@@ -119,6 +119,7 @@ function renderCard(card) {
       ${card.description ? `<div class="card-description">${escHtml(card.description)}</div>` : ''}
       ${tags || link ? `<div class="card-meta">${tags}${link}</div>` : ''}
       <div class="card-actions">
+        <button class="card-action-btn copy-btn" title="複製標題" data-title="${escAttr(card.title)}" onclick="copyCardTitle(this)">📋</button>
         <button class="card-action-btn edit-btn" title="編輯">✏️</button>
         <button class="card-action-btn delete delete-btn" title="刪除">🗑️</button>
       </div>
@@ -388,3 +389,10 @@ function setStatus(msg, type) {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function escAttr(s) { return String(s||'').replace(/"/g,'&quot;'); }
+function copyCardTitle(btn) {
+  const title = btn.dataset.title;
+  navigator.clipboard.writeText(title).then(() => {
+    btn.textContent = '✅';
+    setTimeout(() => { btn.textContent = '📋'; }, 1200);
+  });
+}
