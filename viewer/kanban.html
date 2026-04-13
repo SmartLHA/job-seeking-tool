@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mic's Project Kanban</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 2rem; }
+  h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: var(--text); }
+  .subtitle { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 2rem; }
+  .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; align-items: start; }
+  .column { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+  .column-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+  .column-title { font-size: 0.9rem; font-weight: 600; }
+  .column-count { background: var(--border); color: var(--text-muted); font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; }
+  .tag { font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; margin-right: 4px; }
+  .tag-dev { background: #1f3a5f; color: #58a6ff; }
+  .tag-qa { background: #3a2f1f; color: #d29922; }
+  .tag-design { background: #2f1f3a; color: #bc8cff; }
+  .tag-infra { background: #1f3a1f; color: #3fb950; }
+  .tag-blocked { background: #3a1f1f; color: #f85149; }
+  .card { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; margin-bottom: 0.75rem; font-size: 0.85rem; line-height: 1.5; }
+  .card-title { font-weight: 600; margin-bottom: 0.25rem; }
+  .card-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; }
+  .card-agent { color: var(--accent); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+  .dot-todo { background: var(--text-muted); }
+  .dot-progress { background: var(--yellow); }
+  .dot-blocked { background: var(--red); }
+  .dot-done { background: var(--green); }
+  .nav { margin-bottom: 1.5rem; }
+  .nav a { color: var(--accent); text-decoration: none; font-size: 0.85rem; margin-right: 1rem; }
+  .nav a:hover { text-decoration: underline; }
+  .updated { font-size: 0.75rem; color: var(--text-muted); margin-top: 2rem; text-align: center; }
+</style>
+</head>
+<body>
+<div class="nav">
+  <a href="index.html">← Viewer Home</a>
+  <a href="openclaw_status.html">OpenClaw Status</a>
+  <a href="openclaw_pulse_viewer.html">Daily Pulse</a>
+</div>
+
+<h1>📋 Mic's Project Kanban</h1>
+<p class="subtitle">每個工作項目的狀態 — 2026-04-13 更新</p>
+
+<div class="board">
+
+  <!-- TODO -->
+  <div class="column">
+    <div class="column-header">
+      <span class="column-title">📝 Todo</span>
+      <span class="column-count">3</span>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-todo"></span>UI Paste/URL Pre-fill</div>
+      <div>parsing.py done, ui.py pending</div>
+      <div class="card-meta"><span class="tag tag-dev">dev</span> <span class="card-agent">Handy</span></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-todo"></span>Cache Layer Design</div>
+      <div>Wiser REVISE — 2 gaps, hit 2-revision limit</div>
+      <div class="card-meta"><span class="tag tag-design">design</span></div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-todo"></span>Kanban Board</div>
+      <div>Mic 尚未指定工具/位置（Trello/Notion/Viewer）</div>
+      <div class="card-meta"><span class="tag tag-blocked">blocked</span> awaiting Mic</div>
+    </div>
+  </div>
+
+  <!-- IN PROGRESS -->
+  <div class="column">
+    <div class="column-header">
+      <span class="column-title">🔧 In Progress</span>
+      <span class="column-count">1</span>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-progress"></span>Multi-LLM Chat UI</div>
+      <div>持久化模塊已建好，UI 界面（ui.py）未完成</div>
+      <div class="card-meta">真正多模型對話歷史呈現需等 ui.py 完成</div>
+    </div>
+  </div>
+
+  <!-- DONE -->
+  <div class="column">
+    <div class="column-header">
+      <span class="column-title">✅ Done</span>
+      <span class="column-count">11</span>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-done"></span>CV Tailoring MVP</div>
+      <div>88/88 tests</div>
+      <div class="card-meta"><span class="tag tag-dev">dev</span> <span class="tag tag-qa">qa</span> Handy ✅</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-done"></span>Skills Scoring Differentiation</div>
+      <div>81/81 tests</div>
+      <div class="card-meta"><span class="tag tag-dev">dev</span> <span class="tag tag-qa">qa</span> Handy ✅</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-done"></span>Job Role Definition</div>
+      <div>Ready for UAT</div>
+      <div class="card-meta"><span class="tag tag-dev">dev</span> Handy ✅</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-done"></span>URL Ingestion Design</div>
+      <div>Wiser APPROVED Rev6</div>
+      <div class="card-meta"><span class="tag tag-design">design</span> Wiser ✅</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-done"></span>Shared Message Bus</div>
+      <div>Design Rev7 APPROVED, 28/28 tests</div>
+      <div class="card-meta"><span class="tag tag-infra">infra</span> Wiser+Handy+Scout ✅</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-done"></span>QMD Memory Skill</div>
+      <div>Semantic search auto-activates</div>
+      <div class="card-meta"><span class="tag tag-infra">infra</span> ✅</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-done"></span>Viewer Dashboard Redesign</div>
+      <div>Dark theme, enlarged cards</div>
+      <div class="card-meta"><span class="tag tag-infra">infra</span> ✅</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-done"></span>Session Guard Update</div>
+      <div>helper role added</div>
+      <div class="card-meta"><span class="tag tag-infra">infra</span> ✅</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-done"></span>INDEX.md Created</div>
+      <div>Workspace file map</div>
+      <div class="card-meta"><span class="tag tag-infra">infra</span> ✅</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-done"></span>Daily Log Updater</div>
+      <div>Every 15m cron, watermarks</div>
+      <div class="card-meta"><span class="tag tag-infra">infra</span> ✅</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-done"></span>Dream Log Separation</div>
+      <div>DREAMS.md separate from daily log</div>
+      <div class="card-meta"><span class="tag tag-infra">infra</span> ✅</div>
+    </div>
+  </div>
+
+  <!-- BLOCKED -->
+  <div class="column">
+    <div class="column-header">
+      <span class="column-title">🚫 Blocked</span>
+      <span class="column-count">1</span>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot dot-blocked"></span>Outcomes Analytics</div>
+      <div>Spec not started</div>
+      <div class="card-meta">等待更清晰的需求</div>
+    </div>
+  </div>
+
+</div>
+
+<p class="updated">最後更新：2026-04-13 11:24 GMT+1 | <a href="http://127.0.0.1:8765/viewer/kanban.html" style="color:var(--accent)">刷新</a></p>
+
+</body>
+</html>
