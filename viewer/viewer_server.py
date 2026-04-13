@@ -7,14 +7,20 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import glob
 import threading
 import socket
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from datetime import datetime
+from urllib.parse import parse_qs
+
+# Import kanban store
+import kanban_store
 
 def _load_json(path: Path) -> dict:
     if path.exists():
@@ -28,9 +34,30 @@ def _load_json(path: Path) -> dict:
 VIEWER_DIR = Path(__file__).parent.resolve()
 TASK_IDS_FILE = VIEWER_DIR / "task_ids.json"
 PROJECT_ROOT = VIEWER_DIR.parent.resolve()
+
+# Add Job Seeking Tool src to path for parsing imports
+import sys as _sys
+if str(PROJECT_ROOT) not in _sys.path:
+    _sys.path.insert(0, str(PROJECT_ROOT))
+try:
+    from src.parsing import parse_job_from_text, parse_job_from_url, JobParsingError
+except Exception:
+    parse_job_from_text = None
+    parse_job_from_url = None
+    JobParsingError = None
 PORT = 8765
 VIEWER_HOST = "0.0.0.0"
 MAIN_SESSIONS_FILE = Path("/Users/lhaclaw/.openclaw/agents/main/sessions/sessions.json")
+CONVERSATIONS_DIR = VIEWER_DIR / "conversations"
+CONVERSATIONS_TMP_DIR = CONVERSATIONS_DIR / ".tmp"
+CONVERSATIONS_CORRUPT_DIR = CONVERSATIONS_DIR / ".corrupt"
+MULTI_CHAT_MODELS = ["minimax", "gemma", "gpt"]
+MULTI_CHAT_SCHEMA_VERSION = 1
+MAX_TURNS = 40
+MAX_RESPONSE_CHARS = 8000
+MAX_THREAD_BYTES = 2 * 1024 * 1024
+_THREAD_LOCKS: dict[str, threading.Lock] = {}
+_THREAD_LOCKS_GUARD = threading.Lock()
 
 # Cache for expensive health check (10s TTL)
 _HEALTH_CACHE = {"data": None, "ts": 0.0}
@@ -100,7 +127,8 @@ def _role_status() -> dict:
         "handy": "dev",
         "scout": "qa",
         "wiser": "wiser",
-        "scout-dev": "dev",
+        "scout-dev": "codex",
+        "helper": "helper",
     }
     now_ms = datetime.now().timestamp() * 1000
 
@@ -126,31 +154,31 @@ def _role_status() -> dict:
     def build_role(key: str, label: str) -> dict:
         session_key, session_val = get_recent_session(ROLE_AGENT_MAP.get(key.lower(), key))
         if not session_key:
-            return {"key": key, "label": label, "status": "amber", "age": "—", "summary": f"No recent {label} session", "session_key": "—"}
-        
+            return {"key": key, "label": label, "status": "amber", "age": "-", "summary": f"No recent {label} session", "session_key": "-"}
+
         updated = session_val.get("updatedAt", 0)
         age_ms = now_ms - updated
         age_str = _age(age_ms)
         session_short = session_key.split(":")[-1][:12]
-        
+
         # Determine status: running (green) if active recently + running state
         # error (red) if failed/aborted, idle (amber) otherwise
         sess_status = session_val.get("status", "")
         aborted = session_val.get("abortedLastRun", False)
-        
+
         if aborted or sess_status in ("failed", "error"):
             status = "red"
         elif sess_status == "running" and age_ms < 120000:  # updated within 2 min
             status = "green"
         else:
             status = "amber"
-        
+
         return {
             "key": key,
             "label": label,
             "status": status,
             "age": age_str,
-            "summary": f"Session {session_short}…",
+            "summary": f"Session {session_short}...",
             "session_key": session_key,
         }
 
@@ -160,7 +188,8 @@ def _role_status() -> dict:
             build_role("handy", "Handy"),
             build_role("scout", "Scout"),
             build_role("wiser", "Wiser"),
-            build_role("scout-dev", "Scout-Dev"),
+            build_role("scout-dev", "Codex"),
+            build_role("helper", "Helper"),
         ],
         "fetched_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
     }
@@ -185,7 +214,7 @@ def _get_active_sessions() -> dict:
     now_ms = datetime.now().timestamp() * 1000
     TWO_HOURS = 7200000
     FIVE_MINS = 300000
-    agents = ["main", "codex", "qa"]
+    agents = ["main", "codex", "qa", "helper"]
     result = {}
     for agent in agents:
         sessions_file = Path(f"/Users/lhaclaw/.openclaw/agents/{agent}/sessions/sessions.json")
@@ -214,7 +243,7 @@ def _get_model_usage() -> dict:
     now_ms = datetime.now().timestamp() * 1000
     FIVE_HOURS = 5 * 3600000
     result = {}
-    for agent in ["main", "codex", "qa", "dev", "wiser"]:
+    for agent in ["main", "codex", "qa", "dev", "wiser", "helper"]:
         sessions_file = Path(f"/Users/lhaclaw/.openclaw/agents/{agent}/sessions/sessions.json")
         if not sessions_file.exists():
             continue
@@ -243,14 +272,63 @@ def _get_model_usage() -> dict:
     return result
 
 
+def _get_openrouter_status() -> dict:
+    """Check OpenRouter API key status and free tier rate limits."""
+    # Read key from openclaw.json environmentVariables
+    try:
+        import pathlib
+        cfg = json.load(open(pathlib.Path.home() / ".openclaw/openclaw.json"))
+        api_key = cfg.get("env", {}).get("OPENROUTER_API_KEY", "")
+    except Exception:
+        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+
+    if not api_key or api_key == "OPENROUTER_API_KEY":
+        return {"status": "no_key", "message": "API key not set", "daily_limit_ok": None, "requests_today": None}
+
+    try:
+        # Quick viability probe — does not consume quota
+        import urllib.request
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/auth/key",
+            headers={"Authorization": f"Bearer {api_key}"}
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        key_data = data.get("data", {})
+        return {
+            "status": "ok",
+            "message": f"Key: {api_key[:12]}...",
+            "daily_limit_ok": True,
+            "requests_today": key_data.get("usage", 0),
+            "limit": key_data.get("limit", "N/A"),
+        }
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="replace")
+        try:
+            err_data = json.loads(err_body)
+            msg = err_data.get("error", {}).get("message", str(e))
+        except Exception:
+            msg = str(e)
+        is_rate_limit = "rate limit" in msg.lower() or "429" in msg
+        return {
+            "status": "rate_limited" if is_rate_limit else "error",
+            "message": msg,
+            "daily_limit_ok": not is_rate_limit,
+            "requests_today": None,
+            "limit": None,
+        }
+    except Exception as e:
+        return {"status": "unreachable", "message": str(e), "daily_limit_ok": None, "requests_today": None}
+
+
 def _get_ollama_usage() -> dict:
     """Get last used time for Ollama models from session history."""
     now_ms = datetime.now().timestamp() * 1000
     ONE_DAY = 86400000
     result = {}
-    
+
     # Check all agents for gemma usage
-    for agent in ["main", "codex", "qa"]:
+    for agent in ["main", "codex", "qa", "helper"]:
         sessions_file = Path(f"/Users/lhaclaw/.openclaw/agents/{agent}/sessions/sessions.json")
         if sessions_file.exists():
             try:
@@ -274,13 +352,29 @@ def _get_ollama_usage() -> dict:
     return result
 
 
+def _get_qa_gemma_sessions() -> list:
+    """Get QA agent gemma sessions with lastUsed timestamps."""
+    sessions_file = Path("/Users/lhaclaw/.openclaw/agents/qa/sessions/sessions.json")
+    if not sessions_file.exists():
+        return []
+    try:
+        data = json.loads(sessions_file.read_text())
+        return [
+            {"model": v.get("model", ""), "lastUsed": v.get("updatedAt", 0)}
+            for v in data.values()
+            if "gemma" in v.get("model", "").lower()
+        ]
+    except Exception:
+        return []
+
+
 def _recent_sessions() -> dict:
     """Get the 5 most recent sessions across all agents."""
     now_ms = datetime.now().timestamp() * 1000
     ONE_WEEK = 604800000
     all_sessions = []
 
-    for agent in ["main", "codex", "qa"]:
+    for agent in ["main", "codex", "qa", "helper"]:
         sessions_file = Path(f"/Users/lhaclaw/.openclaw/agents/{agent}/sessions/sessions.json")
         if sessions_file.exists():
             try:
@@ -289,14 +383,14 @@ def _recent_sessions() -> dict:
                 for sid, val in data.items():
                     updated = val.get("updatedAt", 0)
                     age = now_ms - updated
-                    if age < ONE_WEEK:
+                    if age < ONE_WEEK and ':openai:' not in sid:
                         all_sessions.append({
                             "agent": agent,
                             "id": sid,
                             "updatedAt": updated,
                             "age_ms": age,
-                            "model": val.get("model", "—"),
-                            "status": val.get("status", "—"),
+                            "model": val.get("model", "-"),
+                            "status": val.get("status", "-"),
                             "inputTokens": val.get("inputTokens", 0) or 0,
                             "outputTokens": val.get("outputTokens", 0) or 0,
                             "totalTokens": val.get("totalTokens", 0) or 0,
@@ -407,6 +501,7 @@ def handle_api_health() -> bytes:
         "active_sessions": _get_active_sessions(),
         "ollama_usage": _get_ollama_usage(),
         "model_usage": _get_model_usage(),
+        "qa_gemma_sessions": _get_qa_gemma_sessions(),
         "fetched_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
     }
 
@@ -423,6 +518,86 @@ def handle_api_model_usage() -> bytes:
     return json.dumps(_get_model_usage()).encode()
 
 
+def handle_api_openrouter_status() -> bytes:
+    return json.dumps(_get_openrouter_status()).encode()
+
+
+def _stringify_form_value(value):
+    """Match src/ui.py stringify_form_value for prefill response compatibility."""
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return "\n".join(str(item) for item in value)
+    return str(value)
+
+
+def _prefill_values() -> dict:
+    """Default form values that prefill can populate. Matches src/ui.py default_form_values."""
+    return {
+        "job_id": "",
+        "input_method": "",
+        "job_url": "",
+        "source_type": "",
+        "source_ref": "",
+        "job_title": "",
+        "company": "",
+        "location": "",
+        "work_mode": "",
+        "employment_type": "",
+        "required_years_experience": "",
+        "nice_to_have_years_experience": "",
+        "domain": "",
+        "salary_min_gbp": "",
+        "salary_max_gbp": "",
+        "copied_text": "",
+        "description_raw": "",
+        "required_skills": "",
+        "preferred_skills": "",
+        "notes": "",
+    }
+
+
+def handle_prefill(post_body: bytes) -> bytes:
+    """Handle POST /prefill — parse job text or URL and return form values."""
+    if parse_job_from_text is None:
+        return json.dumps({"ok": False, "error": "Parsing module unavailable"}).encode()
+
+    try:
+        # Parse URL-encoded form data
+        params = parse_qs(post_body.decode("utf-8"), keep_blank_values=True)
+        mode = params.get("prefill_mode", [""])[0]
+        job_text = params.get("job_text", [""])[0]
+        job_url = params.get("job_url", [""])[0]
+    except Exception as e:
+        return json.dumps({"ok": False, "error": f"Bad request: {e}"}).encode()
+
+    try:
+        if mode == "paste":
+            payload = parse_job_from_text(job_text)
+        elif mode == "url":
+            payload = parse_job_from_url(job_url)
+        else:
+            return json.dumps({"ok": False, "error": "prefill_mode must be 'paste' or 'url'"}).encode()
+    except Exception as e:
+        return json.dumps({"ok": False, "error": str(e)}).encode()
+
+    values = _prefill_values()
+    for key, value in payload.items():
+        if key in values:
+            values[key] = _stringify_form_value(value)
+
+    if mode == "paste":
+        values["input_method"] = "copied_text"
+        values["copied_text"] = job_text
+    else:
+        values["input_method"] = "url"
+        values["job_url"] = job_url
+        values["source_ref"] = job_url
+
+    return json.dumps({"ok": True, "values": values}).encode()
+
+
+def _latest_message() -> dict:
     """Get the 3 most recent meaningful messages from the main session."""
     try:
         sessions_file = Path(f"/Users/lhaclaw/.openclaw/agents/main/sessions/sessions.json")
@@ -517,6 +692,50 @@ def handle_api_help() -> bytes:
         return json.dumps({"ok": False, "error": str(e)}).encode()
 
 
+def handle_api_kanban(post_body: bytes) -> bytes:
+    """Kanban board API — GET returns board, POST handles actions."""
+    try:
+        body = json.loads(post_body.decode("utf-8"))
+    except Exception:
+        # GET request — return full board
+        board = kanban_store.get_board()
+        return json.dumps(board).encode()
+
+    action = body.get("action", "")
+
+    if action == "upsert":
+        card_data = body.get("card", {})
+        column_id = body.get("column_id", "backlog")
+        try:
+            card = kanban_store.upsert_card(column_id, card_data)
+            board = kanban_store.get_board()
+            return json.dumps(board).encode()
+        except (ValueError, IOError) as e:
+            return json.dumps({"error": str(e)}).encode()
+
+    elif action == "move":
+        card_id = body.get("card_id", "")
+        to_column = body.get("to_column", "")
+        to_index = body.get("to_index")
+        try:
+            kanban_store.move_card(card_id, to_column, to_index)
+            board = kanban_store.get_board()
+            return json.dumps(board).encode()
+        except (ValueError, IOError) as e:
+            return json.dumps({"error": str(e)}).encode()
+
+    elif action == "delete":
+        card_id = body.get("card_id", "")
+        kanban_store.delete_card(card_id)
+        board = kanban_store.get_board()
+        return json.dumps(board).encode()
+
+    else:
+        # Unknown action → return full board
+        board = kanban_store.get_board()
+        return json.dumps(board).encode()
+
+
 def _send_sse_event(sock: socket.socket, model: str, content: str, done: bool) -> None:
     """Send one SSE event as a single HTTP chunk."""
     event_id = f"{model}-{time.time()}"
@@ -535,22 +754,433 @@ def _send_sse_event(sock: socket.socket, model: str, content: str, done: bool) -
         pass
 
 
+def _ensure_multi_chat_dirs() -> None:
+    CONVERSATIONS_DIR.mkdir(parents=True, exist_ok=True)
+    CONVERSATIONS_TMP_DIR.mkdir(parents=True, exist_ok=True)
+    CONVERSATIONS_CORRUPT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _thread_path(thread_id: str) -> Path:
+    return CONVERSATIONS_DIR / f"{thread_id}.json"
+
+
+def _lock_for(thread_id: str) -> threading.Lock:
+    with _THREAD_LOCKS_GUARD:
+        lock = _THREAD_LOCKS.get(thread_id)
+        if lock is None:
+            lock = threading.Lock()
+            _THREAD_LOCKS[thread_id] = lock
+        return lock
+
+
+def _utc_now_iso() -> str:
+    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+
+def _new_thread(thread_id: str) -> dict:
+    now = _utc_now_iso()
+    return {
+        "schema_version": MULTI_CHAT_SCHEMA_VERSION,
+        "thread_id": thread_id,
+        "created_at": now,
+        "updated_at": now,
+        "models": list(MULTI_CHAT_MODELS),
+        "deleted": False,
+        "turns": [],
+    }
+
+
+def _truncate_response_text(text: str) -> tuple[str, bool]:
+    text = str(text or "")
+    suffix = "(truncated)"
+    if len(text) <= MAX_RESPONSE_CHARS:
+        return text, False
+    cutoff = max(0, MAX_RESPONSE_CHARS - len(suffix))
+    return text[:cutoff] + suffix, True
+
+
+def _truncate_turns(turns: list) -> list:
+    """Enforce max 40 turns — drop oldest from front."""
+    while len(turns) > MAX_TURNS:
+        turns.pop(0)
+    return turns
+
+
+def _materialize_model_history(model: str, turns: list) -> list:
+    """Build message history for a model by iterating turns."""
+    messages = []
+    for turn in turns:
+        user_text = turn.get("user", {}).get("text", "")
+        if user_text:
+            messages.append({"role": "user", "content": user_text})
+        resp = turn.get("responses", {}).get(model)
+        if resp and resp.get("text"):
+            messages.append({"role": "assistant", "content": resp["text"]})
+    return messages
+
+
+def _coerce_thread_data_v1(thread_id: str, data: dict) -> dict:
+    """Migrate Rev2 flat structure to Rev3 turns array."""
+    created_at = str(data.get("created_at") or _utc_now_iso())
+    updated_at = str(data.get("updated_at") or created_at)
+
+    shared = data.get("shared_user_messages", [])
+    responses_by_model = data.get("responses_by_model", {})
+
+    # Build turns array from flat structure
+    turns = []
+    num_turns = len(shared)  # each shared message is one turn
+    for i in range(num_turns):
+        user_entry = shared[i] if i < len(shared) else {}
+        responses = {}
+        for model in MULTI_CHAT_MODELS:
+            model_responses = responses_by_model.get(model, [])
+            if i < len(model_responses):
+                entry = model_responses[i]
+                text, was_truncated = _truncate_response_text(entry.get("text", ""))
+                resp_obj = {"text": text, "ts": str(entry.get("ts") or updated_at)}
+                if was_truncated or entry.get("truncated"):
+                    resp_obj["truncated"] = True
+                responses[model] = resp_obj
+            else:
+                responses[model] = None
+
+        turns.append({
+            "turn_index": i,
+            "user": {"text": str(user_entry.get("text", "")), "ts": str(user_entry.get("ts") or updated_at)},
+            "responses": responses,
+        })
+
+    return {
+        "schema_version": MULTI_CHAT_SCHEMA_VERSION,
+        "thread_id": thread_id,
+        "created_at": created_at,
+        "updated_at": updated_at,
+        "models": list(MULTI_CHAT_MODELS),
+        "deleted": bool(data.get("deleted", False)),
+        "turns": turns,
+    }
+
+
+def _load_thread(thread_id: str) -> tuple[dict, dict]:
+    """Atomic read: validates schema version, handles corruption, returns (data, history_reset)."""
+    _ensure_multi_chat_dirs()
+    path = _thread_path(thread_id)
+    history_reset = {model: False for model in MULTI_CHAT_MODELS}
+
+    if not path.exists():
+        return _new_thread(thread_id), history_reset
+
+    if path.stat().st_size > MAX_THREAD_BYTES:
+        raise ValueError("thread_too_large")
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        # Corruption: rename to .corrupt/, start fresh
+        corrupt_path = CONVERSATIONS_CORRUPT_DIR / f"{thread_id}.json"
+        if corrupt_path.exists():
+            corrupt_path = CONVERSATIONS_CORRUPT_DIR / f"{thread_id}-{int(time.time())}.json"
+        shutil.move(str(path), str(corrupt_path))
+        history_reset = {model: True for model in MULTI_CHAT_MODELS}
+        return _new_thread(thread_id), history_reset
+
+    schema = data.get("schema_version")
+    if schema != MULTI_CHAT_SCHEMA_VERSION:
+        # Unknown version: rename to .corrupt/, start fresh
+        backup = path.with_suffix(path.suffix + f".bak")
+        if backup.exists():
+            backup = path.with_suffix(path.suffix + f".{int(time.time())}.bak")
+        shutil.move(str(path), str(backup))
+        history_reset = {model: True for model in MULTI_CHAT_MODELS}
+        return _new_thread(thread_id), history_reset
+
+    # Check for Rev2 flat structure and migrate
+    if "turns" not in data:
+        return _coerce_thread_data_v1(thread_id, data), history_reset
+
+    return data, history_reset
+
+
+def _save_thread(thread_id: str, data: dict) -> None:
+    """Atomic write: tmp file + fsync + rename."""
+    _ensure_multi_chat_dirs()
+    data["updated_at"] = _utc_now_iso()
+    encoded = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+    if len(encoded) > MAX_THREAD_BYTES:
+        raise ValueError("thread_too_large")
+
+    tmp_path = CONVERSATIONS_TMP_DIR / f"{thread_id}.json.tmp"
+    final_path = _thread_path(thread_id)
+
+    with open(tmp_path, "wb") as fh:
+        fh.write(encoded)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp_path, final_path)
+
+
+def _validate_thread_id(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        return str(uuid.UUID(str(value)))
+    except Exception:
+        return None
+
+
+def _call_model_threaded(fn, message: str, history: list, results: list) -> None:
+    fn(message, history, results)
+
+
+def handle_api_multi_chat(sock: socket.socket, post_body: bytes) -> None:
+    try:
+        body = json.loads(post_body.decode("utf-8"))
+    except Exception:
+        _json_response(sock, 400, {"error": "bad request"})
+        return
+
+    message = str(body.get("message", "")).strip()
+    if not message:
+        _json_response(sock, 400, {"error": "empty message"})
+        return
+
+    request_id = str(body.get("request_id", "")).strip() or str(uuid.uuid4())
+    incoming_thread_id = body.get("thread_id")
+    thread_id = _validate_thread_id(incoming_thread_id) if incoming_thread_id else str(uuid.uuid4())
+    if incoming_thread_id and not thread_id:
+        _json_response(sock, 400, {"error": "invalid thread_id"})
+        return
+
+    lock = _lock_for(thread_id)
+    with lock:
+        try:
+            thread, history_reset = _load_thread(thread_id)
+        except ValueError as exc:
+            if str(exc) == "thread_too_large":
+                path = _thread_path(thread_id)
+                size = path.stat().st_size if path.exists() else 0
+                _json_response(sock, 413, {"error": "Thread too large", "current_size_bytes": size, "thread_id": thread_id})
+                return
+            raise
+
+        # Check durable deleted flag
+        if thread.get("deleted", False):
+            _json_response(sock, 409, {"error": "thread deleted", "thread_id": thread_id})
+            return
+
+        # Check request_id cache for idempotency
+        # Search existing turns for this request_id
+        for turn in thread.get("turns", []):
+            cached_req = turn.get("request_id")
+            if cached_req and cached_req == request_id:
+                cached_results = []
+                for model in MULTI_CHAT_MODELS:
+                    resp = turn.get("responses", {}).get(model)
+                    if resp and resp.get("text"):
+                        cached_results.append({
+                            "model": model,
+                            "content": resp["text"],
+                            "done": True,
+                        })
+                    else:
+                        cached_results.append({"model": model, "content": "", "done": True, "error": True})
+                _json_response(sock, 200, {
+                    "results": cached_results,
+                    "thread_id": thread_id,
+                    "history_reset": history_reset,
+                })
+                return
+
+        # Truncate before adding new turn
+        _truncate_turns(thread.setdefault("turns", []))
+
+        # Compute next turn_index
+        existing_turns = thread.get("turns", [])
+        next_index = (existing_turns[-1]["turn_index"] + 1) if existing_turns else 0
+
+        # Add new turn with null responses (filled after model calls)
+        new_turn = {
+            "turn_index": next_index,
+            "user": {"text": message, "ts": _utc_now_iso()},
+            "responses": {model: None for model in MULTI_CHAT_MODELS},
+            "request_id": request_id,
+        }
+        thread["turns"].append(new_turn)
+
+        # Call all 3 models in parallel with materialized history
+        results = []
+        threads = []
+        for model, fn_model in (("gemma", _call_gemma), ("minimax", _call_minimax), ("gpt", _call_gpt)):
+            history = _materialize_model_history(model, thread["turns"])
+            t = threading.Thread(target=_call_model_threaded, args=(fn_model, message, history, results))
+            threads.append(t)
+            t.start()
+        for t in threads:
+            t.join(timeout=65)
+
+        # Collect results and fill in responses
+        by_model = {item.get("model"): item for item in results if isinstance(item, dict)}
+        final_results = []
+        for model in MULTI_CHAT_MODELS:
+            raw = by_model.get(model) or {"model": model, "content": "", "done": True, "error": True}
+            text, was_truncated = _truncate_response_text(raw.get("content", ""))
+            result_entry = {
+                "model": model,
+                "content": text,
+                "done": bool(raw.get("done", True)),
+            }
+            if raw.get("error"):
+                result_entry["error"] = True
+            if was_truncated:
+                result_entry["truncated"] = True
+            final_results.append(result_entry)
+
+            response_entry = {"text": text, "ts": _utc_now_iso()}
+            if was_truncated:
+                response_entry["truncated"] = True
+            thread["turns"][-1]["responses"][model] = response_entry
+
+        # Truncate again to enforce max 40
+        _truncate_turns(thread["turns"])
+
+        # Re-check deleted flag after model calls (DELETE may have occurred)
+        if thread.get("deleted", False):
+            _json_response(sock, 409, {"error": "thread deleted", "thread_id": thread_id})
+            return
+
+        try:
+            _save_thread(thread_id, thread)
+        except ValueError as exc:
+            if str(exc) == "thread_too_large":
+                path = _thread_path(thread_id)
+                size = path.stat().st_size if path.exists() else 0
+                _json_response(sock, 413, {"error": "Thread too large", "current_size_bytes": size, "thread_id": thread_id})
+                return
+            raise
+
+        _json_response(sock, 200, {
+            "results": final_results,
+            "thread_id": thread_id,
+            "history_reset": history_reset,
+        })
+
+
+def handle_api_multi_chat_get(sock: socket.socket, thread_id: str) -> None:
+    validated = _validate_thread_id(thread_id)
+    if not validated:
+        _json_response(sock, 400, {"error": "invalid thread_id"})
+        return
+    thread_id = validated
+
+    lock = _lock_for(thread_id)
+    with lock:
+        try:
+            thread, history_reset = _load_thread(thread_id)
+        except ValueError as exc:
+            if str(exc) == "thread_too_large":
+                path = _thread_path(thread_id)
+                size = path.stat().st_size if path.exists() else 0
+                _json_response(sock, 413, {"error": "thread too large", "current_size_bytes": size})
+                return
+            raise
+
+        if thread.get("deleted", False):
+            _json_response(sock, 409, {"error": "thread deleted", "thread_id": thread_id})
+            return
+
+        payload = dict(thread)
+        payload["history_reset"] = history_reset
+        _json_response(sock, 200, payload)
+
+
+def handle_api_multi_chat_delete(sock: socket.socket, thread_id: str) -> None:
+    validated = _validate_thread_id(thread_id)
+    if not validated:
+        _json_response(sock, 400, {"error": "invalid thread_id"})
+        return
+    thread_id = validated
+
+    lock = _lock_for(thread_id)
+    with lock:
+        # Idempotent: check durable deleted flag first
+        try:
+            thread, _ = _load_thread(thread_id)
+        except ValueError:
+            pass
+
+        if thread.get("deleted", False):
+            # Already deleted — return 204 immediately
+            _json_response_no_content(sock, 204)
+            return
+
+        # Set durable tombstone
+        thread["deleted"] = True
+        path = _thread_path(thread_id)
+        try:
+            if path.exists():
+                _save_thread(thread_id, thread)
+                path.unlink()
+        except Exception:
+            pass
+
+        _json_response_no_content(sock, 204)
+
+
+def _json_response_no_content(sock: socket.socket, status: int) -> None:
+    reasons = {204: "No Content", 400: "Bad Request", 404: "Not Found", 409: "Conflict", 413: "Payload Too Large", 500: "Internal Server Error"}
+    reason = reasons.get(status, "OK")
+    hdrs = (
+        f"HTTP/1.1 {status} {reason}\r\n".encode()
+        + b"Access-Control-Allow-Origin: *\r\n"
+        + b"Connection: close\r\n"
+        + b"\r\n"
+    )
+    try:
+        sock.sendall(hdrs)
+    except Exception:
+        pass
+
+
+def _json_response(sock: socket.socket, status: int, data: dict) -> None:
+    encoded = json.dumps(data, ensure_ascii=False).encode("utf-8")
+    reasons = {
+        200: "OK",
+        400: "Bad Request",
+        404: "Not Found",
+        409: "Conflict",
+        413: "Payload Too Large",
+        500: "Internal Server Error",
+    }
+    reason = reasons.get(status, "OK")
+    hdrs = (
+        f"HTTP/1.1 {status} {reason}\r\n".encode()
+        + b"Content-Type: application/json\r\n"
+        + b"Content-Length: " + str(len(encoded)).encode() + b"\r\n"
+        + b"Access-Control-Allow-Origin: *\r\n"
+        + b"Connection: close\r\n"
+        + b"\r\n"
+    )
+    try:
+        sock.sendall(hdrs + encoded)
+    except Exception:
+        pass
+
+
 def _call_gemma(message: str, history: list, out_q: list) -> None:
     """Call Ollama Gemma and put result in out_q."""
     try:
-        # Build Ollama messages format
-        ollama_msgs = history + [{'role': 'user', 'content': message}]
         payload = {
             "model": "gemma4:e4b",
-            "messages": ollama_msgs,
+            "messages": history,
             "stream": False
         }
         r = subprocess.run(
             ["curl", "-s", "-X", "POST", "http://127.0.0.1:11434/api/chat",
              "-H", "Content-Type: application/json",
              "-d", json.dumps(payload),
-             "--max-time", "60"],
-            capture_output=True, text=True, timeout=65
+             "--max-time", "90"],
+            capture_output=True, text=True, timeout=95
         )
         if r.returncode == 0:
             data = json.loads(r.stdout)
@@ -567,18 +1197,12 @@ def _call_minimax(message: str, history: list, out_q: list) -> None:
     try:
         gateway_token = "8184f5fc629903f19ff5dfaffc456950bbcc3a96b56fc6ad"
         
-        # Build messages including history
-        msgs = []
-        for h in history:
-            msgs.append({"role": h.get("role", "user"), "content": h.get("content", "")})
-        msgs.append({"role": "user", "content": message})
-        
         payload = {
             "model": "openclaw",
-            "messages": msgs,
+            "messages": history,
             "max_tokens": 1024
         }
-        
+
         r = subprocess.run(
             ["curl", "-s", "-X", "POST",
              "http://127.0.0.1:18789/v1/chat/completions",
@@ -588,7 +1212,7 @@ def _call_minimax(message: str, history: list, out_q: list) -> None:
              "--max-time", "45"],
             capture_output=True, text=True, timeout=50, stdin=subprocess.DEVNULL
         )
-        
+
         if r.returncode == 0:
             try:
                 data = json.loads(r.stdout)
@@ -611,130 +1235,39 @@ def _call_gpt(message: str, history: list, out_q: list) -> None:
     try:
         gateway_token = "8184f5fc629903f19ff5dfaffc456950bbcc3a96b56fc6ad"
         
-        msgs = []
-        for h in history:
-            msgs.append({"role": h.get("role", "user"), "content": h.get("content", "")})
-        msgs.append({"role": "user", "content": message})
-        
         payload = {
             "model": "openclaw/codex",
-            "messages": msgs,
-            "stream": True,
+            "messages": history,
+            "stream": False,
             "max_tokens": 1024
         }
-        
+
         r = subprocess.run(
             ["curl", "-s", "-X", "POST",
              "http://127.0.0.1:18789/v1/chat/completions",
              "-H", "Content-Type: application/json",
              "-H", f"Authorization: Bearer {gateway_token}",
              "-d", json.dumps(payload),
-             "--max-time", "60"],
+             "--max-time", "120"],
             capture_output=True, text=True, timeout=65, stdin=subprocess.DEVNULL
         )
-        
+
         if r.returncode == 0:
-            # Parse SSE streaming response
-            content = ""
-            for line in r.stdout.split("\n"):
-                if line.startswith("data: "):
-                    data_str = line[6:].strip()
-                    if data_str == "[DONE]" or not data_str:
-                        continue
-                    try:
-                        data = json.loads(data_str)
-                        delta = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                        if delta:
-                            content += delta
-                    except json.JSONDecodeError:
-                        pass
-            out_q.append({"model": "gpt", "content": content or r.stdout[:200], "done": True})
+            try:
+                data = json.loads(r.stdout)
+                choices = data.get("choices", [])
+                if choices:
+                    content = choices[0].get("message", {}).get("content", "")
+                    out_q.append({"model": "gpt", "content": content, "done": True})
+                else:
+                    out_q.append({"model": "gpt", "content": f"No response: {r.stdout[:200]}", "done": True, "error": True})
+            except json.JSONDecodeError:
+                out_q.append({"model": "gpt", "content": f"Parse error: {r.stdout[:200]}", "done": True, "error": True})
         else:
             out_q.append({"model": "gpt", "content": f"curl error {r.returncode}: {r.stderr[:200]}", "done": True, "error": True})
     except Exception as e:
         out_q.append({"model": "gpt", "content": f"Error: {e}", "done": True, "error": True})
 
-
-def handle_api_multi_chat(sock: socket.socket, post_body: bytes) -> None:
-    """Stream a multi-LLM chat response via SSE.
-    POST body: {"message": "...", "history": [...]}
-    SSE stream: one event per model as it completes.
-    """
-    try:
-        body = json.loads(post_body.decode("utf-8"))
-    except Exception:
-        sock.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
-        return
-
-    message = body.get("message", "")
-    history = body.get("history", [])
-
-    if not message:
-        sock.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
-        return
-
-    # SSE header: chunked transfer
-    hdrs = (
-        b"HTTP/1.1 200 OK\r\n"
-        b"Content-Type: text/event-stream\r\n"
-        b"Transfer-Encoding: chunked\r\n"
-        b"Access-Control-Allow-Origin: *\r\n"
-        b"Cache-Control: no-cache\r\n"
-        b"Connection: keepalive\r\n"
-        b"\r\n"
-    )
-    sock.sendall(hdrs)
-
-    # Queue for results from 3 threads
-    results = []
-    results_lock = threading.Lock()
-
-    def synchronized_append(r):
-        with results_lock:
-            results.append(r)
-            # Notify main thread by sending a ping through the socket
-            # We'll poll the results list instead
-
-    # Start 3 concurrent threads
-    threads = [
-        threading.Thread(target=_call_gemma, args=(message, history, results)),
-        threading.Thread(target=_call_minimax, args=(message, history, results)),
-        threading.Thread(target=_call_gpt, args=(message, history, results)),
-    ]
-
-    for t in threads:
-        t.start()
-
-    # Poll for results and stream them as they arrive
-    sent = set()
-    while any(t.is_alive() for t in threads) or len(sent) < len(results):
-        with results_lock:
-            for r in results:
-                rid = id(r)
-                if rid not in sent:
-                    sent.add(rid)
-                    _send_sse_event(sock, r["model"], r["content"], r.get("done", True))
-        if len(sent) >= 3:
-            break
-        time.sleep(0.2)
-
-    # Final flush
-    with results_lock:
-        for r in results:
-            rid = id(r)
-            if rid not in sent:
-                sent.add(rid)
-                _send_sse_event(sock, r["model"], r["content"], r.get("done", True))
-
-    # SSE stream terminator: final blank chunk
-    try:
-        sock.sendall(b"0\r\n\r\n")
-    except Exception:
-        pass
-
-    # Wait for threads to finish
-    for t in threads:
-        t.join(timeout=5)
 
 
 def serve_file(sock: socket.socket, path: str) -> bool:
@@ -793,7 +1326,7 @@ def handle_request(sock: socket.socket) -> None:
             sock.sendall(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n")
             return
 
-        # Extract POST body — for small bodies it's already in the initial recv(8192)
+        # Extract POST body - for small bodies it's already in the initial recv(8192)
         post_body = b""
         if method == "POST":
             content_length = 0
@@ -894,8 +1427,38 @@ def handle_request(sock: socket.socket) -> None:
             sock.sendall(resp)
             return
 
+        if path == "/api/openrouter-status":
+            data = handle_api_openrouter_status()
+            resp = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " + str(len(data)).encode() + b"\r\n"
+                b"Access-Control-Allow-Origin: *\r\n"
+                b"Connection: close\r\n"
+                b"\r\n" + data
+            )
+            sock.sendall(resp)
+            return
+
         if path == "/api/latest-message":
             data = handle_api_latest_message()
+            resp = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " + str(len(data)).encode() + b"\r\n"
+                b"Access-Control-Allow-Origin: *\r\n"
+                b"Connection: close\r\n"
+                b"\r\n" + data
+            )
+            sock.sendall(resp)
+            return
+
+        # Kanban board API
+        if path == "/api/kanban":
+            if method == "POST":
+                data = handle_api_kanban(post_body)
+            else:
+                data = handle_api_kanban(b"")  # GET → returns full board
             resp = (
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
@@ -933,7 +1496,40 @@ def handle_request(sock: socket.socket) -> None:
             sock.sendall(resp)
             return
 
-        # POST: spawn-gate — check for duplicate before creating a session
+        # POST: s2-register - post-spawn registration (SilverHand calls this after each spawn)
+        # Body: { "task_key": "handy-url-ingestion", "role": "dev", "session_key": "agent:dev:subagent:..." }
+        if path == "/api/s2-register" and method == "POST":
+            try:
+                body = json.loads(post_body.decode("utf-8"))
+                task_key = body.get("task_key", "")
+                role = body.get("role", "")
+                session_key = body.get("session_key", "")
+                if not task_key or not role or not session_key:
+                    data = json.dumps({"ok": False, "error": "task_key, role, session_key required"}).encode()
+                else:
+                    task_ids = _load_json(TASK_IDS_FILE)
+                    # Store as task_key → {session_key, role, spawned_at}
+                    task_ids[task_key] = {
+                        "session_key": session_key,
+                        "role": role,
+                        "spawned_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+                    }
+                    TASK_IDS_FILE.write_text(json.dumps(task_ids, indent=2))
+                    data = json.dumps({"ok": True, "message": f"Registered {task_key} → {session_key}"}).encode()
+            except Exception as e:
+                data = json.dumps({"ok": False, "error": str(e)}).encode()
+            resp = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " + str(len(data)).encode() + b"\r\n"
+                b"Access-Control-Allow-Origin: *\r\n"
+                b"Connection: close\r\n"
+                b"\r\n" + data
+            )
+            sock.sendall(resp)
+            return
+
+        # POST: spawn-gate - check for duplicate before creating a session
         # Body: { "role": "handy", "task_id": "T123" }
         # Returns: { "ok": true/false, "duplicate": bool, "existing_session_key": "...", "action": "..." }
         if path == "/api/spawn-gate" and method == "POST":
@@ -994,6 +1590,33 @@ def handle_request(sock: socket.socket) -> None:
             handle_api_multi_chat(sock, post_body)
             return
 
+        multi_chat_match = re.fullmatch(r"/api/multi-chat/([0-9a-fA-F-]+)", path)
+        if multi_chat_match:
+            thread_id = _validate_thread_id(multi_chat_match.group(1))
+            if not thread_id:
+                _json_response(sock, 400, {"error": "invalid thread_id"})
+                return
+            if method == "GET":
+                handle_api_multi_chat_get(sock, thread_id)
+                return
+            if method == "DELETE":
+                handle_api_multi_chat_delete(sock, thread_id)
+                return
+
+        # POST /prefill — parse job text or URL, return form values
+        if path == "/prefill" and method == "POST":
+            body = handle_prefill(post_body)
+            resp = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Access-Control-Allow-Origin: *\r\n"
+                b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                b"Connection: close\r\n"
+                b"\r\n" + body
+            )
+            sock.sendall(resp)
+            return
+
         if serve_file(sock, path):
             return
 
@@ -1017,12 +1640,14 @@ def handle_request(sock: socket.socket) -> None:
 
 def main() -> None:
     os.chdir(PROJECT_ROOT)
+    _ensure_multi_chat_dirs()
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
     server.bind((VIEWER_HOST, PORT))
     server.listen(50)
     print(f"Viewer running at http://127.0.0.1:{PORT}/viewer/")
-    print(f"API: /api/health, /api/role-status, /api/help")
+    print(f"API: /api/health, /api/role-status, /api/openrouter-status, /api/help")
     try:
         while True:
             client_sock, _ = server.accept()
