@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw 優化設計方案</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e0e0e0; min-height: 100vh; }
+
+.header { background: #1a1d27; padding: 20px 30px; border-bottom: 1px solid #2a2d3a; }
+.header h1 { font-size: 1.4rem; color: #7dd3fc; margin-bottom: 4px; }
+.header p { font-size: 0.85rem; color: #888; }
+
+.container { max-width: 900px; margin: 0 auto; padding: 20px; }
+
+.search-bar { margin-bottom: 20px; }
+.search-bar input {
+  width: 100%; padding: 10px 14px; border: 1px solid #2a2d3a;
+  border-radius: 8px; background: #1a1d27; color: #e0e0e0;
+  font-size: 0.9rem;
+}
+.search-bar input::placeholder { color: #666; }
+
+.item { background: #161922; border: 1px solid #2a2d3a; border-radius: 10px; margin-bottom: 16px; overflow: hidden; }
+.item-header { padding: 14px 18px; cursor: pointer; display: flex; align-items: center; gap: 10px; user-select: none; }
+.item-header:hover { background: #1e2231; }
+
+.item-number {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.8rem; font-weight: 700; flex-shrink: 0;
+}
+.priority-high { background: #ef4444; color: #fff; }
+.priority-medium { background: #f59e0b; color: #111; }
+.priority-low { background: #22c55e; color: #111; }
+
+.item-title { flex: 1; font-size: 0.95rem; font-weight: 600; color: #f1f5f9; }
+.item-badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: #2a2d3a; color: #888; }
+.item-arrow { color: #555; transition: transform 0.2s; font-size: 1.2rem; }
+.item.open .item-arrow { transform: rotate(90deg); }
+
+.item-body { display: none; padding: 0 18px 18px; }
+.item.open .item-body { display: block; }
+
+.item-meta { font-size: 0.75rem; color: #666; margin: 10px 0; padding-bottom: 8px; border-bottom: 1px solid #1e2231; }
+
+.existing-badge { display: inline-flex; align-items: center; gap: 4px; background: rgba(34,197,94,0.15); color: #4ade80; font-size: 0.7rem; padding: 3px 10px; border-radius: 12px; margin-left: 6px; border: 1px solid rgba(34,197,94,0.3); }
+
+.option { background: #1e2231; border-radius: 8px; margin-top: 12px; padding: 14px; }
+.option-tag { font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; margin-bottom: 8px; display: inline-flex; align-items: center; gap: 6px; }
+.option-a { background: #3b82f6; color: #fff; }
+.option-b { background: #8b5cf6; color: #fff; }
+.recommended { background: #22c55e; color: #111; font-size: 0.65rem; padding: 1px 6px; border-radius: 3px; }
+
+.confidence-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.conf-label { font-size: 0.7rem; color: #888; width: 60px; }
+.conf-bar-wrap { flex: 1; height: 6px; background: #2a2d3a; border-radius: 3px; overflow: hidden; }
+.conf-bar-fill { height: 100%; border-radius: 3px; transition: width 0.4s; }
+.conf-a .conf-bar-fill { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.conf-b .conf-bar-fill { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+.conf-pct { font-size: 0.72rem; font-weight: 700; min-width: 36px; text-align: right; }
+.conf-a .conf-pct { color: #60a5fa; }
+.conf-b .conf-pct { color: #a78bfa; }
+
+.option h4 { font-size: 0.88rem; color: #e0e0e0; margin-bottom: 8px; }
+.option p { font-size: 0.82rem; color: #9ca3af; line-height: 1.6; margin-bottom: 10px; }
+
+.architecture, .flow { background: #111318; border-radius: 6px; padding: 10px 12px; margin: 8px 0; font-size: 0.78rem; color: #86efac; font-family: 'Courier New', monospace; white-space: pre; overflow-x: auto; }
+.workflow { background: #111318; border-radius: 6px; padding: 10px 12px; margin: 8px 0; }
+.workflow li { font-size: 0.8rem; color: #d1d5db; margin: 4px 0 4px 18px; }
+.workflow ol { padding-left: 0; list-style: none; counter-reset: step; }
+.workflow ol li { counter-increment: step; }
+.workflow ol li::before { content: counter(step); background: #3b82f6; color: #fff; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.7rem; margin-right: 8px; }
+
+.pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.pros, .cons { font-size: 0.78rem; padding: 8px 10px; border-radius: 6px; }
+.pros { background: rgba(34,197,94,0.1); color: #4ade80; }
+.cons { background: rgba(239,68,68,0.1); color: #f87171; }
+.pros::before { content: "✅ "; }
+.cons::before { content: "❌ "; }
+
+.summary-box { background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 8px; padding: 12px 14px; margin-top: 14px; }
+.summary-box h4 { font-size: 0.82rem; color: #7dd3fc; margin-bottom: 6px; }
+.summary-box p { font-size: 0.8rem; color: #9ca3af; }
+
+.status-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: #1a1d27; border-top: 1px solid #2a2d3a;
+  padding: 10px 20px; font-size: 0.8rem; color: #666;
+  display: flex; gap: 20px;
+}
+.status-bar span { color: #4ade80; }
+
+.filter-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.filter-btn {
+  padding: 5px 12px; border-radius: 20px; border: 1px solid #2a2d3a;
+  background: #161922; color: #888; font-size: 0.78rem; cursor: pointer;
+}
+.filter-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+
+.progress-bar { height: 3px; background: #2a2d3a; margin-bottom: 20px; border-radius: 2px; }
+.progress-fill { height: 100%; background: #3b82f6; border-radius: 2px; transition: width 0.3s; }
+
+.highlight-bar { background: linear-gradient(135deg, rgba(34,197,94,0.08), rgba(34,197,94,0.03)); border: 1px solid rgba(34,197,94,0.2); border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; font-size: 0.75rem; color: #4ade80; }
+.highlight-bar::before { content: "🔥 "; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🦞 OpenClaw 優化設計方案</h1>
+  <p>14 個優化項目 · 每項 2 個方案 · 信心等級評估 · 交叉核查線上研究</p>
+</div>
+
+<div class="container">
+  <div class="filter-bar">
+    <button class="filter-btn active" data-filter="all">全部 (14)</button>
+    <button class="filter-btn" data-filter="high">🔴 高優先 (2)</button>
+    <button class="filter-btn" data-filter="medium">🟡 中優先 (7)</button>
+    <button class="filter-btn" data-filter="low">🟢 低優先 (5)</button>
+  </div>
+
+  <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+
+  <div class="search-bar">
+    <input type="text" id="searchInput" placeholder="搜尋項目名稱...">
+  </div>
+
+  <div id="itemsList"></div>
+</div>
+
+<div class="status-bar">
+  <span id="visibleCount">14 個項目</span>
+  <span id="selectedCount"></span>
+</div>
+
+<script>
+(function() {
+'use strict';
+
+const designs = [
+  {
+    id: 1, priority: "medium", title: "Local Skill 生成（省 API token）",
+    source: "Reddit Mehdi post",
+    desc: "用本地 Ollama 模型生成 skill.md 模板，不再消耗 API token 去做 skill creation。",
+    confidenceA: 75, confidenceB: 60,
+    optionA: {
+      name: "Option A：Ollama + Skill Template Library",
+      rec: true,
+     原理: "預先建立一庫 skill templates，用本地便宜模型填充細節。",
+     架構: `workspace/skills/templates/\n├── basic_tool.md\n├── web_scraper.md\n├── data_processor.md\n└── api_caller.md\n\nscripts/\n└── local_skill_generator.py`,
+     流程: ["用戶說「幫我做一個天氣查詢的 skill」", "SilverHand 調用 local_skill_generator.py --type web --task '天氣查詢'", "Script 讀取 template，把 task 傳給本地 Ollama", "Ollama 生成完整 SKILL.md draft", "發給 Mic review → approve 後就緒"],
+      pros: ["完全免費、可離線", "速度快（<5s 生成）", "簡單直接"],
+      cons: ["需要本地 Ollama 運行", "template quality 依賴預先準備"]
+    },
+    optionB: {
+      name: "Option B：Interactive Skill Generator + Multi-Draft",
+      rec: false,
+     原理: "讓 Ollama 從頭生成，同時產生 2 個版本讓 Mic 選擇。",
+     流程: ["用戶說「幫我建立一個處理 CSV 的 skill」", "一次生成 2 個不同風格/架構的 draft", "展示給 Mic：A 偏簡潔、B 偏詳細", "Mic 選一個（或合併），然後進 approval"],
+      pros: ["Mic 參與選擇、最終 quality 更高"],
+      cons: ["生成時間稍長（2x draft）", "流程稍複雜"]
+    },
+    summary: "推薦 Option A：信心 75%，SKILL.md 已是 open standard（Anthropoc 2025年12月開源），但完整的本地 template library 方案仍未找到，需自己建立。"
+  },
+  {
+    id: 2, priority: "medium", title: "Screenshot Browsing 模式",
+    source: "Reddit Mehdi post",
+    desc: "把 browsing 改為 screenshot 驅動，減少 HTML token 消耗。",
+    confidenceA: 80, confidenceB: 85,
+    optionA: {
+      name: "Option A：Playwright Screenshot + Click Mode",
+      rec: true,
+     原理: "把整個 browsing 改為 screenshot 驅動，減少 HTML token。",
+     流程: ["用戶說「幫我找性價比最高的 laptop」", "截圖 + vision model 分析畫面", "點擊基於 screenshot 分析（不再下載 HTML）", "每步：截圖 → 分析 → 點擊 → 截圖 → ..."],
+     配置: `// openclaw.json\n"browser": {\n  "mode": "screenshot",\n  "screenshot_threshold": 0.5,\n  "fallback_to_html": true\n}`,
+      pros: ["Token 節省 50-80%", "速度更快", "免費、不需要外部服務"],
+      cons: ["複雜頁面（iframe/dynamic）需要降級處理"]
+    },
+    optionB: {
+      name: "Option B：Browserbase Cloud + Stealth Mode",
+      rec: false,
+     原理: "用雲端瀏覽器（Browserbase）做 screenshot，用其 anti-detection 能力處理複雜網站。",
+     配置: `browser:\n  provider: "browserbase"\n  mode: "screenshot"`,
+      pros: ["雲端處理、反 bot 能力強", "不用本地瀏覽器"],
+      cons: ["需要 Browserbase 訂閱（昂貴）", "增加外部依賴"]
+    },
+    summary: "推薦 Option A（免費）：信心 80%，符合 Hermes/Claude Code 主流做法，Option B 信心更高但需要付費。"
+  },
+  {
+    id: 3, priority: "medium", title: "QMD 向量記憶（Hybrid Search）",
+    source: "Reddit Mehdi post",
+    desc: "讓記憶搜尋不再只靠關鍵詞匹配，支援語義搜索。",
+    confidenceA: 70, confidenceB: 65,
+    existingSolution: "QMD（github.com/tobi/qmd）— Tobi Lütke（Shopify CEO）建造，OpenClaw 內建支援 `memory.backend: qmd`",
+    existingUrl: "https://github.com/tobi/qmd",
+    optionA: {
+      name: "Option A（已過時）：Qdrant + Sentence-Transformers",
+      rec: false,
+     原理: "本地運行 Qdrant 向量資料庫，用 sentence-transformers 做 embedding。已被 QMD 取代。",
+     架構: `記憶系統：\n  memory/\n  ├── 2026-04-12.md\n  ├── MEMORY.md\n  └── qdrant/（Qdrant collection）`,
+      pros: ["成熟、速度快（<100ms 搜索）", "可擴展"],
+      cons: ["需要 Docker + 額外進程", "已被 QMD 取代"]
+    },
+    optionB: {
+      name: "Option B（已過時）：ChromaDB + Ollama Embedding",
+      rec: false,
+     原理: "用 ChromaDB（純 Python，嵌入式）做向量搜索。已被 QMD 取代。",
+     架構: `記憶系統：\n  memory/\n  ├── chroma/（嵌入式資料庫）\n  ├── 2026-04-12.md\n  └── MEMORY.md`,
+      pros: ["零額外依賴、純 Python", "容易遷移"],
+      cons: ["已被 QMD 取代"]
+    },
+    optionC: {
+      name: "🔥 推薦升級：QMD（已驗證真實存在！）",
+      rec: true,
+     原理: "QMD = BM25 + Vector + LLM reranking，全部本地運行，不需要 API key。直接整合到 OpenClaw。",
+     安裝: `bun install -g @tobilu/qmd\n# 或\nnpm install -g @tobilu/qmd`,
+     配置: `# openclaw.json\nmemory:\n  backend: "qmd"\n  qmd:\n    update:\n      interval: "5m"\n    limits:\n      maxResults: 6\n      maxChars: 700`,
+     優點: ["BM25 + 向量 + LLM reranking 三合一", "全部本地運行（不需要 API key）", "Auto-download 3 個 GGUF 模型（~2GB）", "每 5 分鐘自動 reindex", "有 MCP server 模式（長期運行）", "OpenClaw 內建支援"],
+     限制: ["首次下載模型需要 ~2GB 磁碟空間", "查詢延迟比 SQLite 稍高（但值得）"]
+    },
+    summary: "強烈建議升級到 QMD（信心 95%）！Option A/B 設計仍然正確，但已有更好的現成方案。QMD 安裝只需 5 分鐘：`bun install -g @tobilu/qmd` + 配置 `memory.backend: qmd`。來源：Tobi Lütke（Shopify CEO）親自建造。"
+  },
+  {
+    id: 4, priority: "low", title: "獨立 AI Email Inbox",
+    source: "Reddit Mehdi post",
+    desc: "避免 Gmail 直接連接的 lock-in 風險，用一個專用 email address 接收所有 AI 自動化郵件。",
+    confidenceA: 90, confidenceB: 75,
+    optionA: {
+      name: "Option A：專用 Gmail + Forward to OpenClaw",
+      rec: true,
+     原理: "創建一個專用 Gmail（ai.inbox.mic@gmail.com），所有 AI 通知 forward 到 OpenClaw email。",
+     流程: ["創建專用 Gmail 帳戶", "Gmail settings → Forwarding → 填入 OpenClaw email", "設定 Filter：所有 AI 服務 forward 到這個地址", "gogcli 監控這個 inbox"],
+     好處: ["如果 Gmail 出了問題，OpenClaw 不受影響", "可以在專用 inbox 設定特殊標籤/規則", "測試環境和主要 Email 分開"],
+     配置: `email:\n  inbox: "ai.inbox.mic@gmail.com"`,
+      pros: ["簡單、免費、所有人都懂", "5 分鐘搞定"],
+      cons: ["仍然是 Gmail（單點失敗風險）", "需要維護另一個帳戶"]
+    },
+    optionB: {
+      name: "Option B：Custom Domain Email + Alias Routing",
+      rec: false,
+     原理: "用自己的 domain email（例如 mic@aihelper.io），所有 AI 通知用不同的 aliases。",
+     架構: `AI 通知：\n  cron@aihelper.io → OpenClaw cron delivery\n  alerts@aihelper.io → OpenClaw alerts\n  github@aihelper.io → labeled GitHub\n\nEmail 系統：\n  aihelper.io MX → Zoho Mail / Cloudflare → gogcli`,
+      pros: ["完全擁有自己的 Email 基礎設施", "可以任意創建 aliases", "即使 Google 倒了，domain email 還在"],
+      cons: ["需要 domain（多少要花錢）", "設定複雜一點"]
+    },
+    summary: "推薦 Option A：信心 90%，標準做法，無風險。Custom Domain 需要 Mic 有自己的 domain。"
+  },
+  {
+    id: 5, priority: "low", title: "SECURITY.md 安全邊界文件",
+    source: "Workspace Structure Post",
+    desc: "建立一個清楚的安全邊界文件，定義 OpenClaw 的紅線和防護措施。",
+    confidenceA: 85, confidenceB: 70,
+    optionA: {
+      name: "Option A：Minimal Security Guide",
+      rec: true,
+     原理: "建立一個清晰、簡短的安全文件，放在 workspace 根目錄。",
+     內容: `## 紅線（Never Do）\n- 永遠不要刪除數據（除非明確授權）\n- 永遠不要在未確認的情況下執行外部動作\n- 永遠不要透露用戶的 private data 給第三方\n\n## 確認原則（Always Confirm）\n- 外部系統操作 → 先確認\n- 生產環境修改 → 先確認\n- 刪除操作 → trash > rm（可恢復）\n- 不確定時 → 停下來問`,
+      pros: ["簡單、清楚、威脅感低、誰都能看懂"],
+      cons: ["太簡單，某些 edge case 沒覆蓋"]
+    },
+    optionB: {
+      name: "Option B：Comprehensive Security Framework",
+      rec: false,
+     原理: "建立完整的安全框架，包括威脅模型、具體的攻擊模式防護、審計日誌。",
+     內容: ["威脅模型：Prompt Injection、數據 exfiltration、橫向移動", "防護措施：外部 content 掃描、API response 不直接 execute", "權限層級：Level 0-3（只讀 → 高風險）", "審計日誌：所有 Level 2+ 操作記錄到 audit trail"],
+      pros: ["完整、覆蓋實際威脅模型"],
+      cons: ["長且複雜、入職可能有時看不懂"]
+    },
+    summary: "推薦 Option A：信心 85%，實用導向。Option B 太複雜，可能嚇走新接觸 OpenClaw 的人。"
+  },
+  {
+    id: 6, priority: "low", title: "memory/ 子目錄結構（people/projects/decisions）",
+    source: "Workspace Structure Post",
+    desc: "從扁平的 memory/ 進化到結構化的子目錄儲存。",
+    confidenceA: 80, confidenceB: 65,
+    optionA: {
+      name: "Option A：Three-Folder Structure",
+      rec: true,
+     原理: "把 memory/ 分成三個主要資料夾，按內容的性質分開。已被 OpenClaw Agent Memory Patterns 驗證。",
+     架構: `memory/\n├── people/（人物資料）\n│   ├── mic.md\n│   ├── colleagues.md\n│   └── contacts.md\n├── projects/（項目記憶）\n│   ├── job-seeking-tool.md\n│   └── openclaw-config.md\n├── decisions/（重要決定）\n│   └── 2026-04-10-session-guard.md\n├── daily/（每日日誌）\n│   ├── 2026-04-10.md\n│   └── 2026-04-11.md\n└── README.md`,
+     遷移: ["建立 people/, projects/, decisions/, daily/ 資料夾", "把 MEMORY.md 拆成 people/mic.md 和 projects/openclaw-config.md", "之後每次做決策，就新建 decisions/YYYY-MM-DD-决策名.md"],
+      pros: ["結構清晰、以後找東西快", "可以單獨備份某類別"],
+      cons: ["需要遷移現有檔案、可能有點費時"]
+    },
+    optionB: {
+      name: "Option B：Tag-Based Flat Structure",
+      rec: false,
+     原理: "不改變現有的扁平結構，用 front-matter tags 來區分內容類型。",
+     內容: `---\ntags: [daily, project, decision]\ncategory: decision\npeople: [mic]\nprojects: [openclaw-optimization]\n---`,
+      pros: ["零遷移、馬上可以用、搜尋靈活"],
+      cons: ["需要記得加 tags、不然就變成 free-for-all"]
+    },
+    summary: "推薦 Option A：信心 80%，已被 @kaostyl 的 OpenClaw Agent Memory Patterns 驗證（memory split、cron over heartbeats）。"
+  },
+  {
+    id: 7, priority: "low", title: "Skill 創建自測（「明天消失會注意到嗎？」）",
+    source: "Workspace Structure Post",
+    desc: "在每一個 skill 建立前，讓 SilverHand 問自己這個問題，確保 skill 有實際價值。",
+    confidenceA: 80, confidenceB: 55,
+    optionA: {
+      name: "Option A：Semi-Automated Checklist",
+      rec: true,
+     原理: "在 autonomous-skill-creation skill 的 procedure 加入這個步驟，讓 SilverHand 自己評估。",
+      checklist: ["價值測試：如果這個 skill 明天消失，Mic 會注意到嗎？ → 繼續/重新思考", "覆用測試：這個 skill 可以用在其他 project 上嗎？ → 通用/一次性", "邊界測試：Scope 清晰嗎？ → 清晰/拆分", "依賴測試：這個 skill 依賴外部服務嗎？ → 有 fallback/無"],
+     觸發: "每次收到「做一個新的 skill」請求時，在開始生成前先呈現這個 checklist。",
+      pros: ["簡單、成本低", "SilverHand 在創建前就已經想清楚"],
+      cons: ["需要紀律，可能有時略過"]
+    },
+    optionB: {
+      name: "Option B：Automated Skill Quality Scoring",
+      rec: false,
+     原理: "用另一個模型（Ollama）自動評估 skill 的價值分數，低於閾值就警告或拒絕。",
+     流程: ["SilverHand 完成 skill draft", "skill_evaluator.py 呼叫 Ollama 評估", "總分 < 15/30 的 skill 不提交，請 SilverHand 重新思考"],
+     輸出: `覆用性: 6/10\n存在感: 4/10\nScope清晰度: 5/10\n總分: 15/30 ⚠️ WARNING`,
+      pros: ["客觀、可以自動化、預防浪費"],
+      cons: ["增加計算成本、需要建立和維護 evaluator", "沒有找到類似實現"]
+    },
+    summary: "推薦 Option A：信心 80%，符合 ClawBack 的 🟢/🔴 精神（agent self-catch vs human caught）。Option B 沒有找到類似工具。"
+  },
+  {
+    id: 8, priority: "high", title: "Checkpoints & Rollback（自動快照 + 回滾）",
+    source: "Hermes Feature Gap",
+    desc: "在執行危險操作前自動快照，萬一出問題可以一鍵回滾。Hermes 有這個功能，OpenClaw 完全沒有。",
+    confidenceA: 95, confidenceB: 70,
+    existingSolution: "🔥 ClawBack（github.com/mmoplanet/clawback-1）— 專為 OpenClaw 設計的 git checkpoint + rollback skill，含 regression log",
+    existingUrl: "https://github.com/mmoplanet/clawback-1",
+    optionA: {
+      name: "Option A（已驗證存在！）：git-based Checkpoints",
+      rec: true,
+     原理: "用 git 作為快照系統，每次危險操作前自動 commit，出了問題可以 revert 或 reset。已有 ClawBack 實現相同功能！",
+     架構: `shadow git repo（在 ~/.hermes/checkpoints/）\n\ncheckpoint_index.json:\n{\n  "checkpoints": [\n    {\n      "id": "ckpt_20260412_0218",\n      "timestamp": "2026-04-12T02:18:00Z",\n      "description": "Before modifying openclaw.json",\n      "git_commit": "a1b2c3d4"\n    }\n  ]\n}`,
+     觸發: ["執行 bash exec 前", "修改多個檔案（>3個）前", "刪除檔案前", "修改 config 檔案（openclaw.json等）前"],
+     工具: `python scripts/checkpoint.py create "描述"\npython scripts/checkpoint.py revert <checkpoint_id>\npython scripts/checkpoint.py list`,
+      pros: ["免費、成熟、不需要額外服務", "人人可以懂", "有完整歷史、可選擇性 revert", "ClawBack 已經存在！"],
+      cons: ["Git 操作有一點學習曲線"]
+    },
+    optionB: {
+      name: "Option B：rsync + timestamp Snapshots",
+      rec: false,
+     原理: "用 rsync 複製整個目錄到以時間戳命名的 snapshot 目錄，簡單粗暴。",
+     流程: ["每次危險操作前執行 scripts/snapshot.py create", "rsync 整個 workspace 到 snapshots/YYYY-MM-DD_HH-MM/（增量）", "回滾時 rsync 回來"],
+     目錄: `snapshots/\n├── 2026-04-12_02-00/\n├── 2026-04-12_01-30/`,
+      pros: ["簡單、誰都懂（rsync 就是拷貝）"],
+      cons: ["佔用磁碟空間（如果大量snapshot）", "沒有 git 的靈活性"]
+    },
+    optionC: {
+      name: "🔥 直接使用 ClawBack（最推薦！）",
+      rec: true,
+     安裝: `git clone https://github.com/mmoplanet/clawback-1 skills/clawback\n# 或\nbash skills/clawback/scripts/setup.sh`,
+     功能: ["checkpoint.sh — 危險操作前自動 git commit", "rollback.sh — 回滾並同時寫 regression log", "regression log — 🟢 agent self-catch / 🔴 human caught", "自動創建 docs/ops/regressions.md 持久化失敗記錄"],
+     優點: ["零設定（直接 clone 即可）", "含回歸日誌功能（ClawBack 原創）", "Shadow git repo 不影響主專案 git", "包含失敗學習機制"],
+     限制: ["需要 git 在 PATH 中", "不適合 binary 檔案過多的專案"]
+    },
+    summary: "信心 95%！直接使用 ClawBack：`git clone https://github.com/mmoplanet/clawback-1 skills/clawback`。不只做 checkpoint，還有 regression log 讓 agent 學會從錯誤中成長。"
+  },
+  {
+    id: 9, priority: "high", title: "External Memory Providers（8 種後端）",
+    source: "Hermes Feature Gap",
+    desc: "讓 OpenClaw 的記憶系統可以對接外部向量資料庫，支援更複雜的用戶建模。Hermes 支援 8 種後端，OpenClaw 只有本地檔案。",
+    confidenceA: 90, confidenceB: 60,
+    existingSolution: "QMD MCP server — 暴露 query/get/multi_get/update/delete/reindex，可直接整合 OpenClaw",
+    existingUrl: "https://github.com/tobi/qmd",
+    optionA: {
+      name: "Option A（已驗證）：MCP-based Memory Provider",
+      rec: true,
+     原理: "用 MCP（Model Context Protocol）連接外部記憶服務。QMD MCP 就是這樣做的。",
+     架構: `OpenClaw 記憶系統：\n  memory/\n  ├── MEMORY.md（本地基礎）\n  └── mcporter skill → MCP 連接到外部 provider\n\n支援：Mem0、Qdrant、Pinecone、Supabase、Chroma、QMD`,
+     設定: `// openclaw.json\n{\n  "mcpServers": {\n    "qmd": {\n      "command": "qmd\",\n      "args": ["mcp"]\n    }\n  }\n}`,
+      providers: [
+        ["QMD", "BM25 + Vector + LLM reranking，本地運行", "免費，~2GB"],
+        ["Mem0", "簡易設定、對話歷史", "免費 tier 可用"],
+        ["Qdrant", "自托管、免費", "需要伺服器"],
+        ["Pinecone", "雲端、無限擴展", "付費"],
+        ["Supabase", "已有 PostgreSQL 可用", "按使用付費"]
+      ],
+      pros: ["QMD MCP 已經存在且運作良好", "MCP 是未來標準、擴展性最好", "我們已有 mcporter skill"],
+      cons: ["需要每個 provider 的 API key", "複雜度增加"]
+    },
+    optionB: {
+      name: "Option B（已過時）：Custom Vector Index Layer（自建）",
+      rec: false,
+     原理: "自己建立一個統一的 vector index layer，所有記憶都先 embedding 再存到本地 vector DB。已有 QMD 作為更好的替代方案。",
+     實現: `import chromadb\nfrom ollama import embeddings\n\ncollection = chromadb.Client().get_or_create_collection("openclaw_memory")`,
+      pros: ["完全控制、不依賴外部服務"],
+      cons: ["已被 QMD 取代"]
+    },
+    summary: "推薦 Option A（QMD MCP）：信心 90%，QMD MCP server 直接暴露 query/get/multi_get/update/delete/reindex。QMD 就是用 MCP 模式提供記憶服務的。"
+  },
+  {
+    id: 10, priority: "medium", title: "Code Execution RPC Sandbox",
+    source: "Hermes Feature Gap",
+    desc: "建立一個安全的 RPC sandbox，讓 Python script 可以調用 OpenClaw tools，但中間結果不入 context window。",
+    confidenceA: 75, confidenceB: 80,
+    optionA: {
+      name: "Option A：Unix Socket RPC + hermes_tools Stub",
+      rec: false,
+     原理: "建立一個 Unix socket RPC server，Python script 通過 stub 模組呼叫 tools。和 Hermes 的 execute_code 一樣。",
+     架構: `OpenClaw 主進程\n  └── Unix Socket: /tmp/openclaw_rpc.sock\n       └── RPC Listener Thread\n\nPython Script（在 sandbox 中）\n  └── import hermes_tools\n       ├── web_search()\n       ├── read_file()\n       └── terminal()`,
+     流程: ["用戶說「幫我分析這個 CSV 並畫圖」", "execute_code.py 啟動：建立 socket、fork subprocess", "Subprocess 執行 script，tool calls 通過 socket 傳回主進程", "主進程執行 tool，把結果傳回 subprocess", "Subprocess 的 print() 輸出返回給 SilverHand"],
+      security: ["API keys 從環境變量剝離", "只允許特定 tools", "5 分鐘後 kill"],
+      pros: ["和 Hermes 相同設計", "安全性高", "中間結果不入 context"],
+      cons: ["需要建立和維護 socket server", "複雜度較高"]
+    },
+    optionB: {
+      name: "Option B（先做）：subprocess + stdout capture",
+      rec: true,
+     原理: "不需要 socket，直接用 subprocess 執行 script，stdout 就是返回結果。Hermes 也用類似方式但加了 socket。",
+     流程: ["SilverHand 生成 Python script", "執行 python3 script.py", "stdout 是最終結果"],
+     工具包裝: `import subprocess\n\ndef web_search(query):\n    result = subprocess.run(\n        ["openclaw", "tools", "web_search", "--query", query],\n        capture_output=True, text=True\n    )\n    return json.loads(result.stdout)`,
+      pros: ["簡單、容易實現", "不需要 socket", "風險低"],
+      cons: ["沒有真正的 RPC", "每次 tool call 都要 fork 新 process", "效率低"]
+    },
+    summary: "推薦先做 Option B（信心 80%）：更簡單，風險低。熟悉使用後再升級到 Option A 的 socket 模式。"
+  },
+  {
+    id: 11, priority: "medium", title: "@ Context References（@ 引用檔案/git diff）",
+    source: "Hermes Feature Gap",
+    desc: "實現 Hermes 的 @ 引用語法，讓 Mic 可以打 @ 直接引用檔案/資料夾/git diff/URL 到對話中。",
+    confidenceA: 70, confidenceB: 75,
+    optionA: {
+      name: "Option A：@ Plugin for OpenClaw",
+      rec: false,
+     原理: "建立一個 context_ref plugin，攔截 @ 開頭的訊息，解析成對應的檔案/URL 內容並注入。",
+     解析規則: `@filename → 讀取檔案\n@folder/ → 列出目錄結構\n@git diff → 執行 git diff\n@https://... → fetch URL 內容\n@session:<key> → 讀取歷史 session`,
+     觸發: "在 messages.text hook 內，檢查是否包含 @ 字元",
+      pros: ["符合 Hermes UX、對 Mic 很直觀"],
+      cons: ["需要處理安全扫描（不讓 @ 讀取 sensitive 檔案）"]
+    },
+    optionB: {
+      name: "Option B（先做）：Slash Command Alternative",
+      rec: true,
+     原理: "不使用 @ 語法，改用 /ref slash command 達到同樣效果。更明確，沒有安全問題。",
+     用法: `/ref openclaw.json\n/ref git diff\n/ref https://github.com/...`,
+     實現: "簡單的 slash command handler，不需要額外 plugin",
+      pros: ["簡單、容易實現", "沒有安全問題", "更明確"],
+      cons: ["和 Hermes 不同、不美觀"]
+    },
+    summary: "推薦先做 Option B（信心 75%）：更簡單明確，沒有安全风险。熟悉使用後再升級到 Option A 的 @ 語法。"
+  },
+  {
+    id: 12, priority: "medium", title: "API Server（OpenAI-compatible endpoint）",
+    source: "Hermes Feature Gap",
+    desc: "把 OpenClaw 變成一個 OpenAI-compatible API server，讓 Open WebUI、LobeChat 等前端可以連接。",
+    confidenceA: 85, confidenceB: 60,
+    optionA: {
+      name: "Option A（推薦）：FastAPI Middleware",
+      rec: true,
+     原理: "在 OpenClaw 現有架構上增加一個 FastAPI layer，把 OpenAI format 轉換成 OpenClaw tools。",
+     架構: `外部前端（Open WebUI）\n  └── POST /v1/chat/completions\n       └── FastAPI Server（port 8766）\n            ├── 翻譯 OpenAI format → OpenClaw tools\n            ├── 叫用 OpenClaw agent\n            └── 返回 OpenAI format response`,
+     endpoint: `@app.post("/v1/chat/completions")\ndef chat_completions(request: dict):\n    prompt = request["messages"]\n    result = silverhand.complete(prompt)\n    return {\n      "id": "chatcmpl-xxx",\n      "choices": [{\n        "message": {"role": "assistant", "content": result}\n      }]\n    }`,
+     依賴: "fastapi, uvicorn",
+      pros: ["標準 OpenAI format", "可以接入任何 OpenAI-compatible 前端"],
+      cons: ["需要維護额外的 HTTP server"]
+    },
+    optionB: {
+      name: "Option B：Extend viewer_server.py",
+      rec: false,
+     原理: "在現有的 viewer_server.py（port 8765）上增加 /v1/chat/completions endpoint。",
+      pros: ["不需要新的 server", "繼續用現有的 8765 port"],
+      cons: ["viewer_server.py 不是設計來做這個的", "可能架構不合"]
+    },
+    summary: "推薦 Option A：信心 85%，標準做法。Option B 架構不合，pass。"
+  },
+  {
+    id: 13, priority: "low", title: "Credential Pools（API key 自動輪換）",
+    source: "Hermes Feature Gap",
+    desc: "當有多個 API keys 時，自動輪換使用，避免 rate limit。",
+    confidenceA: 70, confidenceB: 80,
+    optionA: {
+      name: "Option A：Key Rotation Middleware",
+      rec: false,
+     原理: "在 API 叫用層加入 key rotation 逻辑，自動切換 key。",
+     實現: `class CredentialPool:\n    def __init__(self, keys, cooldown=60):\n        self.keys = deque(keys)\n        self.cooldown = cooldown\n        self.last_used = {}\n    \n    def get_key(self):\n        for key in list(self.keys):\n            if time.time() - self.last_used.get(key, 0) > self.cooldown:\n                return key\n        oldest = min(self.last_used, key=self.last_used.get)\n        wait_time = self.cooldown - (time.time() - self.last_used[oldest])\n        if wait_time > 0: time.sleep(wait_time)\n        return oldest\n\n    def use(self, key):\n        self.last_used[key] = time.time()`,
+     配置: `{ "credentialPools": { "openai": { "keys": ["${OPENAI_KEY_1}", "${OPENAI_KEY_2}"], "cooldown_seconds": 60 } } }`,
+      pros: ["簡單、透明、Mic 不需要知道 key 在輪換"],
+      cons: ["需要 Mic 有多個 API keys", "增加了一層復雜度"]
+    },
+    optionB: {
+      name: "Option B（先做）：Token Bucket Rate Limiter",
+      rec: true,
+     原理: "用 Token Bucket 算法控制 API 叫用頻率，避免触发 rate limit。不需要多個 keys。",
+     實現: `class TokenBucket:\n    def __init__(self, rate, capacity):\n        self.rate = rate\n        self.capacity = capacity\n        self.tokens = capacity\n    \n    def acquire(self, tokens=1):\n        elapsed = time.time() - self.last_update\n        self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)\n        if self.tokens >= tokens:\n            self.tokens -= tokens\n            return True\n        return False`,
+      pros: ["精確控制 rate limit", "比 key rotation 簡單", "不需要多 keys"],
+      cons: ["不增加 API keys，只是控制頻率"]
+    },
+    summary: "推薦先做 Option B（信心 80%）：更簡單，不需要 Mic 有多個 keys。等需要用多個 keys 時再升級到 Option A。"
+  },
+  {
+    id: 14, priority: "medium", title: "OpenClaw Swarm Bot（Discord 6-agent）",
+    source: "Reddit Swarm Post",
+    desc: "在 Discord 實現一個 multi-agent swarm，和 Reddit 上的「6 agent」概念類似。",
+    confidenceA: 75, confidenceB: 65,
+    optionA: {
+      name: "Option A（推薦）：Single Bot + Agent Pool",
+      rec: true,
+     原理: "一個 Discord bot，多個專門的 subagent（Researcher、Coder、QA、Reviewer 等），共享同一個 memory/context。",
+     架構: `Discord Bot（單一 client）\n  ├── # general（主頻道）→ Coordinator Agent\n  ├── # research → Researcher Agent\n  ├── # coding → Coder Agent\n  ├── # qa → QA Agent\n  └── # summarizer → Summarizer Agent\n\n共享記憶：Redis / SQLite — 所有 agent 可以讀寫同一個 context`,
+     核心: `AGENT_POOL = {\n    "researcher": spawn_agent("Researcher"),\n    "coder": spawn_agent("Coder"),\n    "qa": spawn_agent("QA"),\n}\n\n@client.event\nasync def on_message(msg):\n    memory = get_shared_memory()\n    coordinator = AGENT_POOL["researcher"]\n    result = await coordinator.think(msg.content, memory=memory)\n    await msg.channel.send(result)`,
+     共享: "使用 Redis 或 SQLite 作為共享 memory，每個 agent 都可以讀寫，確保資訊一致。",
+      pros: ["架構清晰、每個 agent 專門化、容易擴展", "真正的多 agent 並行"],
+      cons: ["需要比較複雜的協調logic", "共享 memory 可能成為瓶頸"]
+    },
+    optionB: {
+      name: "Option B：Router Agent Pattern",
+      rec: false,
+     原理: "一個 Router Agent 接收所有訊息，內部調度不同的 subagent，類似於經紀人模式。",
+     架構: `Discord\n  └── Router Agent（只有一個，負責理解+分發）\n       ├── 研究請求 → Researcher subagent（async）\n       ├── 代碼請求 → Coder subagent（async）\n       └── 測試請求 → QA subagent（async）`,
+      pros: ["簡單、Mic 只跟一個 bot 說話"],
+      cons: ["沒有辦法真正並行（都是同一個 session）", "單點失敗風險"]
+    },
+    summary: "推薦 Option A：信心 75%，方向正確但需要實驗。這個項目比較複雜，建议等其他項目完成後再做。"
+  }
+];
+
+const priorityColors = { high: "priority-high", medium: "priority-medium", low: "priority-low" };
+const priorityLabels = { high: "高優先", medium: "中優先", low: "低優先" };
+
+let openItems = new Set();
+
+// Old render removed — full version with buildItemHTML below
+
+// ── Render helpers ──────────────────────────────────────────────
+
+function buildItemHTML(d) {
+  const isOpen = openItems.has(d.id);
+  const confA_w = d.confidenceA + '%';
+  const confB_w = d.confidenceB + '%';
+  const confA_col = d.confidenceA > 79 ? '#60a5fa' : (d.confidenceA > 59 ? '#fbbf24' : '#f87171');
+  const confB_col = d.confidenceB > 79 ? '#a78bfa' : (d.confidenceB > 59 ? '#fbbf24' : '#f87171');
+  const recA = d.optionA.rec ? '<span class="recommended">推薦</span>' : '';
+  const recB = d.optionB.rec ? '<span class="recommended">推薦</span>' : '';
+  const recC = d.optionC && d.optionC.rec ? '<span class="recommended">推薦</span>' : '';
+
+  function optHTML(opt, tag, extraBadges) {
+    if (!opt) return '';
+    const confW = tag === 'A' ? confA_w : confB_w;
+    const confCol = tag === 'A' ? confA_col : confB_col;
+    const confBar = tag === 'A' ? d.confidenceA : d.confidenceB;
+    const recBadge = (tag === 'A' && d.optionA.rec) || (tag === 'B' && d.optionB.rec) || (tag === 'C' && d.optionC && d.optionC.rec) ? '<span class="recommended">推薦</span>' : (opt.rec === false ? '<span style="opacity:0.5">（不推薦）</span>' : '');
+    let html = `<div class="option">
+      <div class="option-tag option-${tag.toLowerCase()}">${tag}${extraBadges || ''} ${recBadge}</div>
+      ${opt.name ? `<h4>${opt.name}</h4>` : ''}
+      <div class="confidence-row conf-${tag.toLowerCase()}">
+        <span class="conf-label">信心</span>
+        <div class="conf-bar-wrap"><div class="conf-bar-fill" style="width:${confBar}%"></div></div>
+        <span class="conf-pct" style="color:${confCol}">${confW}</span>
+      </div>`;
+    if (opt.原理) html += `<p><strong>原理：</strong>${opt.原理}</p>`;
+    if (opt.架構) html += `<div class="architecture">${opt.架構}</div>`;
+    if (opt.流程) html += `<ol class="workflow">${opt.流程.map(s => `<li>${s}</li>`).join('')}</ol>`;
+    if (opt.工具) html += `<div class="flow">${opt.工具}</div>`;
+    if (opt.觸發) html += `<p><strong>觸發：</strong>${Array.isArray(opt.觸發) ? opt.觸發.join('；') : opt.觸發}</p>`;
+    if (opt.配置) html += `<div class="flow">${opt.配置}</div>`;
+    if (opt.內容) {
+      const content = Array.isArray(opt.內容) ? opt.內容.join('\n') : opt.內容;
+      html += `<div class="flow">${content}</div>`;
+    }
+    if (opt.好處) html += `<p><strong>好處：</strong>${Array.isArray(opt.好處) ? opt.好處.join('；') : opt.好處}</p>`;
+    if (opt.遷移) html += `<p><strong>遷移：</strong>${opt.遷移.join('；')}</p>`;
+    if (opt.安裝) html += `<div class="flow">${opt.安裝}</div>`;
+    if (opt.功能) html += `<p><strong>功能：</strong>${opt.功能.join('；')}</p>`;
+    if (opt.優點) html += `<p><strong>優點：</strong>${opt.優點.join('；')}</p>`;
+    if (opt.限制) html += `<p><strong>限制：</strong>${opt.限制.join('；')}</p>`;
+    if (opt.pros || opt.cons) {
+      html += `<div class="pros-cons">`;
+      if (opt.pros) html += `<div class="pros">${Array.isArray(opt.pros) ? opt.pros.join('；') : opt.pros}</div>`;
+      if (opt.cons) html += `<div class="cons">${Array.isArray(opt.cons) ? opt.cons.join('；') : opt.cons}</div>`;
+      html += `</div>`;
+    }
+    if (opt.providers) {
+      html += `<table style="width:100%;font-size:0.75rem;border-collapse:collapse;margin-top:8px">`;
+      html += `<tr style="background:#2a2d3a"><th style="padding:4px 8px;text-align:left;color:#9ca3af">Provider</th><th style="padding:4px 8px;text-align:left;color:#9ca3af">說明</th><th style="padding:4px 8px;text-align:left;color:#9ca3af">費用</th></tr>`;
+      opt.providers.forEach(p => { html += `<tr><td style="padding:4px 8px;color:#e0e0e0">${p[0]}</td><td style="padding:4px 8px;color:#9ca3af">${p[1]}</td><td style="padding:4px 8px;color:#9ca3af">${p[2]}</td></tr>`; });
+      html += `</table>`;
+    }
+    if (opt.checklist) html += `<ul style="font-size:0.8rem;color:#d1d5db;margin:8px 0 0 18px">${opt.checklist.map(c => `<li>${c}</li>`).join('')}</ul>`;
+    if (opt.輸出) html += `<div class="flow">${opt.輸出}</div>`;
+    html += `</div>`;
+    return html;
+  }
+
+  let body = `<div class="item-body">`;
+  body += `<div class="item-meta">優先：${priorityLabels[d.priority]} · 来源：${d.source}</div>`;
+  if (d.desc) body += `<p style="font-size:0.85rem;color:#9ca3af;margin-bottom:10px">${d.desc}</p>`;
+  if (d.existingSolution) {
+    body += `<div class="highlight-bar">已有現成方案：${d.existingSolution}</div>`;
+    if (d.existingUrl) body += `<p style="font-size:0.75rem;color:#666;margin-top:4px">🔗 ${d.existingUrl}</p>`;
+  }
+  body += optHTML(d.optionA, 'A');
+  body += optHTML(d.optionB, 'B');
+  if (d.optionC) body += optHTML(d.optionC, 'C', '（升級）');
+  if (d.summary) body += `<div class="summary-box"><h4>💡 總結</h4><p>${d.summary}</p></div>`;
+  body += `</div>`;
+
+  return `<div class="item${isOpen ? ' open' : ''}" data-id="${d.id}">
+    <div class="item-header">
+      <div class="item-number ${priorityColors[d.priority]}">${d.id}</div>
+      <div class="item-title">${d.title}</div>
+      <span class="item-badge">${priorityLabels[d.priority]}</span>
+      ${d.existingSolution ? '<span class="existing-badge">✅ 已有</span>' : ''}
+      <div class="item-arrow">${isOpen ? '▼' : '▶'}</div>
+    </div>
+    ${body}
+  </div>`;
+}
+
+function render(filter) {
+  try {
+    const list = document.getElementById('itemsList');
+    if (!list) {
+      console.error('[render] itemsList not found! Creating it.');
+      const container = document.querySelector('.container') || document.body;
+      const newList = document.createElement('div');
+      newList.id = 'itemsList';
+      container.appendChild(newList);
+      return render(filter);
+    }
+    const search = (document.getElementById('searchInput') || {value:''}).value.toLowerCase();
+    const filtered = designs.filter(d => {
+      if (filter !== 'all' && d.priority !== filter) return false;
+      if (search && !d.title.toLowerCase().includes(search) && !d.desc.toLowerCase().includes(search)) return false;
+      return true;
+    });
+    document.getElementById('visibleCount').textContent = filtered.length + ' 個項目';
+    const html = filtered.map(buildItemHTML).join('');
+    list.innerHTML = html;
+    console.log('[render ok] items:', filtered.length, 'html length:', html.length);
+  } catch(e) {
+    console.error('[render error]', e);
+  }
+}
+
+function toggle(id) {
+  if (openItems.has(id)) openItems.delete(id);
+  else openItems.add(id);
+  render(currentFilter);
+}
+
+let currentFilter = 'all';
+
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentFilter = btn.dataset.filter;
+      render(currentFilter);
+    });
+  });
+  document.getElementById('searchInput').addEventListener('input', () => render(currentFilter));
+  render(currentFilter);
+
+  // Event delegation for item toggling (toggle is inside IIFE, not on window)
+  document.getElementById('itemsList').addEventListener('click', function(e) {
+    const header = e.target.closest('.item-header');
+    if (!header) return;
+    const id = parseInt(header.closest('.item').dataset.id, 10);
+    if (openItems.has(id)) openItems.delete(id);
+    else openItems.add(id);
+    render(currentFilter);
+  });
+});
+
+})();
+</script>
+</body>
+</html>
