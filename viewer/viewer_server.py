@@ -4,6 +4,7 @@ Minimal combined viewer + API server using raw sockets.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import os
 import re
@@ -687,7 +688,7 @@ def _lock_for(thread_id: str) -> threading.Lock:
 
 
 def _utc_now_iso() -> str:
-    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _new_thread(thread_id: str) -> dict:
