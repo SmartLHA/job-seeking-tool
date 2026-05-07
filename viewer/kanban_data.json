@@ -5,821 +5,172 @@
       "title": "📥 Backlog",
       "cards": [
         {
-          "id": "card-10f0038a",
-          "title": "Screenshot Browsing 模式",
-          "description": "節省 50-80% token，HTML -> 截圖模式",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "效能"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T10:31:30",
-          "updated_at": "2026-04-12T10:31:30"
-        },
-        {
-          "id": "card-fddf0de6",
-          "title": "Local Skill 生成",
-          "description": "用 Ollama 生成 SKILL.md 模板，省 API token",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "skill"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T10:31:30",
-          "updated_at": "2026-04-12T10:31:30"
-        },
-        {
-          "id": "card-0d254ed1",
-          "title": "API Server（OpenAI-compatible）",
-          "description": "讓 Open WebUI、LobeChat 可以連接",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "api"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T10:31:30",
-          "updated_at": "2026-04-12T10:31:30"
-        },
-        {
-          "id": "card-6927d8bc",
-          "title": "RPC Sandbox",
-          "description": "Python script 中間結果不入 context window",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "安全"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T10:31:30",
-          "updated_at": "2026-04-12T10:31:30"
-        },
-        {
-          "id": "card-98b0e6be",
-          "title": "External Memory Providers",
-          "description": "MCP-based memory provider (QMD MCP 已有)",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "記憶"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T10:31:30",
-          "updated_at": "2026-04-12T10:31:30"
-        },
-        {
-          "id": "card-4093d7da",
-          "title": "Credential Pools",
-          "description": "Token Bucket rate limiter，API key 自動輪換",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "api"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T10:31:30",
-          "updated_at": "2026-04-12T10:31:30"
-        },
-        {
-          "id": "card-84102c5f",
-          "title": "@ Context References",
-          "description": "@ 引用檔案/git diff/URL，slash command 先做",
-          "priority": "low",
-          "tags": [
-            "openclaw",
-            "ux"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T10:31:30",
-          "updated_at": "2026-04-12T10:31:30"
-        },
-        {
-          "id": "card-fddb8567",
-          "title": "SECURITY.md 安全文件",
-          "description": "紅線和防護措施文件",
-          "priority": "low",
-          "tags": [
-            "安全",
-            "openclaw"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T10:31:30",
-          "updated_at": "2026-04-12T10:31:30"
-        },
-        {
-          "id": "card-af3e527b",
-          "title": "memory/ 目錄結構",
-          "description": "people/projects/decisions 分類儲存",
-          "priority": "low",
-          "tags": [
-            "openclaw",
-            "記憶"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T10:31:30",
-          "updated_at": "2026-04-12T10:31:30"
-        },
-        {
-          "id": "card-8e8b9415",
-          "title": "Skill 創建自測",
-          "description": "\"明天消失會注意到嗎？\" checklist",
-          "priority": "low",
-          "tags": [
-            "openclaw",
-            "skill"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T10:31:30",
-          "updated_at": "2026-04-12T10:31:30"
-        },
-        {
-          "id": "card-baddbdc6",
-          "title": "Swarm Bot（Discord 6-agent）",
-          "description": "Single Bot + Agent Pool，多 agent 並行",
-          "priority": "low",
-          "tags": [
-            "discord",
-            "multi-agent"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T10:31:30",
-          "updated_at": "2026-04-12T10:31:30"
-        },
-        {
-          "id": "card-c1fcffb6",
-          "title": "YAML Workflow Orchestration",
-          "description": "多步 pipeline 自動化，如 openclaw-hub 的 workflows/",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "自動化"
-          ],
-          "link": "https://github.com/openclaw-community/openclaw-hub",
-          "created_at": "2026-04-12T11:32:23",
-          "updated_at": "2026-04-12T11:32:23"
-        },
-        {
-          "id": "card-56c3ec08",
-          "title": "MCP Tool Integration",
-          "description": "整合 QMD MCP + 其他 external tools，擴展工具能力",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "整合"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T11:32:23",
-          "updated_at": "2026-04-12T11:32:23"
-        },
-        {
-          "id": "card-c240d6b4",
-          "title": "Self-Healing Provider Fallback",
-          "description": "OpenAI 掛了自動切換 Ollama，減少中斷",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "穩定性"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T11:32:23",
-          "updated_at": "2026-04-12T11:32:23"
-        },
-        {
-          "id": "card-b79087b5",
-          "title": "Budget Enforcement per Connection",
-          "description": "每個 model 有獨立預算上限，超過時阻擋",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "成本"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T11:32:23",
-          "updated_at": "2026-04-12T11:32:23"
-        },
-        {
-          "id": "card-b8e83a20",
-          "title": "Web Dashboard（OpenClaw Hub）",
-          "description": "視覺化用量、cost chart、per-model 分析",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "監控"
-          ],
-          "link": "https://github.com/openclaw-community/openclaw-hub",
-          "created_at": "2026-04-12T11:32:23",
-          "updated_at": "2026-04-12T11:32:23"
-        },
-        {
-          "id": "card-ffc642a8",
-          "title": "Discord Rich Notifications",
-          "description": "Hub push notification 改到 Discord，告別 email",
-          "priority": "low",
-          "tags": [
-            "discord",
-            "通知"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T11:32:23",
-          "updated_at": "2026-04-12T11:32:23"
-        },
-        {
-          "id": "card-2026-04-",
-          "title": "📝 Multi-LLM Chat UI (ui.py)",
-          "description": "持久化模塊已建好，UI界面未完成。真正的多模型對話歷史呈現需等ui.py完成",
+          "id": "jh-001-tailoring-validation",
+          "title": "[JOB-001] Tailoring truth validation",
+          "description": "validate_tailored_cv() always returns True — no real check running. Implement cross-check: tailored CV claims must match CandidateProfile fields only. P0 — critical guardrail broken.",
           "priority": "high",
-          "tags": [
-            "infra",
-            "openclaw"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:29:47",
-          "updated_at": "2026-04-13T11:29:47"
+          "tags": ["bug", "handy", "p0"],
+          "assignee": "Handy"
         },
         {
-          "id": "card-2026-04-",
-          "title": "🔧 Cache Layer Design",
-          "description": "Wiser REVISE，2 gaps待修復，撞到2-revision上限",
-          "priority": "medium",
-          "tags": [
-            "design",
-            "wiser"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:29:47",
-          "updated_at": "2026-04-13T11:29:47"
-        },
-        {
-          "id": "card-2026-04-",
-          "title": "🔧 URL Ingestion UI Tab",
-          "description": "parsing.py完成，ui.py待實作",
-          "priority": "medium",
-          "tags": [
-            "dev",
-            "handy"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:29:47",
-          "updated_at": "2026-04-13T11:29:47"
-        },
-        {
-          "id": "card-2026-04-",
-          "title": "📋 Outcomes Analytics",
-          "description": "Spec未開始，等待更清晰需求",
-          "priority": "low",
-          "tags": [
-            "openclaw"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:29:47",
-          "updated_at": "2026-04-13T11:29:47"
-        },
-        {
-          "id": "card-124b6123",
-          "title": "🔍 SearXNG 自托管搜尋引擎",
-          "description": "聚合 Google/Bing/DuckDuckGo/Brave，無 rate limit，省 $45-75/月",
+          "id": "jh-002-orchestrator-wiring",
+          "title": "[JOB-002] Orchestrator Reed+Adzuna wiring",
+          "description": "job_sources/reed_client.py + adzuna_client.py + normalize.py + dedup.py exist but NOT wired to job_hunt_orchestrator.py. Wire API clients into workflow. P0.",
           "priority": "high",
-          "tags": [
-            "openclaw",
-            "優先"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
+          "tags": ["integration", "handy", "p0"],
+          "assignee": "Handy"
         },
         {
-          "id": "card-164294a7",
-          "title": "🧭 OpenClaw Hub LLM 路由",
-          "description": "自動路由到最便宜 model，節省 90% 成本",
+          "id": "jh-007-url-ingestion-design",
+          "title": "[JOB-007] Create url-ingestion-design.md",
+          "description": "MEMORY.md references docs/tasks/url-ingestion-design.md but file does not exist. Design needed for URL paste/fetch spec covering 10s budget, 2s parse + 8s network, allowed sources. Design stage — Wiser review required before build.",
+          "priority": "high",
+          "tags": ["design", "wiser", "p0"],
+          "assignee": "Wiser"
+        },
+        {
+          "id": "jh-005-cover-letter-tests",
+          "title": "[JOB-005] Cover letter tests missing",
+          "description": "job_hunt_cover_letter.py exists but tests/test_cover_letter.py does not exist. All new functions must have tests.",
           "priority": "medium",
-          "tags": [
-            "openclaw",
-            "優化"
-          ],
-          "link": "https://github.com/openclaw-community/openclaw-hub",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
+          "tags": ["tests", "handy", "p1"],
+          "assignee": "Handy"
         },
         {
-          "id": "card-4cf941b5",
-          "title": "📸 Screenshot Browsing 模式",
-          "description": "HTML -> 截圖模式，節省 50-80% token",
+          "id": "jh-008-ats-scorer-verification",
+          "title": "[JOB-008] Verify ATS scorer integration",
+          "description": "job_hunt_ats_scorer.py exists (Apr 12) but not verified as wired into eval flow or UI. Confirm from evaluation.py, ui.py, or orchestrator.",
           "priority": "medium",
-          "tags": [
-            "openclaw",
-            "效能"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
+          "tags": ["qa", "scout", "p1"],
+          "assignee": "Scout"
         },
         {
-          "id": "card-5ededaf1",
-          "title": "🛠 Local Skill 生成",
-          "description": "用 Ollama 生成 SKILL.md 模板，省 API token",
+          "id": "jh-009-paste-fetch-status",
+          "title": "[JOB-009] Clarify paste_fetch status",
+          "description": "job_hunt_paste_fetch.py + job_hunt_paste_ui.py active or superseded by job_sources pipeline? Need Wiser/Mic decision.",
           "priority": "medium",
-          "tags": [
-            "openclaw",
-            "skill"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
+          "tags": ["decision", "silverhand", "p1"],
+          "assignee": "SilverHand"
         },
         {
-          "id": "card-1b74a970",
-          "title": "🔌 API Server（OpenAI-compatible）",
-          "description": "FastAPI middleware（port 8766），Open WebUI、LobeChat 可連接",
+          "id": "jh-010-cv-tailoring-brief-review",
+          "title": "[JOB-010] Wiser review cv-tailoring-brief.md",
+          "description": "docs/tasks/cv-tailoring-brief.md created Apr 14, never reviewed by Wiser. Needs sign-off before tailoring work proceeds.",
           "priority": "medium",
-          "tags": [
-            "openclaw",
-            "api"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
+          "tags": ["review", "wiser", "p1"],
+          "assignee": "Wiser"
         },
         {
-          "id": "card-c61c8c5f",
-          "title": "📦 Code Execution RPC Sandbox",
-          "description": "Python script 中間結果不入 context window",
+          "id": "jh-011-job-sources-tests",
+          "title": "[JOB-011] job_sources/ test coverage",
+          "description": "Reed client, Adzuna client, normalize, dedup have no tests. Need integration tests: successful fetch, 429 handling, empty results, cross-source dedup.",
           "priority": "medium",
-          "tags": [
-            "openclaw",
-            "安全"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
+          "tags": ["tests", "scout", "p1"],
+          "assignee": "Scout"
         },
         {
-          "id": "card-9d304997",
-          "title": "🧠 External Memory Providers",
-          "description": "MCP-based memory provider，QMD MCP 已有",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "記憶"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
-        },
-        {
-          "id": "card-f02105b7",
-          "title": "🔑 Credential Pools",
-          "description": "API key 自動輪換，Token Bucket rate limiter",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "api"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
-        },
-        {
-          "id": "card-09d5000e",
-          "title": "@ @ Context References",
-          "description": "@ 引用檔案/git diff/URL，slash command 先做",
+          "id": "jh-006-canonical-viewer",
+          "title": "[JOB-006] Clarify canonical viewer HTML",
+          "description": "viewer/ has reed_jobs.html + v2 + v3 + v4 + reed_minimal.html + reed_debug.html. No clear statement which is current canonical UI. Update viewer/README.md.",
           "priority": "low",
-          "tags": [
-            "openclaw",
-            "ux"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
+          "tags": ["docs", "silverhand", "p2"],
+          "assignee": "SilverHand"
         },
         {
-          "id": "card-edb76547",
-          "title": "📧 獨立 AI Email Inbox",
-          "description": "專用 Gmail + Forward to OpenClaw，避免 lock-in",
+          "id": "jh-012-e2e-ingestion-tests",
+          "title": "[JOB-012] Full ingestion E2E tests",
+          "description": "End-to-end test from API fetch → normalize → dedup → scoring → decision → stored analysis. Not written. Needed before ingestion marked complete.",
           "priority": "low",
-          "tags": [
-            "email",
-            "openclaw"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
-        },
-        {
-          "id": "card-40dd30e3",
-          "title": "📋 YAML Workflow Orchestration",
-          "description": "多步 pipeline 自動化，如 openclaw-hub workflows/",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "自動化"
-          ],
-          "link": "https://github.com/openclaw-community/openclaw-hub",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
-        },
-        {
-          "id": "card-dfa3052e",
-          "title": "🔗 MCP Tool Integration",
-          "description": "整合 QMD MCP + 其他 external tools",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "整合"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
-        },
-        {
-          "id": "card-247d6b69",
-          "title": "🔄 Self-Healing Provider Fallback",
-          "description": "OpenAI 掛了自動切換 Ollama",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "穩定性"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
-        },
-        {
-          "id": "card-ff53f760",
-          "title": "💰 Budget Enforcement per Connection",
-          "description": "每個 model 有獨立預算上限",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "成本"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
-        },
-        {
-          "id": "card-a7c2593f",
-          "title": "📊 Web Dashboard（OpenClaw Hub）",
-          "description": "視覺化用量、cost chart、per-model 分析",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "監控"
-          ],
-          "link": "https://github.com/openclaw-community/openclaw-hub",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
-        },
-        {
-          "id": "card-3cbf4362",
-          "title": "📢 Discord Rich Notifications",
-          "description": "Hub push notification 改到 Discord",
-          "priority": "low",
-          "tags": [
-            "discord",
-            "通知"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
+          "tags": ["tests", "scout", "p2"],
+          "assignee": "Scout"
         }
       ]
     },
     {
       "id": "ready",
       "title": "🚀 Ready to Start",
-      "cards": [
-        {
-          "id": "card-12070246",
-          "title": "OpenClaw Hub LLM 路由",
-          "description": "自動路由到最便宜 model，節省 90% 成本，Cost tracking + budget enforcement",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "優化",
-            "已設計",
-            "Wiser"
-          ],
-          "link": "https://github.com/openclaw-community/openclaw-hub",
-          "created_at": "2026-04-12T11:34:00",
-          "updated_at": "2026-04-12T11:34:00"
-        },
-        {
-          "id": "card-00506329",
-          "title": "API Server（OpenAI-compatible endpoint）",
-          "description": "FastAPI middleware（port 8766），讓 Open WebUI、LobeChat 可以連接",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "api",
-            "已設計",
-            "Wiser"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T11:34:00",
-          "updated_at": "2026-04-12T11:34:00"
-        },
-        {
-          "id": "card-35019087",
-          "title": "獨立 AI Email Inbox",
-          "description": "專用 Gmail + Forward to OpenClaw，避免 Gmail lock-in 風險",
-          "priority": "low",
-          "tags": [
-            "email",
-            "openclaw",
-            "已設計",
-            "Wiser"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T11:34:00",
-          "updated_at": "2026-04-12T11:34:00"
-        },
-        {
-          "id": "card-91732730",
-          "title": "SECURITY.md 安全邊界文件",
-          "description": "紅線 + 確認原則文件，Minimal Security Guide（推薦 Option A）",
-          "priority": "low",
-          "tags": [
-            "安全",
-            "openclaw",
-            "已設計",
-            "Wiser"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T11:34:00",
-          "updated_at": "2026-04-12T11:34:00"
-        },
-        {
-          "id": "card-61222344",
-          "title": "External Memory Providers（MCP-based）",
-          "description": "QMD MCP 已有，memory.backend: qmd 配置，支援 8 種後端",
-          "priority": "medium",
-          "tags": [
-            "openclaw",
-            "記憶",
-            "已設計",
-            "Wiser"
-          ],
-          "link": "https://github.com/tobi/qmd",
-          "created_at": "2026-04-12T11:34:00",
-          "updated_at": "2026-04-12T11:34:00"
-        }
-      ]
+      "cards": []
     },
     {
       "id": "in-progress",
       "title": "🔄 In Progress",
-      "cards": [
-        {
-          "id": "card-cbc02fa1",
-          "title": "📝 Multi-LLM Chat UI (ui.py)",
-          "description": "持久化模塊已建好，UI界面未完成，需等ui.py完成",
-          "priority": "high",
-          "tags": [
-            "infra",
-            "openclaw"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
-        }
-      ]
+      "cards": []
     },
     {
       "id": "blocked",
       "title": "🚫 Blocked",
-      "cards": [
-        {
-          "id": "card-df7027c3",
-          "title": "🔧 Cache Layer Design",
-          "description": "Wiser REVISE，2 gaps待修復，撞到2-revision上限",
-          "priority": "medium",
-          "tags": [
-            "design",
-            "wiser"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
-        }
-      ]
+      "cards": []
     },
     {
       "id": "done",
       "title": "✅ Done",
       "cards": [
         {
-          "id": "card-35483248",
-          "title": "QMD 向量記憶升級",
-          "description": "memory.backend: qmd，已內建支援，Tobi Lütke（Shopify CEO）建造",
+          "id": "jh-3e-product-spec-stale",
+          "title": "[3E] product_spec.md stale scope ✅",
+          "description": "Updated to reflect actual implementation state vs. planned scope. Done 2026-05-02.",
           "priority": "high",
-          "tags": [
-            "openclaw",
-            "記憶",
-            "已設計",
-            "Wiser"
-          ],
-          "link": "https://github.com/tobi/qmd",
-          "created_at": "2026-04-12T11:34:00",
-          "updated_at": "2026-04-12T11:57:00"
+          "tags": ["docs", "silverhand"],
+          "assignee": "SilverHand",
+          "doneDate": "2026-05-02"
         },
         {
-          "id": "card-0ef43581",
-          "title": "SearXNG 搜尋引擎",
-          "description": "docker 安裝 + 整合進 OpenClaw web_search",
+          "id": "jh-3a-missing-docs",
+          "title": "[3A] Create missing docs ✅",
+          "description": "docs/data_contract.md already existed. docs/tailoring_spec.md created 2026-05-02. INDEX.md stale ref fixed. Done.",
           "priority": "high",
-          "tags": [
-            "openclaw",
-            "優先"
-          ],
-          "link": "",
-          "created_at": "2026-04-12T10:31:13",
-          "updated_at": "2026-04-12T11:57:00"
+          "tags": ["docs", "silverhand"],
+          "assignee": "SilverHand",
+          "doneDate": "2026-05-02"
         },
         {
-          "id": "card-76958868",
-          "title": "ClawBack 回滾機制",
-          "description": "git clone https://github.com/mmoplanet/clawback-1 skills/clawback",
-          "priority": "high",
-          "tags": [
-            "openclaw",
-            "安全",
-            "已設計",
-            "Wiser"
-          ],
-          "link": "https://github.com/mmoplanet/clawback-1",
-          "created_at": "2026-04-12T11:34:00",
-          "updated_at": "2026-04-12T11:57:00"
-        },
-        {
-          "id": "card-2026-04-",
-          "title": "✅ Shared Message Bus",
-          "description": "Design Rev7 APPROVED, 28/28 tests, SQLite message bus built",
-          "priority": "high",
-          "tags": [
-            "infra",
-            "wiser",
-            "handy"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:29:47",
-          "updated_at": "2026-04-13T11:29:47"
-        },
-        {
-          "id": "card-2026-04-",
-          "title": "✅ QMD Memory Skill",
-          "description": "Semantic search auto-activates on memory queries",
-          "priority": "high",
-          "tags": [
-            "infra"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:29:47",
-          "updated_at": "2026-04-13T11:29:47"
-        },
-        {
-          "id": "card-2026-04-",
-          "title": "✅ Viewer Dashboard Redesign",
-          "description": "Dark theme, enlarged role cards, sessions panel",
+          "id": "jh-3c-project-log",
+          "title": "[3C] PROJECT_LOG.md catch-up ✅",
+          "description": "Gap entry added to PROJECT_LOG.md covering Apr 14–28. Git log reconstruction + file timestamps used. Done.",
           "priority": "medium",
-          "tags": [
-            "infra"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:29:47",
-          "updated_at": "2026-04-13T11:29:47"
+          "tags": ["docs", "silverhand"],
+          "assignee": "SilverHand",
+          "doneDate": "2026-05-02"
         },
         {
-          "id": "card-2026-04-",
-          "title": "✅ Session Guard Update",
-          "description": "helper role added to ROLE_TO_AGENT mapping",
-          "priority": "medium",
-          "tags": [
-            "infra"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:29:47",
-          "updated_at": "2026-04-13T11:29:47"
-        },
-        {
-          "id": "card-2026-04-",
-          "title": "✅ INDEX.md Created",
-          "description": "Workspace file map, all reference files organized",
-          "priority": "medium",
-          "tags": [
-            "infra"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:29:47",
-          "updated_at": "2026-04-13T11:29:47"
-        },
-        {
-          "id": "card-2026-04-",
-          "title": "✅ Daily Log Updater",
-          "description": "Cron every 15m, watermarks prevent double-logging",
-          "priority": "medium",
-          "tags": [
-            "infra"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:29:47",
-          "updated_at": "2026-04-13T11:29:47"
-        },
-        {
-          "id": "card-2026-04-",
-          "title": "✅ Dream Log Separation",
-          "description": "DREAMS.md separate from daily log, Morning Routine updated",
-          "priority": "medium",
-          "tags": [
-            "infra"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:29:47",
-          "updated_at": "2026-04-13T11:29:47"
-        },
-        {
-          "id": "card-5ed80abe",
-          "title": "🔙 ClawBack Checkpoints & Rollback",
-          "description": "git checkpoint + rollback，危險操作前快照",
+          "id": "jh-tests-green",
+          "title": "180 tests passing ✅",
+          "description": "Full test suite green — 180/180 verified 2026-05-02.",
           "priority": "high",
-          "tags": [
-            "openclaw",
-            "安全"
-          ],
-          "link": "https://github.com/mmoplanet/clawback-1",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
+          "tags": ["tests"],
+          "assignee": "QA",
+          "doneDate": "2026-05-02"
         },
         {
-          "id": "card-8c719e99",
-          "title": "🔣 QMD 向量記憶升級",
-          "description": "memory.backend: qmd，語義搜索，Tobi Lütke 建造",
+          "id": "jh-job-sources-exist",
+          "title": "job_sources/ clients exist ✅",
+          "description": "reed_client, adzuna_client, normalize, dedup all created. Not yet wired to orchestrator.",
           "priority": "high",
-          "tags": [
-            "openclaw",
-            "記憶"
-          ],
-          "link": "https://github.com/tobi/qmd",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
+          "tags": ["integration"],
+          "assignee": "Handy",
+          "doneDate": "2026-04-28"
         },
         {
-          "id": "card-222e1c7a",
-          "title": "🔐 SECURITY.md 安全邊界文件",
-          "description": "紅線和防護措施，Security Protocol v1.0 完成",
-          "priority": "high",
-          "tags": [
-            "安全",
-            "openclaw"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
-        },
-        {
-          "id": "card-c15789f7",
-          "title": "🗂 memory/ 目錄結構",
-          "description": "people/projects/decisions 分類，QMD operational",
+          "id": "jh-cover-letter-module",
+          "title": "Cover letter module exists ✅",
+          "description": "job_hunt_cover_letter.py created. Tests not yet written (item JOB-005).",
           "priority": "medium",
-          "tags": [
-            "openclaw",
-            "記憶"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
+          "tags": ["feature"],
+          "assignee": "Handy",
+          "doneDate": "2026-04-28"
         },
         {
-          "id": "card-bf53f178",
-          "title": "🧪 Skill 創建自測",
-          "description": "\"明天消失會注意到嗎？\" checklist",
-          "priority": "low",
-          "tags": [
-            "openclaw",
-            "skill"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
-        },
-        {
-          "id": "card-e8d8cb4e",
-          "title": "🚌 Shared Message Bus（Agent 協作核心）",
-          "description": "SQLite message bus + pipeline_runs + stage_log，28/28 tests",
-          "priority": "high",
-          "tags": [
-            "infra",
-            "wiser",
-            "handy"
-          ],
-          "link": "",
-          "created_at": "2026-04-13T11:32:37",
-          "updated_at": "2026-04-13T11:32:37"
+          "id": "jh-idx-url-design",
+          "title": "INDEX.md url-ingestion fix ✅",
+          "description": "Fixed stale reference to url-ingestion-design.md → job-ingestion-api-design.md. Done 2026-05-02.",
+          "priority": "medium",
+          "tags": ["docs"],
+          "assignee": "SilverHand",
+          "doneDate": "2026-05-02"
         }
       ]
     }
   ],
-  "version": 1,
-  "updated_at": "2026-04-13T11:32:37"
+  "lastUpdated": "2026-05-07T14:30:00Z",
+  "project": "Job Seeking Tool"
 }
