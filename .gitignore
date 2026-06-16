@@ -43,6 +43,14 @@ logs/
 .openclaw/
 backups/
 app.log
+AGENTS.md
+HEARTBEAT.md
+IDENTITY.md
+SOUL.md
+TOOLS.md
+USER.md
+AI output/
+Wiser-review-result-*
 
 # Project-specific
 data/state/logs/*.log
