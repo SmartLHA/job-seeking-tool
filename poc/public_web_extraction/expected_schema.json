@@ -1,0 +1,56 @@
+{
+  "required_top_level_fields": [
+    "url",
+    "domain",
+    "category",
+    "status",
+    "reason",
+    "title",
+    "meta_description",
+    "main_content",
+    "summary",
+    "headings",
+    "links",
+    "calls_to_action",
+    "pricing_signals",
+    "feature_signals",
+    "job_signals",
+    "company_signals",
+    "date_published",
+    "author",
+    "content_usefulness",
+    "extraction_quality",
+    "browser_metadata"
+  ],
+  "content_usefulness_fields": [
+    "for_job_seeking",
+    "for_competitor_research",
+    "for_market_research",
+    "for_product_design"
+  ],
+  "extraction_quality_fields": [
+    "content_length",
+    "has_title",
+    "has_headings",
+    "has_main_content",
+    "has_links",
+    "quality_score",
+    "confidence_score"
+  ],
+  "browser_metadata_fields": [
+    "verified_from_live_page",
+    "network_requests_made",
+    "screenshot_path",
+    "snapshot_path",
+    "cookie_banner_seen",
+    "cookies_accepted",
+    "login_required",
+    "forms_present",
+    "form_submission_required_to_view_content",
+    "form_interaction_performed",
+    "persistent_session_used",
+    "stealth_mode_used",
+    "captcha_seen",
+    "captcha_solved"
+  ]
+}

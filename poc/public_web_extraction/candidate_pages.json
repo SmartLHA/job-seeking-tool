@@ -1,0 +1,22 @@
+[
+  {"url": "https://www.notion.so/", "category": "product_homepage"},
+  {"url": "https://www.notion.so/pricing", "category": "pricing_page"},
+  {"url": "https://www.atlassian.com/blog/productivity/how-to-write-smart-goals", "category": "blog_article"},
+  {"url": "https://www.canva.com/careers/", "category": "careers_landing"},
+  {"url": "https://www.anthropic.com/about", "category": "company_about"},
+  {"url": "https://docs.github.com/en/get-started/start-your-journey/about-github-and-git", "category": "documentation"},
+  {"url": "https://openai.com/api/", "category": "product_homepage"},
+  {"url": "https://about.gitlab.com/", "category": "company_about"},
+  {"url": "https://www.mongodb.com/pricing", "category": "pricing_page"},
+  {"url": "https://www.figma.com/education/", "category": "product_homepage"},
+  {"url": "https://slack.com/pricing", "category": "pricing_page"},
+  {"url": "https://www.linear.app/customers", "category": "product_homepage"},
+  {"url": "https://vercel.com/docs", "category": "documentation"},
+  {"url": "https://www.cloudflare.com/careers/", "category": "careers_landing"},
+  {"url": "https://www.figma.com/blog/inside-figma-how-we-redesigned-our-icon-system/", "category": "blog_article"},
+  {"url": "https://www.dropbox.com/about", "category": "company_about"},
+  {"url": "https://help.openai.com/en/", "category": "documentation"},
+  {"url": "https://www.shopify.com/pricing", "category": "pricing_page"},
+  {"url": "https://www.asana.com/guide", "category": "documentation"},
+  {"url": "https://www.greenhouse.com/careers", "category": "careers_landing"}
+]

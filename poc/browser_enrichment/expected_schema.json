@@ -1,0 +1,62 @@
+{
+  "required_fields": [
+    "source",
+    "external_id",
+    "title",
+    "company",
+    "location",
+    "description",
+    "apply_url",
+    "source_quality",
+    "browser_enrichment"
+  ],
+  "optional_fields": [
+    "salary",
+    "salary_min",
+    "salary_max",
+    "salary_text",
+    "contract_type",
+    "job_type",
+    "remote_type",
+    "posted_at",
+    "closing_date"
+  ],
+  "source_quality": {
+    "required_fields": [
+      "quality_score",
+      "completeness_score",
+      "confidence_score",
+      "quality_band",
+      "analysis_allowed",
+      "apply_decision"
+    ],
+    "quality_bands": [
+      "normal_analysis",
+      "review_gated",
+      "skip_manual_enrichment"
+    ],
+    "apply_decisions": [
+      "allowed",
+      "review_required",
+      "manual_enrichment_required"
+    ]
+  },
+  "browser_enrichment": {
+    "required_fields": [
+      "attempted",
+      "status",
+      "reason",
+      "dry_run",
+      "network_requests_made",
+      "verified_from_live_page",
+      "extraction_confidence",
+      "raw_page_fetched",
+      "manual_review_required"
+    ],
+    "statuses": [
+      "success",
+      "skipped",
+      "failed"
+    ]
+  }
+}

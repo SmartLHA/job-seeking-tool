@@ -1,0 +1,39 @@
+{
+  "browser_enrichment_enabled": false,
+  "browser_enrichment_provider": "browse_cli",
+  "browser_enrichment_dry_run": true,
+  "browser_enrichment_min_quality_trigger": 70,
+  "browser_enrichment_timeout_seconds": 60,
+  "browser_enrichment_max_pages_per_run": 3,
+  "browser_enrichment_save_screenshot": true,
+  "browser_enrichment_save_snapshot": true,
+  "browser_enrichment_auto_apply": false,
+  "allowlist": [
+    "reed.co.uk",
+    "adzuna.co.uk",
+    "greenhouse.io",
+    "lever.co",
+    "workdayjobs.com",
+    "ashbyhq.com",
+    "smartrecruiters.com"
+  ],
+  "blocklist": [
+    "linkedin.com",
+    "indeed.com",
+    "glassdoor.com"
+  ],
+  "manual_review_on_login_required": true,
+  "force_review_if_quality_below": 70,
+  "forbidden_actions": [
+    "captcha_bypass",
+    "login_wall_bypass",
+    "paywall_bypass",
+    "bot_protection_bypass",
+    "stealth_mode",
+    "persistent_login_or_cookie_session",
+    "auto_apply",
+    "cv_upload",
+    "form_submission",
+    "unknown_domain_browsing"
+  ]
+}

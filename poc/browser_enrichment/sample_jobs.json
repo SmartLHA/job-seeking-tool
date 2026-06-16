@@ -1,0 +1,100 @@
+[
+  {
+    "source": "reed",
+    "external_id": "reed-full-skip",
+    "title": "Senior Business Analyst",
+    "company": "Northstar Consulting",
+    "location": "London",
+    "salary_text": "GBP 65,000 - GBP 75,000",
+    "contract_type": "Permanent",
+    "remote_type": "Hybrid",
+    "description": "This is a complete Reed record for a senior business analyst role. The role covers discovery, requirements engineering, stakeholder mapping, process modelling, benefits tracking, delivery governance, backlog refinement, user story writing, acceptance criteria, UAT planning, dependency management, supplier coordination, risk capture, workshop facilitation, and clear communication with technology and business teams. The successful candidate will turn ambiguous problems into structured plans, maintain traceability from business outcomes to delivery scope, support product owners with prioritisation, and provide enough context for engineering teams to make sound delivery decisions. The description also includes reporting cadence, stakeholder expectations, operating model context, measurable outcomes, handover artefacts, and delivery constraints so the local quality scorer can identify it as already complete. This long sample deliberately exceeds the dry-run quality threshold so enrichment is skipped.",
+    "apply_url": "https://www.reed.co.uk/jobs/senior-business-analyst/1001"
+  },
+  {
+    "source": "reed",
+    "external_id": "reed-short-enrich",
+    "title": "Junior Business Analyst",
+    "company": "Blue Harbour Ltd",
+    "location": "Manchester",
+    "description": "Short Reed record.",
+    "apply_url": "https://reed.co.uk/jobs/junior-business-analyst/1002"
+  },
+  {
+    "source": "adzuna",
+    "external_id": "adzuna-full-skip",
+    "title": "Product Analyst",
+    "company": "DataWorks",
+    "location": "Remote, UK",
+    "salary_min": 55000,
+    "salary_max": 65000,
+    "job_type": "Full-time",
+    "description": "This complete Adzuna record includes enough detail to support normal analysis without browser enrichment. The role includes product analytics, dashboard design, SQL exploration, experimentation support, stakeholder engagement, prioritisation input, business case support, metric definition, customer journey analysis, funnel reporting, insight presentation, roadmap measurement, and collaboration with product managers and engineers. The analyst will combine quantitative evidence with qualitative context, clarify tradeoffs, document assumptions, and help teams decide whether shipped features are producing the intended outcomes. The sample also records user segments, measurement cadence, data quality assumptions, stakeholder review points, delivery risks, and expected communication artefacts so it represents an already complete official-source record. This deliberately long description keeps the POC deterministic and ensures the quality scoring path for full Adzuna records is exercised.",
+    "apply_url": "https://www.adzuna.co.uk/jobs/details/2001"
+  },
+  {
+    "source": "adzuna",
+    "external_id": "adzuna-short-enrich",
+    "title": "Delivery Analyst",
+    "company": "Civic Systems",
+    "location": "Birmingham",
+    "description": "Short Adzuna record.",
+    "apply_url": "https://adzuna.co.uk/jobs/details/2002"
+  },
+  {
+    "source": "manual",
+    "external_id": "greenhouse-enrich",
+    "title": "AI Business Analyst",
+    "company": "",
+    "location": "",
+    "description": "Sparse public ATS record.",
+    "apply_url": "https://boards.greenhouse.io/example/jobs/3001"
+  },
+  {
+    "source": "manual",
+    "external_id": "lever-enrich",
+    "title": "Automation Analyst",
+    "company": "",
+    "location": "",
+    "description": "Sparse Lever record.",
+    "apply_url": "https://jobs.lever.co/example/4001"
+  },
+  {
+    "source": "manual",
+    "external_id": "greenhouse-extraction-failed",
+    "title": "Failed Extraction Analyst",
+    "company": "",
+    "location": "",
+    "description": "Sparse public ATS record that simulates extraction failure.",
+    "apply_url": "https://boards.greenhouse.io/example/jobs/3002",
+    "simulate_extraction_failed": true
+  },
+  {
+    "source": "manual",
+    "external_id": "lever-login-required",
+    "title": "Login Required Analyst",
+    "company": "",
+    "location": "",
+    "description": "Sparse public ATS record that simulates a login wall.",
+    "apply_url": "https://jobs.lever.co/example/4002",
+    "simulate_login_required": true
+  },
+  {
+    "source": "manual",
+    "external_id": "linkedin-blocked-skip",
+    "title": "Blocked LinkedIn Role",
+    "company": "Blocked Co",
+    "location": "London",
+    "description": "LinkedIn must be rejected before browser access.",
+    "apply_url": "https://www.linkedin.com/jobs/view/5001"
+  },
+  {
+    "source": "manual",
+    "external_id": "unknown-domain-skip",
+    "title": "Unknown Board Role",
+    "company": "Unknown Co",
+    "location": "Leeds",
+    "description": "Unknown domains must not be browsed.",
+    "apply_url": "https://careers.unknown-example.test/jobs/6001"
+  }
+]

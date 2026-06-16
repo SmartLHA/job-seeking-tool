@@ -1,0 +1,38 @@
+{
+  "public_web_extraction_enabled": false,
+  "max_pages_per_run": 10,
+  "save_screenshot": true,
+  "save_snapshot": true,
+  "allow_public_pages": true,
+  "allow_cookie_banner_observation": true,
+  "allow_search_result_pages": true,
+  "allow_public_job_pages": true,
+  "allow_public_directories": true,
+  "disallow_login_input": true,
+  "disallow_personal_account_use": true,
+  "disallow_cookie_acceptance": true,
+  "disallow_form_submission": true,
+  "disallow_file_upload": true,
+  "disallow_persistent_sessions": true,
+  "disallow_stealth_mode": true,
+  "disallow_captcha_solving": true,
+  "disallow_auto_apply": true,
+  "disallow_state_changing_actions": true,
+  "candidate_url_only_mode": true,
+  "blocklist": [
+    "banking-sites-placeholder.example",
+    "payment-sites-placeholder.example"
+  ],
+  "sensitive_action_keywords": [
+    "apply",
+    "submit",
+    "send",
+    "buy",
+    "purchase",
+    "subscribe",
+    "login",
+    "sign in",
+    "upload",
+    "checkout"
+  ]
+}
