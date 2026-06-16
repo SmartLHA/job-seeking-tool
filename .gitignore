@@ -19,6 +19,13 @@ env/
 .coverage
 htmlcov/
 
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.secret
+*secret*.json
+
 # IDE
 .idea/
 .vscode/
@@ -29,10 +36,21 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Runtime output
+*.log
+logs/
+*.db
+.openclaw/
+backups/
+app.log
+
 # Project-specific
 data/state/logs/*.log
 data/state/*.log
 output/reports/*.json
 output/reports/*.csv
+output/cover_letters/
+output/tailored_cvs/
 data/demo_profile/docs/master_cv.md
 viewer/usage.json
+viewer/conversations/
