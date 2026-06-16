@@ -51,6 +51,9 @@ TOOLS.md
 USER.md
 AI output/
 Wiser-review-result-*
+Claude deliverable/
+To-AI/
+task_ids.json
 
 # Project-specific
 data/state/logs/*.log
@@ -67,3 +70,5 @@ data/state/reviewed_jobs/senior-business-analyst-techcorp-uk-*.json
 demo-job-001/output/
 viewer/usage.json
 viewer/conversations/
+viewer/data/
+poc/**/output/
