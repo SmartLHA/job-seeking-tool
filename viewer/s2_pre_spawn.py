@@ -27,7 +27,7 @@ from pathlib import Path
 
 # ─── Config ────────────────────────────────────────────────────────────────────
 AGENTS_DIR = Path("/Users/lhaclaw/.openclaw/agents")
-TASK_IDS_FILE = Path("/Users/lhaclaw/AI-Project-Workspace/Job Seeking Tool/viewer/task_ids.json")
+TASK_IDS_FILE = Path("/Users/lhaclaw/.openclaw/workspace/Job Seeking Tool/viewer/task_ids.json")
 
 # Role → agent directory mapping
 ROLE_TO_AGENT = {

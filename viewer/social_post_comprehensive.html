@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw 記憶系統完整復盘</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f0f2f5;
+    color: #1c1e21;
+    line-height: 1.75;
+    padding: 20px 16px;
+  }
+  .container { max-width: 680px; margin: 0 auto; }
+  .card {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 16px; color: #050505; }
+  h2 { font-size: 1.1rem; font-weight: 700; margin: 24px 0 12px; color: #050505; border-bottom: 2px solid #e4e6eb; padding-bottom: 6px; }
+  h3 { font-size: 1rem; font-weight: 600; margin: 16px 0 8px; color: #050505; }
+  p { margin-bottom: 10px; }
+  .pain { font-size: 1.1rem; font-weight: 700; color: #e02433; margin: 12px 0; }
+  ul { margin: 8px 0 12px 20px; }
+  li { margin-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.9rem; }
+  th { background: #f7f9fa; border: 1px solid #e4e6eb; padding: 8px 12px; text-align: left; font-weight: 600; }
+  td { border: 1px solid #e4e6eb; padding: 8px 12px; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .stat-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 16px 0;
+  }
+  .stat {
+    background: #f7f9fa;
+    border: 1px solid #e4e6eb;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.88rem;
+    flex: 1 1 130px;
+  }
+  .stat strong { color: #1877f2; }
+  .highlight {
+    background: #e8f0fe;
+    border-left: 4px solid #1877f2;
+    padding: 12px 16px;
+    margin: 12px 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .before-after {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .col {
+    background: #f7f9fa;
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .col h3 { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+  .col.before h3 { color: #e02433; }
+  .col.after h3 { color: #2e9b2e; }
+  .col ul { margin: 0; list-style: none; }
+  .col li { padding: 3px 0; font-size: 0.92rem; }
+  .conclusion {
+    background: #e8f0fe;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 16px 0;
+  }
+  .tags { margin-top: 20px; padding-top: 16px; border-top: 1px solid #e4e6eb; }
+  .tag {
+    display: inline-block;
+    background: #f0f2f5;
+    color: #65676b;
+    font-size: 0.83rem;
+    padding: 4px 10px;
+    border-radius: 12px;
+    margin: 3px 3px 0 0;
+  }
+  @media (max-width: 480px) {
+    .before-after { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="card">
+  <h1>OpenClaw 記憶系統完整復盘</h1>
+
+  <h2>為乜要整呢個系統？</h2>
+
+  <p>用 OpenClaw 幫我做嘢，最痛苦嘅唔係佢唔識答問題，而係：</p>
+  <p class="pain">佢用完就唔記得。</p>
+  <p>今個禮拜確認咗嘅方向，下個禮拜問佢，佢話冇印象。上個月做咗嘅決定，呢個月當新資訊處理。每個 session 之間，佢唔記得我係邊個，唔記得我做緊乜 project，唔記得我想要乜。</p>
+
+  <p>你可能會問：加長啲 system prompt、加多啲 memory 文件就得啦？</p>
+  <p><strong>唔係。</strong></p>
+  <p>當你嘅 agent 唔只一個，而係三個、四個、五個 — 每個都話自己係專家 — 你就會發現問題唔係 memory 容量，而係 memory 架構。</p>
+</div>
+
+<div class="card">
+  <h2>原本有乜問題？</h2>
+
+  <h3>1. 記憶碎片化</h3>
+  <p>唔同嘅 task、唔同嘅 agent，個個都係孤島。Dev agent 做完嘢，QA agent 唔知做咗乜。每一個新 session，都係一張白紙。</p>
+
+  <h3>2. 重要決定被忘記</h3>
+  <p>幾個月前確認咗嘅項目方向，到下次傾 project plan 嘅時候，我又問多次。冇 trace，唔記得邊個做咗乜決定、幾時做嘅、點解咁樣做。</p>
+
+  <h3>3. Handoff 混亂</h3>
+  <p>一個 agent 做完嘢，下一個 agent 要由頭理解一次。啲資訊喺邊？點樣傳？冇標準流程，靠口耳相傳，一問就断。</p>
+
+  <h3>4. 冇客觀事實</h3>
+  <p>當多個 agent 對同一個事實有唔同理解，冇辦法知道邊個啱、幾時改咗、點解改咗。</p>
+</div>
+
+<div class="card">
+  <h2>我哋整咗乜？</h2>
+
+  <p>過去幾日，由零開始，整咗一套三層嘅記憶系統。</p>
+
+  <h3>第一層：底層資料庫</h3>
+  <p><strong>11 張 SQLite 表格</strong>，各司其職：</p>
+  <table>
+    <tr><th>表格</th><th>用途</th></tr>
+    <tr><td>`messages`</td><td>Pipeline 行為記錄</td></tr>
+    <tr><td>`pipeline_runs`</td><td>每一個工作流程的元數據</td></tr>
+    <tr><td>`stage_handoff_docs`</td><td>Stage 之間的結構化交接文件</td></tr>
+    <tr><td>`agent_working_cache`</td><td>Agent 工作狀態暫存</td></tr>
+    <tr><td>`stage_snapshot_cache`</td><td>每個 Stage 完成時的 Snapshot</td></tr>
+    <tr><td>`shared_entity_memory`</td><td>跨 agent 共享的實體資料</td></tr>
+    <tr><td>`approved_memory`</td><td>已確認可重用的記憶</td></tr>
+  </table>
+
+  <h3>第二層：緩存架構</h3>
+  <p><strong>3 層 cache：</strong></p>
+  <ul>
+    <li><strong>代理工作緩存（AWC）</strong> — Agent 做緊嘢嘅時候，中間狀態先写入記憶，透過 debounce 批量 flush 到 DB</li>
+    <li><strong>Stage Snapshot Cache（SSC）</strong> — 每個 Stage 完成時自動 snapshot</li>
+    <li><strong>共享實體記憶（SEM）</strong> — 跨 agent 共享的實體資料</li>
+  </ul>
+
+  <h3>第三層：運作規則</h3>
+  <p><strong>12 條 daily operating rules</strong>，核心係呢個信任層次（Trust-Ordered）：</p>
+  <div class="highlight">
+    1. MEMORY.md — 最高信任，官方事實<br>
+    2. 結構化 handoff 文件 — 當前工作階段關鍵資訊<br>
+    3. approved_memory — 已確認可重用的事實/決定<br>
+    4. daily logs — 存檔/參考，無需第一時間讀取
+  </div>
+  <p>任何 agent 讀取記憶，必須按呢個優先順序。只有主要助理可以更新 MEMORY.md，Worker agent 唔可以直接寫 official truth。</p>
+</div>
+
+<div class="card">
+  <h2>點整？— 分階段，數據驅動</h2>
+
+  <p>唔係一次過整晒，而係分階段，每個 phase 有清晰嘅目標、驗收條件、做完先再做下一個：</p>
+  <table>
+    <tr><th>Phase</th><th>目標</th></tr>
+    <tr><td>Phase 1</td><td>Pipeline + handoff + message log 基礎設施</td></tr>
+    <tr><td>Phase 2</td><td>MEMORY.md 寫作紀律，變成工作流程規則</td></tr>
+    <tr><td>Phase 3</td><td>`approved_memory` table + 讀寫函數</td></tr>
+    <tr><td>Phase 4</td><td>`trust_lookup()` + `trust_startup_context()`</td></tr>
+    <tr><td>Phase 5</td><td>`memory_changelog.md` — 追蹤記憶更正</td></tr>
+  </table>
+
+  <p>每一個 component 落地之前，有單元測試。整完之后，有 integration test 行確保數據流向正確。</p>
+
+  <h3>幾個數字</h3>
+  <div class="stat-row">
+    <div class="stat">📊 <strong>5 日</strong>完成</div>
+    <div class="stat">📝 <strong>11 張</strong>DB 表格</div>
+    <div class="stat">📂 <strong>212KB</strong>DB</div>
+    <div class="stat">🧪 <strong>176 個</strong>測試通過</div>
+    <div class="stat">📋 <strong>12 條</strong>運作規則</div>
+    <div class="stat">🔍 <strong>語義搜索</strong>已整合</div>
+  </div>
+  <p>所有數據由用戶控制，儲存在本地。</p>
+</div>
+
+<div class="card">
+  <h2>對我意味住乜？</h2>
+
+  <div class="before-after">
+    <div class="col before">
+      <h3>之前</h3>
+      <ul>
+        <li>每次打開 chat，助理係陌生人</li>
+        <li>兩週前確認嘅方向，下週變成未知</li>
+        <li>Worker agent 完成後 output 就消失</li>
+      </ul>
+    </div>
+    <div class="col after">
+      <h3>之後</h3>
+      <ul>
+        <li>助理記得我係邊個、記得我嘅 project</li>
+        <li>重要決定有 changelog，可以追蹤</li>
+        <li>Worker agent 之間有結構化 handoff</li>
+      </ul>
+    </div>
+  </div>
+
+  <p><strong>我幾時開始信任呢個系統？</strong></p>
+  <p>係第一次我發現，記憶被靜靜雞改咗，但係我可以查到幾時改、點解改、邊個改。</p>
+
+  <div class="conclusion">
+    <strong>Noise 消失咗，signal 留下嚟。</strong>
+  </div>
+</div>
+
+<div class="card">
+  <h2>如果你都想整類似嘅系統？</h2>
+
+  <p><strong>你可能需要先問自己幾個問題：</strong></p>
+  <ul>
+    <li>你有幾多個 agent？（呢個系統係為多 agent 場景設計）</li>
+    <li>你嘅記憶痛點係乜？（係断片？係唔一致？係冇 trace？）</li>
+    <li>你願唔願意每個 phase 之後停低評估，唔一次過整晒？</li>
+  </ul>
+  <p><strong>如果答案是「願意」</strong>，咁呢套嘢可能適合你。</p>
+  <p>如果答案係「想快啲落地」</strong>，建議由 MEMORY.md 寫作紀律開始，確立運作規則，再逐步加入其他 component。呢個系統可以慢慢建立起嚟。</p>
+
+  <div class="tags">
+    <span class="tag">#OpenClaw</span>
+    <span class="tag">#記憶管理</span>
+    <span class="tag">#AI助手</span>
+    <span class="tag">#智能助理</span>
+    <span class="tag">#Agent架構</span>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

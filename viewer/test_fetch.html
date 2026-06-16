@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test</title></head>
+<body>
+<h1>Fetch Test</h1>
+<button onclick="testFetch()">Test Fetch</button>
+<pre id="out"></pre>
+<script>
+async function testFetch() {
+  try {
+    const res = await fetch('/api/reed/search?keywords=accountant&resultsToTake=3');
+    const text = await res.text();
+    const d = JSON.parse(text);
+    document.getElementById('out').textContent = 'OK: ' + d.results.length + ' jobs\n' + JSON.stringify(d.results[0], null, 2);
+  } catch(e) {
+    document.getElementById('out').textContent = 'ERR: ' + e.message;
+  }
+}
+</script>
+</body>
+</html>

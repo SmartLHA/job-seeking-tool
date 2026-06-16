@@ -1,7 +1,36 @@
 {
-  "scout-qa-url-ingestion-edge-cases": {
-    "session_key": "agent:qa:subagent:c67207fa-b5c7-4e73-986f-4c27e9a8456f",
+  "handy-ui-paste-url-prefill": {
+    "session": "agent:dev:subagent:49e48c97-ced6-4cb1-9275-0cb708e3de0a",
+    "role": "dev",
+    "spawned": "2026-04-12T17:53:00Z"
+  },
+  "handy-ats-scorer": {
+    "session": "agent:dev:subagent:d84bcfdd-a51a-4a7f-b75f-dc0db6e83c8d",
+    "role": "dev",
+    "spawned": "2026-04-12T18:34:00Z",
+    "cwd": "/Users/lhaclaw/AI-Project-Workspace/Job Seeking Tool"
+  },
+  "scout-ats-scorer-qa2": {
+    "session": "agent:qa:subagent:1203e0cc-c3de-459e-9df3-24ad4c501941",
     "role": "qa",
-    "spawned_at": "2026-04-10T22:32:00Z"
+    "spawned": "2026-04-12T18:54:00Z"
+  },
+  "handy-cover-letter": {
+    "session": "agent:dev:subagent:cdbcae30-3cd4-4a04-b8bb-08b71b0a891a",
+    "role": "dev",
+    "spawned": "2026-04-12T19:24:00Z",
+    "cwd": "/Users/lhaclaw/AI-Project-Workspace/Job Seeking Tool"
+  },
+  "handy-phase2": {
+    "session": "agent:dev:subagent:5cae10fa-3bb1-485f-9409-4781c3559aca",
+    "role": "dev",
+    "spawned": "2026-04-15T00:04:00Z",
+    "note": "Multi-LLM Chat Persistence (unrelated task)"
+  },
+  "handy-phase2-handoff": {
+    "session": "agent:dev:subagent:611f90a5-7958-44ab-ab9b-0fb76928632b",
+    "role": "dev",
+    "spawned": "2026-04-15T00:35:00Z",
+    "task": "Phase 2: Cache Layer Handoff Integration"
   }
 }

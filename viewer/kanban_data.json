@@ -5,84 +5,88 @@
       "title": "📥 Backlog",
       "cards": [
         {
-          "id": "jh-001-tailoring-validation",
-          "title": "[JOB-001] Tailoring truth validation",
-          "description": "validate_tailored_cv() always returns True — no real check running. Implement cross-check: tailored CV claims must match CandidateProfile fields only. P0 — critical guardrail broken.",
-          "priority": "high",
-          "tags": ["bug", "handy", "p0"],
-          "assignee": "Handy"
-        },
-        {
-          "id": "jh-002-orchestrator-wiring",
-          "title": "[JOB-002] Orchestrator Reed+Adzuna wiring",
-          "description": "job_sources/reed_client.py + adzuna_client.py + normalize.py + dedup.py exist but NOT wired to job_hunt_orchestrator.py. Wire API clients into workflow. P0.",
-          "priority": "high",
-          "tags": ["integration", "handy", "p0"],
-          "assignee": "Handy"
-        },
-        {
-          "id": "jh-007-url-ingestion-design",
-          "title": "[JOB-007] Create url-ingestion-design.md",
-          "description": "MEMORY.md references docs/tasks/url-ingestion-design.md but file does not exist. Design needed for URL paste/fetch spec covering 10s budget, 2s parse + 8s network, allowed sources. Design stage — Wiser review required before build.",
-          "priority": "high",
-          "tags": ["design", "wiser", "p0"],
-          "assignee": "Wiser"
-        },
-        {
-          "id": "jh-005-cover-letter-tests",
-          "title": "[JOB-005] Cover letter tests missing",
-          "description": "job_hunt_cover_letter.py exists but tests/test_cover_letter.py does not exist. All new functions must have tests.",
+          "id": "job-005",
+          "title": "[JOB-005] Cover letter tests",
+          "description": "job_hunt_cover_letter.py exists but tests/test_cover_letter.py does not exist or is not in the test suite. Spec says all new functions must have tests. Test: python3 -m pytest tests/test_cover_letter.py -v",
           "priority": "medium",
-          "tags": ["tests", "handy", "p1"],
-          "assignee": "Handy"
+          "tags": [
+            "job",
+            "tests",
+            "handy",
+            "p1"
+          ],
+          "assignee": "Handy",
+          "project": "Job Seeking Tool"
         },
         {
-          "id": "jh-008-ats-scorer-verification",
+          "id": "job-008",
           "title": "[JOB-008] Verify ATS scorer integration",
-          "description": "job_hunt_ats_scorer.py exists (Apr 12) but not verified as wired into eval flow or UI. Confirm from evaluation.py, ui.py, or orchestrator.",
+          "description": "src/job_hunt_ats_scorer.py exists with tests/test_ats_scorer.py. Verify it is wired into evaluation flow or UI; confirm whether invoked from job_hunt_evaluation.py, job_hunt_ui.py, or orchestrator.",
           "priority": "medium",
-          "tags": ["qa", "scout", "p1"],
-          "assignee": "Scout"
+          "tags": [
+            "job",
+            "qa",
+            "scout",
+            "p1"
+          ],
+          "assignee": "Scout",
+          "project": "Job Seeking Tool"
         },
         {
-          "id": "jh-009-paste-fetch-status",
-          "title": "[JOB-009] Clarify paste_fetch status",
-          "description": "job_hunt_paste_fetch.py + job_hunt_paste_ui.py active or superseded by job_sources pipeline? Need Wiser/Mic decision.",
+          "id": "job-009",
+          "title": "[JOB-009] Clarify job_hunt_paste_fetch.py status",
+          "description": "job_hunt_paste_fetch.py + job_hunt_paste_ui.py handle URL/text parsing for UI prefill tab, but job-ingestion-api-design.md is current spec. Decide if paste_fetch is active/canonical or superseded by job_sources pipeline.",
           "priority": "medium",
-          "tags": ["decision", "silverhand", "p1"],
-          "assignee": "SilverHand"
+          "tags": [
+            "job",
+            "decision",
+            "silverhand",
+            "p1"
+          ],
+          "assignee": "SilverHand",
+          "project": "Job Seeking Tool"
         },
         {
-          "id": "jh-010-cv-tailoring-brief-review",
+          "id": "job-010",
           "title": "[JOB-010] Wiser review cv-tailoring-brief.md",
-          "description": "docs/tasks/cv-tailoring-brief.md created Apr 14, never reviewed by Wiser. Needs sign-off before tailoring work proceeds.",
+          "description": "docs/tasks/cv-tailoring-brief.md was created Apr 14 but never went through Wiser review. Needs sign-off before next tailoring work proceeds.",
           "priority": "medium",
-          "tags": ["review", "wiser", "p1"],
-          "assignee": "Wiser"
+          "tags": [
+            "job",
+            "review",
+            "wiser",
+            "p1"
+          ],
+          "assignee": "Wiser",
+          "project": "Job Seeking Tool"
         },
         {
-          "id": "jh-011-job-sources-tests",
+          "id": "job-011",
           "title": "[JOB-011] job_sources/ test coverage",
-          "description": "Reed client, Adzuna client, normalize, dedup have no tests. Need integration tests: successful fetch, 429 handling, empty results, cross-source dedup.",
+          "description": "Reed client, Adzuna client, normalize, dedup all exist but no tests in suite for API pipeline. Need tests for successful fetch, 429 handling, empty results, and dedup across sources.",
           "priority": "medium",
-          "tags": ["tests", "scout", "p1"],
-          "assignee": "Scout"
+          "tags": [
+            "job",
+            "tests",
+            "scout",
+            "p1"
+          ],
+          "assignee": "Scout",
+          "project": "Job Seeking Tool"
         },
         {
-          "id": "jh-006-canonical-viewer",
-          "title": "[JOB-006] Clarify canonical viewer HTML",
-          "description": "viewer/ has reed_jobs.html + v2 + v3 + v4 + reed_minimal.html + reed_debug.html. No clear statement which is current canonical UI. Update viewer/README.md.",
+          "id": "job-012",
+          "title": "[JOB-012] Full ingestion flow integration tests",
+          "description": "End-to-end test from API fetch → normalize → dedup → scoring → decision → stored analysis. Not written. Needed before ingestion work is marked complete.",
           "priority": "low",
-          "tags": ["docs", "silverhand", "p2"],
-          "assignee": "SilverHand"
-        },
-        {
-          "id": "jh-012-e2e-ingestion-tests",
-          "title": "[JOB-012] Full ingestion E2E tests",
-          "description": "End-to-end test from API fetch → normalize → dedup → scoring → decision → stored analysis. Not written. Needed before ingestion marked complete.",
-          "priority": "low",
-          "tags": ["tests", "scout", "p2"],
-          "assignee": "Scout"
+          "tags": [
+            "job",
+            "tests",
+            "scout",
+            "p2"
+          ],
+          "assignee": "Scout",
+          "project": "Job Seeking Tool"
         }
       ]
     },
@@ -106,71 +110,101 @@
       "title": "✅ Done",
       "cards": [
         {
-          "id": "jh-3e-product-spec-stale",
-          "title": "[3E] product_spec.md stale scope ✅",
-          "description": "Updated to reflect actual implementation state vs. planned scope. Done 2026-05-02.",
+          "id": "job-007",
+          "title": "[JOB-007] URL ingestion design doc created",
+          "description": "Created docs/tasks/url-ingestion-design.md. QA PASS 2026-05-13: covers 10s total budget, 2s parse, 8s network/fetch, max 3 redirects, allowed sources (indeed, linkedin, reed, glassdoor, cwjobs, cv-library, guardianjobs), review/edit step, manual fallback, security/untrusted content, Reed API/JOB-002 relationship, and JOB-009 dependency.",
           "priority": "high",
-          "tags": ["docs", "silverhand"],
-          "assignee": "SilverHand",
-          "doneDate": "2026-05-02"
+          "tags": [
+            "job",
+            "design",
+            "wiser",
+            "p0",
+            "done",
+            "qa-pass",
+            "docs"
+          ],
+          "assignee": "Handy/Scout",
+          "project": "Job Seeking Tool"
         },
         {
-          "id": "jh-3a-missing-docs",
-          "title": "[3A] Create missing docs ✅",
-          "description": "docs/data_contract.md already existed. docs/tailoring_spec.md created 2026-05-02. INDEX.md stale ref fixed. Done.",
+          "id": "job-002",
+          "title": "[JOB-002] Reed-only orchestrator integration",
+          "description": "Reed-only orchestrator integration implemented. run_reed_evaluation_flow() validates inputs, fetches Reed jobs, normalizes, deduplicates, converts to JobPosting, stores raw/reviewed/analysis outputs, and exports reports. Adzuna deliberately out of scope. QA PASS 2026-05-13: tests/test_orchestrator.py tests/test_normalize.py tests/test_dedup.py — 23 passed.",
           "priority": "high",
-          "tags": ["docs", "silverhand"],
-          "assignee": "SilverHand",
-          "doneDate": "2026-05-02"
+          "tags": [
+            "job",
+            "integration",
+            "handy",
+            "p0",
+            "done",
+            "qa-pass",
+            "reed-only"
+          ],
+          "assignee": "Handy/Scout",
+          "project": "Job Seeking Tool"
         },
         {
-          "id": "jh-3c-project-log",
-          "title": "[3C] PROJECT_LOG.md catch-up ✅",
-          "description": "Gap entry added to PROJECT_LOG.md covering Apr 14–28. Git log reconstruction + file timestamps used. Done.",
-          "priority": "medium",
-          "tags": ["docs", "silverhand"],
-          "assignee": "SilverHand",
-          "doneDate": "2026-05-02"
-        },
-        {
-          "id": "jh-tests-green",
-          "title": "180 tests passing ✅",
-          "description": "Full test suite green — 180/180 verified 2026-05-02.",
+          "id": "job-001",
+          "title": "[JOB-001] Tailoring truth validation",
+          "description": "Tailoring truth validation implemented. validate_tailored_cv() now enforces deterministic section structure, exact Base CV embedding, supported Matching Evidence, and supported ATS Keywords only. QA PASS 2026-05-13: tests/test_tailoring.py 10 passed; tailoring+profile regression 19 passed.",
           "priority": "high",
-          "tags": ["tests"],
-          "assignee": "QA",
-          "doneDate": "2026-05-02"
+          "tags": [
+            "job",
+            "bug",
+            "handy",
+            "p0",
+            "done",
+            "qa-pass"
+          ],
+          "assignee": "Handy/Scout",
+          "project": "Job Seeking Tool"
         },
         {
-          "id": "jh-job-sources-exist",
-          "title": "job_sources/ clients exist ✅",
-          "description": "reed_client, adzuna_client, normalize, dedup all created. Not yet wired to orchestrator.",
-          "priority": "high",
-          "tags": ["integration"],
-          "assignee": "Handy",
-          "doneDate": "2026-04-28"
-        },
-        {
-          "id": "jh-cover-letter-module",
-          "title": "Cover letter module exists ✅",
-          "description": "job_hunt_cover_letter.py created. Tests not yet written (item JOB-005).",
-          "priority": "medium",
-          "tags": ["feature"],
-          "assignee": "Handy",
-          "doneDate": "2026-04-28"
-        },
-        {
-          "id": "jh-idx-url-design",
-          "title": "INDEX.md url-ingestion fix ✅",
-          "description": "Fixed stale reference to url-ingestion-design.md → job-ingestion-api-design.md. Done 2026-05-02.",
-          "priority": "medium",
-          "tags": ["docs"],
+          "id": "job-003",
+          "title": "[JOB-003] PROJECT_LOG.md catch-up",
+          "description": "PROJECT_LOG.md catch-up for Apr 14–28 gap entry. Done: 2026-05-02",
+          "priority": "low",
+          "tags": [
+            "job",
+            "docs",
+            "done"
+          ],
           "assignee": "SilverHand",
-          "doneDate": "2026-05-02"
+          "project": "Job Seeking Tool"
+        },
+        {
+          "id": "job-006",
+          "title": "[JOB-006] Clarify canonical viewer HTML",
+          "description": "Canonical standalone Reed viewer clarified as viewer/reed_jobs_v4.html. Old Reed HTML variants removed/absent; viewer README and nav link point to v4.",
+          "priority": "low",
+          "tags": [
+            "job",
+            "docs",
+            "silverhand",
+            "p2",
+            "done"
+          ],
+          "assignee": "SilverHand",
+          "project": "Job Seeking Tool"
+        },
+        {
+          "id": "job-004",
+          "title": "[JOB-004] product_spec.md updated",
+          "description": "product_spec.md updated to remove stale scope references. Done: 2026-05-02",
+          "priority": "low",
+          "tags": [
+            "job",
+            "docs",
+            "done"
+          ],
+          "assignee": "SilverHand",
+          "project": "Job Seeking Tool"
         }
       ]
     }
   ],
-  "lastUpdated": "2026-05-07T14:30:00Z",
-  "project": "Job Seeking Tool"
+  "lastUpdated": "2026-05-20T15:09:01Z",
+  "project": "Job Seeking Tool",
+  "source": "PROJECT_TODO.md",
+  "jobOnly": true
 }

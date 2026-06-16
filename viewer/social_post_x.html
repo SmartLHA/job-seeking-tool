@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>X Thread — OpenClaw 記憶系統升級</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f1411;
+    color: #e7e9ea;
+    line-height: 1.65;
+    padding: 16px;
+  }
+  .container { max-width: 600px; margin: 0 auto; }
+  h1 {
+    font-size: 1.1rem;
+    color: #8899a6;
+    text-align: center;
+    margin-bottom: 24px;
+    font-weight: 400;
+  }
+  .tweet {
+    background: #15202b;
+    border: 1px solid #38434d;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    font-size: 0.97rem;
+  }
+  .tweet-num {
+    font-size: 0.78rem;
+    color: #536471;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .copy-btn {
+    display: block;
+    width: 100%;
+    background: #1d9bf0;
+    color: #fff;
+    border: none;
+    border-radius: 9999px;
+    padding: 10px 20px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-align: center;
+    margin: 20px auto 8px;
+    max-width: 300px;
+  }
+  .copy-btn:active { background: #1a8cd8; }
+  textarea {
+    width: 100%;
+    height: 120px;
+    background: #15202b;
+    border: 1px solid #38434d;
+    border-radius: 8px;
+    color: #e7e9ea;
+    padding: 12px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    resize: vertical;
+    margin-bottom: 10px;
+  }
+  .preview-box {
+    background: #15202b;
+    border: 1px solid #38434d;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 20px;
+  }
+  .preview-label {
+    font-size: 0.78rem;
+    color: #536471;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .char-count {
+    text-align: right;
+    font-size: 0.78rem;
+    color: #536471;
+    margin-top: 4px;
+  }
+  .char-count.over { color: #f4212e; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>X Thread — OpenClaw 記憶系統升級</h1>
+
+<div class="tweet">
+  <div class="tweet-num">Tweet 1 of 8</div>
+  用 AI 助手幫我做嘢，最大痛苦係：「用完就唔記得。」今個禮拜做咗嘢，下個禮拜佢唔記得。上個月確認咗嘅方向，呢個月當冇發生過。每次打開對話框，都係一張白紙。🔹
+</div>
+
+<div class="tweet">
+  <div class="tweet-num">Tweet 2 of 8</div>
+  問題唔係記憶容量，係架構。當你有多過一個 agent，你就知道：記憶碎片化、重要決定被忘記、handoff 混亂、冇 trace。你唔需要更多 prompt，你需要係架構。🔹
+</div>
+
+<div class="tweet">
+  <div class="tweet-num">Tweet 3 of 8</div>
+  所以我重新架構咗成個記憶系統。底層：11 張 SQLite DB 表格、3 層 cache 架構、5,000+ 行代碼、176 個自動化測試全部通過。🔹
+</div>
+
+<div class="tweet">
+  <div class="tweet-num">Tweet 4 of 8</div>
+  記憶系統分層（Trust-Ordered）：1️⃣ MEMORY.md 最高信任、2️⃣ 結構化 handoff 文件、3️⃣ 已確認可重用記憶、4️⃣ daily logs。任何 agent 讀取記憶，必須按優先順序。🔹
+</div>
+
+<div class="tweet">
+  <div class="tweet-num">Tweet 5 of 8</div>
+  幾個數字：📊 5日完成、📝 11張 DB 表格、📂 212KB shared_memory.db、🧪 176個測試通過、📋 12條運作規則、🔍 語義搜索已整合。所有數據由用戶控制，儲存在本地。🔹
+</div>
+
+<div class="tweet">
+  <div class="tweet-num">Tweet 6 of 8</div>
+  實際功能：✅ 每次新 session，自動檢查所有記憶源 ✅ 任務切換，自動 load 上個 stage 的 handoff ✅ 重要決定被糾正時，寫入 changelog ✅ MEMORY.md 保持短小，易於維護🔹
+</div>
+
+<div class="tweet">
+  <div class="tweet-num">Tweet 7 of 8</div>
+  之前 vs 之後：之前：每次打開 chat，助理係陌生人、兩週前確認嘅方向，下週變成未知人之後：記憶係持續、有層次、有 trace。我查得到幾時改、點解改、邊個改。🔹
+</div>
+
+<div class="tweet">
+  <div class="tweet-num">Tweet 8 of 8</div>
+  有架構的記憶，唔只係「記得更多」。係「記得啱嘅嘢，跟住佢，唔會靜靜雞走咗去」。Noise 消失咗，signal 留下嚟。🔹
+  <div style="margin-top:8px; padding-top:8px; border-top:1px solid #38434d">
+    <span style="font-size:0.85rem; color:#1d9bf0">#AI助手 #OpenClaw #記憶管理 #智能助理</span>
+  </div>
+</div>
+
+<button class="copy-btn" onclick="copyAll()">Copy All 8 Tweets</button>
+
+<div class="preview-box">
+  <div class="preview-label">Live Preview (Tweet 1)</div>
+  <div id="preview-text">用 AI 助手幫我做嘢，最大痛苦係：「用完就唔記得。」今個禮拜做咗嘢，下個禮拜佢唔記得。上個月確認咗嘅方向，呢個月當冇發生過。每次打開對話框，都係一張白紙。🔹</div>
+  <div id="char-count" class="char-count">84 / 280</div>
+</div>
+
+<textarea id="custom-tweet" placeholder="自定義Tweet內容，即時顯示字符數..." oninput="updateCount()"></textarea>
+
+<script>
+const tweets = [
+  "用 AI 助手幫我做嘢，最大痛苦係：「用完就唔記得。」今個禮拜做咗嘢，下個禮拜佢唔記得。上個月確認咗嘅方向，呢個月當冇發生過。每次打開對話框，都係一張白紙。🔹",
+  "問題唔係記憶容量，係架構。當你有多過一個 agent，你就知道：記憶碎片化、重要決定被忘記、handoff 混亂、冇 trace。你唔需要更多 prompt，你需要係架構。🔹",
+  "所以我重新架構咗成個記憶系統。底層：11 張 SQLite DB 表格、3 層 cache 架構、5,000+ 行代碼、176 個自動化測試全部通過。🔹",
+  "記憶系統分層（Trust-Ordered）：1️⃣ MEMORY.md 最高信任、2️⃣ 結構化 handoff 文件、3️⃣ 已確認可重用記憶、4️⃣ daily logs。任何 agent 讀取記憶，必須按優先順序。🔹",
+  "幾個數字：📊 5日完成、📝 11張 DB 表格、📂 212KB shared_memory.db、🧪 176個測試通過、📋 12條運作規則、🔍 語義搜索已整合。所有數據由用戶控制，儲存在本地。🔹",
+  "實際功能：✅ 每次新 session，自動檢查所有記憶源 ✅ 任務切換，自動 load 上個 stage 的 handoff ✅ 重要決定被糾正時，寫入 changelog ✅ MEMORY.md 保持短小，易於維護🔹",
+  "之前 vs 之後：之前：每次打開 chat，助理係陌生人、兩週前確認嘅方向，下週變成未知人之後：記憶係持續、有層次、有 trace。我查得到幾時改、點解改、邊個改。🔹",
+  "有架構的記憶，唔只係「記得更多」。係「記得啱嘅嘢，跟住佢，唔會靜靜雞走咗去」。Noise 消失咗，signal 留下嚟。🔹\n\n#AI助手 #OpenClaw #記憶管理 #智能助理"
+];
+
+let currentIdx = 0;
+
+function renderTweet(i) {
+  currentIdx = i;
+  document.getElementById('preview-text').textContent = tweets[i];
+  document.getElementById('char-count').textContent = tweets[i].length + ' / 280';
+  document.getElementById('char-count').className = 'char-count' + (tweets[i].length > 280 ? ' over' : '');
+}
+
+function updateCount() {
+  const text = document.getElementById('custom-tweet').value;
+  document.getElementById('preview-text').textContent = text;
+  const c = document.getElementById('char-count');
+  c.textContent = text.length + ' / 280';
+  c.className = 'char-count' + (text.length > 280 ? ' over' : '');
+}
+
+function copyAll() {
+  const all = tweets.map((t, i) => `Tweet ${i+1}:\n${t}`).join('\n─────\n');
+  navigator.clipboard.writeText(all).then(() => {
+    document.querySelector('.copy-btn').textContent = 'Copied!';
+    setTimeout(() => document.querySelector('.copy-btn').textContent = 'Copy All 8 Tweets', 2000);
+  });
+}
+
+renderTweet(0);
+
+// Auto-cycle tweets for preview
+let autoIdx = 0;
+setInterval(() => { renderTweet(autoIdx++ % 8); }, 4000);
+</script>
+</div>
+</body>
+</html>

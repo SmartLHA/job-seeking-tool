@@ -561,3 +561,8 @@ function fetchUsage() {
 
 fetchUsage();
 setInterval(fetchUsage, 60000); // refresh every minute
+
+// Reed Job Search nav
+document.getElementById('nav-reed-jobs')?.addEventListener('click', () => {
+  window.location.href = withBase('/viewer/reed_jobs_v4.html');
+});

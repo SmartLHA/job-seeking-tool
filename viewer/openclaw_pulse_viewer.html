@@ -67,6 +67,7 @@
   <div>
     <h1>🦞 OpenClaw Daily Pulse</h1>
     <p class="subtitle">Community intelligence — GitHub issues, discussions & Reddit</p>
+    <p class="subtitle" style="font-size:0.8rem; color: var(--muted);">Produced by: gemma4:e4b (via qa agent)</p>
   </div>
   <button class="refresh-btn" onclick="load()">↻ Refresh</button>
 </div>
@@ -113,13 +114,32 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function renderHighlights(allItems, issues, features, general) {
+function renderHighlights(allItems, issues, features, general, discussions, useCases, bestPractices) {
   let html = '';
 
-  const critical = allItems.filter(i => i.category === 'critical');
-  const relevantIssues = issues.filter(i => tagClass(i._relevance || '') === 'tag-config');
+  const config_kw = ['doctor', 'truncat', 'config', 'startup', 'memory', 'context overflow'];
+  const feat_kw = ['octopus', 'timeout', 'lightweight', 'context mode', 'allowlist', 'subagent', 'slash'];
+  const critical_kw = ['cve-', 'security vulnerability', 'data corruption', 'memory leak', 'segfault', 'panic', 'remote code execution', '0-day', '0day'];
+
+
+  // Classify items dynamically (JSON data doesn't have _relevance pre-set)
+  const classified = allItems.map(i => {
+    const title = (i.title || '').toLowerCase();
+    const body = (i.body_preview || '').toLowerCase();
+    const text = title + ' ' + body;
+    if (critical_kw.some(k => text.includes(k))) i._relevance = '⚠️ critical';
+    else if (config_kw.some(k => title.includes(k))) i._relevance = '⚠️ config';
+    else if (title.includes('weixin') || title.includes('voice-call') || title.includes('slack')) i._relevance = '❌ n/a';
+    else if ((i.repo || '') === 'clawhub') i._relevance = '🟡 clawhub';
+    else i._relevance = '🟡 minor';
+    i._relevant = feat_kw.some(k => title.includes(k));
+    return i;
+  });
+
+  const critical = classified.filter(i => i._relevance === '⚠️ critical');
+  const relevantIssues = issues.filter(i => i._relevance === '⚠️ config');
   const engagedIssues = issues.filter(i => (i.comments || 0) > 0);
-  const zeroReplies = issues.filter(i => (i.comments || 0) === 0 && tagClass(i._relevance || '') !== 'tag-config');
+  const zeroReplies = issues.filter(i => (i.comments || 0) === 0 && i._relevance !== '⚠️ config');
 
   if (critical.length) {
     html += `<div class="section-header">🚨 Critical Issues</div><ul class="bullet-list">`;
@@ -166,6 +186,37 @@ function renderHighlights(allItems, issues, features, general) {
     features.slice(0, 8).forEach(f => {
       const mark = f._relevant ? ' ✅' : '';
       html += `<li><a href="${esc(f.url)}" target="_blank">${esc(f.title)}</a>${esc(mark)}</li>`;
+    });
+    html += `</ul>`;
+  }
+
+  if (discussions.length) {
+    const engagedDiscussions = discussions.filter(d => (d.comments || 0) > 0);
+    html += `<div class="section-header" style="margin-top:16px">💬 Discussions (${discussions.length})</div><ul class="bullet-list">`;
+    if (engagedDiscussions.length) {
+      html += `<li style="color:var(--muted);font-size:0.8rem;margin-bottom:6px">${engagedDiscussions.length} with replies</li>`;
+    }
+    discussions.slice(0, 5).forEach(d => {
+      const cmt = d.comments ? ` 💬${d.comments}` : '';
+      html += `<li><a href="${esc(d.url)}" target="_blank">${esc(d.title)}</a>${esc(cmt)}</li>`;
+    });
+    html += `</ul>`;
+  }
+
+  if (useCases.length) {
+    html += `<div class="section-header" style="margin-top:16px">🗂 Use Cases (${useCases.length})</div><ul class="bullet-list">`;
+    useCases.slice(0, 5).forEach(u => {
+      const sub = u.subreddit ? `r/${u.subreddit}` : (u.repo || '');
+      html += `<li><a href="${esc(u.url)}" target="_blank">${esc(u.title)}</a> [${esc(sub)}]</li>`;
+    });
+    html += `</ul>`;
+  }
+
+  if (bestPractices.length) {
+    html += `<div class="section-header" style="margin-top:16px">📋 Best Practices (${bestPractices.length})</div><ul class="bullet-list">`;
+    bestPractices.slice(0, 5).forEach(b => {
+      const sub = b.subreddit ? `r/${b.subreddit}` : (b.repo || '');
+      html += `<li><a href="${esc(b.url)}" target="_blank">${esc(b.title)}</a> [${esc(sub)}]</li>`;
     });
     html += `</ul>`;
   }
@@ -280,17 +331,24 @@ function renderEntry(entry) {
   const issues = allItems.filter(i => i.category === 'issues');
   const features = allItems.filter(i => i.category === 'features');
   const general = allItems.filter(i => i.category === 'general');
+  const discussions = allItems.filter(i => i.category === 'discussions');
+  const useCases = allItems.filter(i => i.category === 'use_cases');
+  const bestPractices = allItems.filter(i => i.category === 'best_practices');
 
   const s = entry.summary || {};
   const newCount = s.new_items || 0;
 
   let html = `
     <h2>🎯 Highlights</h2>
-    ${renderHighlights(allItems, issues, features, general)}
+    ${renderHighlights(allItems, issues, features, general, discussions, useCases, bestPractices)}
     <h2>🐛 Bug Reports (${issues.length})</h2>
     ${renderBugTable(issues)}
     <h2>💡 Features & Enhancements (${features.length})</h2>
     ${renderFeatureTable(features)}
+    <h2>💬 Discussions (${discussions.length})</h2>
+    ${renderGeneralTable(discussions)}
+    <h2>🗂 Use Cases (${useCases.length})</h2>
+    ${renderGeneralTable(useCases)}
     <h2>📌 General (${general.length} items)</h2>
     ${renderGeneralTable(general)}
     ${renderFeatureSummary(features)}`;
@@ -308,7 +366,7 @@ async function load() {
     const s = data.summary || {};
     document.getElementById('sIssues').textContent = s.gh_issues || 0;
     document.getElementById('sDisc').textContent = data._has_discussions ? (s.gh_discussions || 0) : '—';
-    document.getElementById('sReddit').textContent = s.reddit || 0;
+    document.getElementById('sReddit').textContent = (s.reddit || 0) + (s.reddit_use_cases || 0) + (s.reddit_hot || 0);
     document.getElementById('sTotal').textContent = s.total_items || 0;
     document.getElementById('sNew').textContent = (s.new_items || 0) + ' new';
     document.getElementById('footerSrc').textContent = data.generated_at || '—';

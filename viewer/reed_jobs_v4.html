@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reed Jobs v4</title>
+  <style>
+    :root {
+      --bg: #08111f;
+      --bg2: #0f172a;
+      --panel: #111827;
+      --panel2: #182235;
+      --panel3: #1d2a3f;
+      --border: #2b3951;
+      --border-soft: rgba(148, 163, 184, 0.12);
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #60a5fa;
+      --accent-2: #38bdf8;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+      --err: #f87171;
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(56, 189, 248, 0.08), transparent 28%),
+        linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+      color: var(--text);
+    }
+    .page { padding: 24px; max-width: 1720px; margin: 0 auto; }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .title-wrap h1 { margin: 0 0 6px; font-size: 30px; font-weight: 700; }
+    .title-wrap p { margin: 0; color: var(--muted); font-size: 14px; }
+    .job-link { color: var(--accent); text-decoration: none; }
+    .job-link:hover { text-decoration: underline; }
+    .status {
+      margin-bottom: 16px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: rgba(17, 24, 39, 0.9);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      box-shadow: var(--shadow);
+    }
+    .status.error { color: var(--err); }
+    .dashboard {
+      display: grid;
+      grid-template-columns: minmax(780px, 1.5fr) minmax(520px, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .card {
+      background: rgba(15, 23, 42, 0.94);
+      border: 1px solid var(--border-soft);
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border-soft);
+      background: linear-gradient(180deg, rgba(29, 42, 63, 0.9), rgba(17, 24, 39, 0.85));
+    }
+    .card-header h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .card-header p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .summary-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(96, 165, 250, 0.12);
+      color: #bfdbfe;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .summary-badge::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-2);
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.6);
+    }
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(130px, 1fr)) auto;
+      gap: 12px;
+      padding: 18px 18px 12px;
+      align-items: end;
+    }
+    .sortbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      padding: 0 18px 18px;
+      border-bottom: 1px solid var(--border-soft);
+      flex-wrap: wrap;
+    }
+    .sort-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .sort-meta strong {
+      font-size: 13px;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+    .sort-meta span {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .sort-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .field.compact {
+      min-width: 190px;
+      gap: 5px;
+    }
+    .field select {
+      height: 40px;
+      min-width: 160px;
+      padding: 0 38px 0 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel2);
+      color: var(--text);
+      outline: none;
+      appearance: none;
+      background-image: linear-gradient(45deg, transparent 50%, #93c5fd 50%), linear-gradient(135deg, #93c5fd 50%, transparent 50%);
+      background-position: calc(100% - 18px) 17px, calc(100% - 12px) 17px;
+      background-size: 6px 6px, 6px 6px;
+      background-repeat: no-repeat;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .field select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.16);
+    }
+    .sort-direction {
+      min-width: 154px;
+      justify-content: center;
+      background: linear-gradient(180deg, rgba(24, 34, 53, 0.98), rgba(17, 24, 39, 0.95));
+      border: 1px solid rgba(96, 165, 250, 0.2);
+      color: #dbeafe;
+      box-shadow: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sort-direction::before {
+      content: attr(data-arrow);
+      font-size: 15px;
+      line-height: 1;
+    }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      font-weight: 700;
+    }
+    .field input {
+      height: 40px;
+      min-width: 120px;
+      padding: 0 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel2);
+      color: var(--text);
+      outline: none;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .field input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.16);
+    }
+    button {
+      height: 40px;
+      padding: 0 18px;
+      border: 0;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+      color: white;
+      cursor: pointer;
+      font-weight: 700;
+      box-shadow: 0 10px 24px rgba(56, 189, 248, 0.22);
+    }
+    button:disabled { opacity: 0.7; cursor: wait; }
+    .table-wrap { overflow: auto; max-height: 76vh; }
+    table { width: 100%; border-collapse: collapse; min-width: 1160px; }
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border-soft);
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      text-align: left;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      background: rgba(24, 34, 53, 0.96);
+      backdrop-filter: blur(8px);
+    }
+    tbody tr {
+      cursor: pointer;
+      transition: background .12s ease;
+    }
+    tbody tr:hover { background: rgba(96, 165, 250, .08); }
+    tbody tr.selected { background: rgba(96, 165, 250, .14); }
+    .title-cell strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .title-sub,
+    .muted { color: var(--muted); }
+    .title-sub { font-size: 12px; }
+    .salary { color: var(--ok); font-weight: 700; white-space: nowrap; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.14);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      color: #dbeafe;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .pill.warn {
+      color: #fde68a;
+      background: rgba(251, 191, 36, 0.12);
+      border-color: rgba(251, 191, 36, 0.18);
+    }
+    .pill.ok {
+      color: #bbf7d0;
+      background: rgba(74, 222, 128, 0.12);
+      border-color: rgba(74, 222, 128, 0.18);
+    }
+    .detail-shell {
+      display: flex;
+      flex-direction: column;
+      min-height: 820px;
+    }
+    .detail {
+      padding: 22px;
+      min-height: 760px;
+    }
+    .detail-empty {
+      display: flex;
+      min-height: 720px;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 15px;
+      border: 1px dashed rgba(148, 163, 184, 0.2);
+      border-radius: 16px;
+      background: rgba(15, 23, 42, 0.45);
+    }
+    .detail-hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    .detail-hero h3 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.2;
+    }
+    .detail-hero .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 0;
+    }
+    .detail-side {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: flex-end;
+      min-width: 190px;
+    }
+    .detail-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 42px;
+      padding: 0 14px;
+      border-radius: 10px;
+      background: rgba(96, 165, 250, 0.14);
+      border: 1px solid rgba(96, 165, 250, 0.18);
+      color: #dbeafe;
+      text-decoration: none;
+      font-weight: 700;
+    }
+    .detail-link:hover { text-decoration: none; background: rgba(96, 165, 250, 0.2); }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .metric {
+      padding: 14px;
+      border-radius: 14px;
+      background: rgba(24, 34, 53, 0.75);
+      border: 1px solid var(--border-soft);
+    }
+    .metric label {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-weight: 700;
+    }
+    .metric .value {
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.45;
+      color: var(--text);
+      word-break: break-word;
+    }
+    .detail-body {
+      padding: 18px;
+      border-radius: 16px;
+      background: rgba(8, 17, 31, 0.45);
+      border: 1px solid var(--border-soft);
+      font-size: 15px;
+      line-height: 1.8;
+      max-height: 68vh;
+      overflow: auto;
+    }
+    .detail-body p { margin: 0 0 14px; }
+    .detail-body ul, .detail-body ol { margin: 0 0 14px 20px; }
+    .detail-body h1, .detail-body h2, .detail-body h3, .detail-body h4 {
+      margin-top: 0;
+      color: #f8fafc;
+    }
+    @media (max-width: 1380px) {
+      .dashboard { grid-template-columns: 1fr; }
+      .detail-shell { min-height: auto; }
+    }
+    @media (max-width: 1100px) {
+      .filters { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+      .sortbar { align-items: stretch; }
+      .sort-controls { width: 100%; }
+      .field.compact { flex: 1 1 220px; }
+      .detail-grid { grid-template-columns: 1fr; }
+      .detail-hero { flex-direction: column; }
+      .detail-side { width: 100%; align-items: stretch; min-width: 0; }
+    }
+    @media (max-width: 720px) {
+      .page { padding: 16px; }
+      .topbar { flex-direction: column; align-items: stretch; }
+      .filters { grid-template-columns: 1fr; }
+      .sort-controls { flex-direction: column; align-items: stretch; }
+      .field.compact,
+      .field.compact select,
+      .sort-direction { width: 100%; min-width: 0; }
+      .title-wrap h1 { font-size: 24px; }
+      .detail { padding: 16px; }
+      .detail-hero h3 { font-size: 22px; }
+      table { min-width: 980px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="title-wrap">
+        <h1>Reed Job Search v4</h1>
+        <p>Search, compare, and inspect jobs in a cleaner dashboard layout.</p>
+      </div>
+      <a class="job-link" href="/viewer/">← Back</a>
+    </div>
+
+    <div id="status" class="status">Loading…</div>
+
+    <div class="dashboard">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2>Job pipeline</h2>
+            <p>Search results with quick comparison fields and direct links.</p>
+          </div>
+          <div id="resultsSummary" class="summary-badge">Waiting for search</div>
+        </div>
+        <div class="filters">
+          <div class="field">
+            <label for="keywords">Keywords</label>
+            <input id="keywords" value="business analyst" />
+          </div>
+          <div class="field">
+            <label for="location">Location</label>
+            <input id="location" value="London" />
+          </div>
+          <div class="field">
+            <label for="distance">Distance</label>
+            <input id="distance" value="15" />
+          </div>
+          <div class="field">
+            <label for="take">Results</label>
+            <input id="take" value="20" />
+          </div>
+          <button id="searchBtn" type="button">Search</button>
+        </div>
+        <div class="sortbar">
+          <div class="sort-meta">
+            <strong>Smart sorting</strong>
+            <span>Re-order the visible results without re-running the search.</span>
+          </div>
+          <div class="sort-controls">
+            <div class="field compact">
+              <label for="sortField">Sort by</label>
+              <select id="sortField">
+                <option value="posted">Posted date</option>
+                <option value="salary">Salary</option>
+                <option value="applications">Applications</option>
+                <option value="title">Title</option>
+              </select>
+            </div>
+            <button id="sortDirection" class="sort-direction" type="button" data-arrow="↓">Newest first</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Role</th>
+                <th>Employer</th>
+                <th>Location</th>
+                <th>Salary</th>
+                <th>Type</th>
+                <th>Posted</th>
+                <th>Applications</th>
+                <th>Reference</th>
+                <th>Link</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card detail-shell">
+        <div class="card-header">
+          <div>
+            <h2>Job detail</h2>
+            <p>Expanded profile with key signals and full description.</p>
+          </div>
+        </div>
+        <div class="detail" id="detail">
+          <div class="detail-empty">Select a job to view details.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const tbody = document.getElementById('tbody');
+    const detail = document.getElementById('detail');
+    const searchBtn = document.getElementById('searchBtn');
+    const resultsSummary = document.getElementById('resultsSummary');
+    const sortFieldEl = document.getElementById('sortField');
+    const sortDirectionBtn = document.getElementById('sortDirection');
+    let rawResults = [];
+    let results = [];
+    let selectedJobId = null;
+    let lastTotalResults = 0;
+    const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
+    const sortState = {
+      field: 'posted',
+      direction: 'desc'
+    };
+
+    function esc(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function money(n) {
+      if (n == null || n === '') return '';
+      return '£' + Number(n).toLocaleString();
+    }
+
+    function salary(job) {
+      const min = job.minimumSalary ?? job.yearlyMinimumSalary;
+      const max = job.maximumSalary ?? job.yearlyMaximumSalary;
+      if (!min && !max) return '<span class="muted">Not specified</span>';
+      if (min && max) return `<span class="salary">${money(min)} – ${money(max)}</span>`;
+      if (min) return `<span class="salary">From ${money(min)}</span>`;
+      return `<span class="salary">Up to ${money(max)}</span>`;
+    }
+
+    function firstDefined(...values) {
+      return values.find(value => value !== undefined && value !== null && value !== '');
+    }
+
+    function textOrMuted(value, fallback = '—') {
+      return value ? esc(value) : `<span class="muted">${esc(fallback)}</span>`;
+    }
+
+    function formatPosted(job) {
+      return firstDefined(job.date, job.datePosted, job.postedDate, job.expirationDate) || '';
+    }
+
+    function formatType(job) {
+      return firstDefined(job.jobType, job.jobTypeName, job.contractType, job.contractTypeName, job.employmentType);
+    }
+
+    function formatApplications(job) {
+      const count = firstDefined(job.applications, job.applicationCount, job.numberOfApplications);
+      if (count === undefined || count === null || count === '') return '<span class="muted">—</span>';
+      return `<span class="pill warn">${esc(String(count))}</span>`;
+    }
+
+    function formatRef(job) {
+      return firstDefined(job.jobId, job.reference, job.jobReference, job.referenceNumber);
+    }
+
+    function metaPill(value, variant = '') {
+      if (!value) return '';
+      return `<span class="pill ${variant}">${esc(String(value))}</span>`;
+    }
+
+    function parseSortableDate(job) {
+      const raw = formatPosted(job);
+      const stamp = raw ? Date.parse(raw) : Number.NaN;
+      return Number.isFinite(stamp) ? stamp : null;
+    }
+
+    function parseSortableSalary(job) {
+      const min = Number(firstDefined(job.minimumSalary, job.yearlyMinimumSalary));
+      const max = Number(firstDefined(job.maximumSalary, job.yearlyMaximumSalary));
+      const hasMin = Number.isFinite(min) && min > 0;
+      const hasMax = Number.isFinite(max) && max > 0;
+      if (hasMin && hasMax) return (min + max) / 2;
+      if (hasMax) return max;
+      if (hasMin) return min;
+      return null;
+    }
+
+    function parseSortableApplications(job) {
+      const count = Number(firstDefined(job.applications, job.applicationCount, job.numberOfApplications));
+      return Number.isFinite(count) ? count : null;
+    }
+
+    function parseSortableTitle(job) {
+      const value = firstDefined(job.jobTitle, job.title);
+      return value ? String(value).trim() : null;
+    }
+
+    function getSortValue(job, field) {
+      if (field === 'salary') return parseSortableSalary(job);
+      if (field === 'applications') return parseSortableApplications(job);
+      if (field === 'title') return parseSortableTitle(job);
+      return parseSortableDate(job);
+    }
+
+    function compareValues(a, b, field, direction) {
+      const aMissing = a === null || a === undefined || a === '';
+      const bMissing = b === null || b === undefined || b === '';
+      if (aMissing && bMissing) return 0;
+      if (aMissing) return 1;
+      if (bMissing) return -1;
+
+      let comparison = 0;
+      if (field === 'title') {
+        comparison = collator.compare(String(a), String(b));
+      } else {
+        comparison = a === b ? 0 : (a > b ? 1 : -1);
+      }
+      return direction === 'asc' ? comparison : -comparison;
+    }
+
+    function sortLabel() {
+      const labels = {
+        posted: { asc: 'Oldest first', desc: 'Newest first' },
+        salary: { asc: 'Salary low → high', desc: 'Salary high → low' },
+        applications: { asc: 'Applications low → high', desc: 'Applications high → low' },
+        title: { asc: 'Title A → Z', desc: 'Title Z → A' }
+      };
+      return labels[sortState.field][sortState.direction];
+    }
+
+    function syncSortDirectionButton() {
+      sortDirectionBtn.textContent = sortLabel();
+      sortDirectionBtn.dataset.arrow = sortState.direction === 'asc' ? '↑' : '↓';
+    }
+
+    function applySort() {
+      const field = sortState.field;
+      const direction = sortState.direction;
+      results = [...rawResults].sort((left, right) => {
+        const primary = compareValues(getSortValue(left, field), getSortValue(right, field), field, direction);
+        if (primary !== 0) return primary;
+        return collator.compare(String(firstDefined(left.jobTitle, '') || ''), String(firstDefined(right.jobTitle, '') || ''));
+      });
+    }
+
+    function updateResultsSummary(totalResults = lastTotalResults) {
+      if (!results.length) {
+        resultsSummary.textContent = totalResults ? `0 shown / ${Number(totalResults).toLocaleString()} total` : 'No results';
+        return;
+      }
+      resultsSummary.textContent = `${results.length} shown / ${Number(totalResults).toLocaleString()} total · ${sortLabel()}`;
+    }
+
+    async function call(path) {
+      const res = await fetch(path, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }
+
+    function renderRows() {
+      tbody.innerHTML = results.map(job => {
+        const type = formatType(job);
+        const posted = formatPosted(job);
+        const employer = firstDefined(job.employerName, job.companyName, job.recruiterName);
+        const town = firstDefined(job.locationName, job.region, job.cityName);
+        const sector = firstDefined(job.sector, job.sectorName, job.category, job.industry);
+        return `
+          <tr data-job-id="${esc(job.jobId)}">
+            <td class="title-cell">
+              <strong>${esc(job.jobTitle)}</strong>
+              <div class="title-sub">${textOrMuted(sector, 'No sector')}</div>
+            </td>
+            <td>${textOrMuted(employer)}</td>
+            <td>${textOrMuted(town)}</td>
+            <td>${salary(job)}</td>
+            <td>${type ? metaPill(type, 'ok') : '<span class="muted">—</span>'}</td>
+            <td class="muted">${esc(posted || '—')}</td>
+            <td>${formatApplications(job)}</td>
+            <td class="muted">${esc(String(formatRef(job) || '—'))}</td>
+            <td><a class="job-link" href="${esc(job.jobUrl)}" target="_blank" rel="noopener">Open ↗</a></td>
+          </tr>
+        `;
+      }).join('');
+
+      tbody.querySelectorAll('tr').forEach(tr => {
+        tr.classList.toggle('selected', tr.dataset.jobId === String(selectedJobId));
+        tr.addEventListener('click', (event) => {
+          if (event.target.closest('a')) return;
+          selectJob(tr.dataset.jobId);
+        });
+      });
+    }
+
+    async function loadJobs() {
+      const keywords = document.getElementById('keywords').value.trim();
+      const location = document.getElementById('location').value.trim();
+      const distance = document.getElementById('distance').value.trim() || '15';
+      const take = document.getElementById('take').value.trim() || '20';
+      searchBtn.disabled = true;
+      statusEl.className = 'status';
+      statusEl.textContent = 'Searching…';
+      resultsSummary.textContent = 'Searching';
+      tbody.innerHTML = '';
+      detail.innerHTML = '<div class="detail-empty">Loading job details…</div>';
+      selectedJobId = null;
+      try {
+        const data = await call(`/api/reed/search?keywords=${encodeURIComponent(keywords)}&locationName=${encodeURIComponent(location)}&distanceFromLocation=${encodeURIComponent(distance)}&resultsToTake=${encodeURIComponent(take)}`);
+        rawResults = data.results || [];
+        lastTotalResults = Number(data.totalResults || 0);
+        applySort();
+        statusEl.textContent = `Found ${results.length} jobs on Reed.co.uk — ${lastTotalResults.toLocaleString()} total`;
+        updateResultsSummary();
+        renderRows();
+        if (results[0]) {
+          await selectJob(results[0].jobId);
+        } else {
+          detail.innerHTML = '<div class="detail-empty">No jobs found for this search.</div>';
+        }
+      } catch (err) {
+        statusEl.className = 'status error';
+        statusEl.textContent = 'Search failed: ' + err.message;
+        resultsSummary.textContent = 'Search failed';
+        detail.innerHTML = `<div class="status error">${esc(err.message)}</div>`;
+      } finally {
+        searchBtn.disabled = false;
+      }
+    }
+
+    async function selectJob(jobId) {
+      selectedJobId = String(jobId);
+      tbody.querySelectorAll('tr').forEach(tr => tr.classList.toggle('selected', tr.dataset.jobId === selectedJobId));
+      detail.innerHTML = '<div class="detail-empty">Loading details…</div>';
+      try {
+        const job = await call(`/api/reed/jobs/${jobId}`);
+        const employer = firstDefined(job.employerName, job.companyName, job.recruiterName, 'Not specified');
+        const location = firstDefined(job.locationName, job.region, job.cityName, 'Not specified');
+        const type = formatType(job);
+        const posted = formatPosted(job);
+        const reference = formatRef(job);
+        const applications = firstDefined(job.applications, job.applicationCount, job.numberOfApplications);
+        const hasApplications = applications !== undefined && applications !== null && applications !== '';
+        const remote = firstDefined(job.remoteType, job.remoteStatus, job.workPattern, job.hybridWorking);
+        const sector = firstDefined(job.sector, job.sectorName, job.category, job.industry);
+        const description = job.jobDescription || '<p class="muted">No description.</p>';
+        const rawLink = firstDefined(job.jobUrl, job.externalUrl, '#');
+
+        detail.innerHTML = `
+          <div class="detail-hero">
+            <div>
+              <h3>${esc(job.jobTitle)}</h3>
+              <div class="meta">
+                ${metaPill(employer, 'ok')}
+                ${metaPill(location)}
+                ${type ? metaPill(type) : ''}
+                ${posted ? metaPill(posted, 'warn') : ''}
+              </div>
+            </div>
+            <div class="detail-side">
+              <div>${salary(job)}</div>
+              <a class="detail-link" href="${esc(rawLink)}" target="_blank" rel="noopener">Open job link ↗</a>
+            </div>
+          </div>
+
+          <div class="detail-grid">
+            <div class="metric"><label>Employer</label><div class="value">${esc(String(employer))}</div></div>
+            <div class="metric"><label>Location</label><div class="value">${esc(String(location))}</div></div>
+            <div class="metric"><label>Contract / Type</label><div class="value">${type ? esc(String(type)) : '<span class="muted">Not specified</span>'}</div></div>
+            <div class="metric"><label>Posted</label><div class="value">${posted ? esc(String(posted)) : '<span class="muted">Not specified</span>'}</div></div>
+            <div class="metric"><label>Applications</label><div class="value">${hasApplications ? esc(String(applications)) : '<span class="muted">Not provided</span>'}</div></div>
+            <div class="metric"><label>Reference</label><div class="value">${reference ? esc(String(reference)) : '<span class="muted">Not provided</span>'}</div></div>
+            <div class="metric"><label>Work pattern</label><div class="value">${remote ? esc(String(remote)) : '<span class="muted">Not specified</span>'}</div></div>
+            <div class="metric"><label>Sector</label><div class="value">${sector ? esc(String(sector)) : '<span class="muted">Not specified</span>'}</div></div>
+          </div>
+
+          <div class="detail-body">${description}</div>
+        `;
+      } catch (err) {
+        detail.innerHTML = `<div class="status error">Detail load failed: ${esc(err.message)}</div>`;
+      }
+    }
+
+    sortFieldEl.addEventListener('change', async () => {
+      sortState.field = sortFieldEl.value;
+      if (sortState.field === 'title') {
+        sortState.direction = 'asc';
+      } else if (sortState.field === 'posted') {
+        sortState.direction = 'desc';
+      } else {
+        sortState.direction = 'desc';
+      }
+      syncSortDirectionButton();
+      applySort();
+      renderRows();
+      updateResultsSummary();
+      const activeJob = selectedJobId && results.find(job => String(job.jobId) === String(selectedJobId));
+      if (!activeJob && results[0]) {
+        await selectJob(results[0].jobId);
+      }
+    });
+
+    sortDirectionBtn.addEventListener('click', () => {
+      sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+      syncSortDirectionButton();
+      applySort();
+      renderRows();
+      updateResultsSummary();
+    });
+
+    searchBtn.addEventListener('click', loadJobs);
+    syncSortDirectionButton();
+    loadJobs();
+  </script>
+</body>
+</html>

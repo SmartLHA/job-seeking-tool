@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Swarm Before / After</title>
+<style>
+:root {
+  --bg:#0d1117; --surface:#161b22; --surface2:#1c2128; --border:#30363d;
+  --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --green:#3fb950; --yellow:#d29922; --red:#f85149; --purple:#bc8cff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
+.wrap{max-width:1320px;margin:0 auto;padding:24px}
+.header{margin-bottom:22px}
+.h1{font-size:34px;font-weight:800;letter-spacing:-0.03em}
+.sub{color:var(--muted);max-width:920px;margin-top:10px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:20px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px}
+.panel h2{font-size:22px;margin-bottom:12px}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);margin-bottom:12px}
+.badge.red{color:var(--red);border-color:rgba(248,81,73,.35)}
+.badge.green{color:var(--green);border-color:rgba(63,185,80,.35)}
+.flow{display:grid;gap:10px;margin-top:14px}
+.step{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px}
+.step-title{font-weight:700;margin-bottom:4px}
+.step-sub{color:var(--muted);font-size:14px}
+.arrow{color:var(--accent);text-align:center;font-size:20px}
+.table{width:100%;border-collapse:collapse;margin-top:16px}
+.table th,.table td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
+.table th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:20px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px}
+.kpi-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.kpi-val{font-size:24px;font-weight:800;margin-top:6px}
+.note{margin-top:22px;background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25);border-radius:14px;padding:16px}
+.note-title{font-weight:700;margin-bottom:6px}
+.links{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.linkbtn{display:inline-block;padding:8px 12px;border-radius:10px;background:var(--surface2);border:1px solid var(--border);color:var(--accent);text-decoration:none}
+.linkbtn:hover{text-decoration:underline}
+@media (max-width:1000px){.grid{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}}
+@media (max-width:640px){.kpis{grid-template-columns:1fr}.wrap{padding:16px}.h1{font-size:28px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="h1">Swarm Before / After 對照圖</div>
+    <div class="sub">一眼睇清楚，Swarm 完成之前同之後有咩分別。重點唔係「多咗一個功能」，而係由單線人手協調，變成有 pipeline、有 handoff、有 observability 嘅多 agent delivery system。</div>
+  </div>
+
+  <div class="grid">
+    <section class="panel">
+      <span class="badge red">BEFORE SWARM</span>
+      <h2>有現成 protocol，但仲未有真正 swarm orchestration</h2>
+      <div class="flow">
+        <div class="step"><div class="step-title">1. 其實已經有固定 team protocol</div><div class="step-sub">SilverHand 會按 protocol 用 Handy / Scout / Wiser 分工，亦會做 pre-spawn check、session reuse、label discipline。</div></div>
+        <div class="arrow">↓</div>
+        <div class="step"><div class="step-title">2. 但 phase 推進仍然主要靠 SilverHand 手動協調</div><div class="step-sub">即使有 child session protocol，同一個 task 由 design → build → review → qa，仍然要人手判斷下一步同逐次派工。</div></div>
+        <div class="arrow">↓</div>
+        <div class="step"><div class="step-title">3. Handoff 有規矩，但未變成統一 pipeline artifact</div><div class="step-sub">已有規矩、已有 session discipline，但未必每個 phase 都有一致、可查、可追蹤嘅 structured pipeline handoff。</div></div>
+        <div class="arrow">↓</div>
+        <div class="step"><div class="step-title">4. 觀測能力未集中</div><div class="step-sub">你已有 session guard、kanban、status page，但未有一個真正以 pipeline / stage / agent execution 為中心嘅 swarm control surface。</div></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <span class="badge green">AFTER SWARM</span>
+      <h2>多 agent pipeline，自動 handoff + 可視化</h2>
+      <div class="flow">
+        <div class="step"><div class="step-title">1. Router 建立 pipeline</div><div class="step-sub">task 進入 spec / design / build / review / qa / ship 流程。</div></div>
+        <div class="arrow">↓</div>
+        <div class="step"><div class="step-title">2. Structured handoff</div><div class="step-sub">每一階段寫 facts、decisions、risks、open questions、next action。</div></div>
+        <div class="arrow">↓</div>
+        <div class="step"><div class="step-title">3. 下一個 agent 帶住上下文接手</div><div class="step-sub">唔再由零開始，handoff 可直接消化。</div></div>
+        <div class="arrow">↓</div>
+        <div class="step"><div class="step-title">4. Dashboard 可見</div><div class="step-sub">可見 active pipeline、agent status、elapsed time、最近 runs。</div></div>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel" style="margin-top:18px;">
+    <h2>Before / After 對照表</h2>
+    <table class="table">
+      <thead>
+        <tr><th>面向</th><th>Before</th><th>After</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>派工</td><td>已有 DEV / QA / reviewer protocol，但 phase 推進主要靠 SilverHand 手動派工</td><td>Router / pipeline orchestration</td></tr>
+        <tr><td>上下文傳遞</td><td>已有規矩同 handoff 習慣，但未完全變成統一 pipeline artifact</td><td>Structured handoff docs</td></tr>
+        <tr><td>下一階段啟動</td><td>child session protocol 存在，但下一步決定仍靠 coordinator 判斷</td><td>帶住 prior facts / risks / decisions 接手</td></tr>
+        <tr><td>可見性</td><td>已有 status / kanban / session guard，但唔係以 swarm pipeline 為中心</td><td>統一 status / panel / pipeline tracking</td></tr>
+        <tr><td>出錯模式</td><td>容易出現 phase gap、handoff drift、要再解釋一次</td><td>handoff 更穩定、phase 邊界更清楚</td></tr>
+        <tr><td>可擴展性</td><td>已有 protocol base，但難以平滑 scale 成可重複 delivery pipeline</td><td>多 agent 協作可重複運行</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-label">你賺到</div><div class="kpi-val">速度</div></div>
+    <div class="kpi"><div class="kpi-label">你賺到</div><div class="kpi-val">少失憶</div></div>
+    <div class="kpi"><div class="kpi-label">你賺到</div><div class="kpi-val">可見狀態</div></div>
+    <div class="kpi"><div class="kpi-label">你賺到</div><div class="kpi-val">可重複流程</div></div>
+    <div class="kpi"><div class="kpi-label">你賺到</div><div class="kpi-val">可擴展協作</div></div>
+  </div>
+
+  <div class="note">
+    <div class="note-title">一句最短版</div>
+    <div>Swarm 唔係由零開始取代你哋現有 protocol，而係將你哋已經有嘅 Handy / Scout / Wiser 協作規矩，升級成真正可運行、可追蹤、可觀測嘅 pipeline system。</div>
+  </div>
+
+  <div class="links">
+    <a class="linkbtn" href="http://127.0.0.1:8765/viewer/swarm_panel.html">Open Swarm Panel</a>
+    <a class="linkbtn" href="http://127.0.0.1:8765/viewer/memory_infra_proof_dashboard.html">Memory Infra Proof Dashboard</a>
+    <a class="linkbtn" href="http://127.0.0.1:8765/viewer/openclaw_status.html">OpenClaw Status</a>
+  </div>
+</div>
+</body>
+</html>

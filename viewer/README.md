@@ -2,6 +2,10 @@
 
 This is a simple local web page for browsing the project markdown files in one place.
 
+## Canonical Reed Job Viewer
+
+`reed_jobs_v4.html` is the only retained standalone Reed job viewer. Older variants (`reed_jobs.html`, v2, v3, debug, minimal, and test pages) were removed so links and manual checks point to one file.
+
 ## Run locally on your Mac
 
 From the project folder:
@@ -43,28 +47,3 @@ Then open this on your phone browser:
 ```text
 http://YOUR-MAC-IP:8765/viewer/
 ```
-
-Example:
-
-```text
-http://192.168.1.35:8765/viewer/
-```
-
-## Remote access via Tailscale (recommended)
-
-This viewer can be made available remotely behind Tailscale Serve, ideally on a subpath such as:
-
-```text
-https://YOUR-TAILSCALE-HOST/job-seeking-tool/viewer/
-```
-
-The viewer is now written to be subpath-safe so it can work behind a Tailscale Serve path prefix.
-
-## Notes
-
-- Your phone and Mac must be on the same network for LAN access.
-- macOS Firewall may ask you to allow incoming connections for Python.
-- The viewer now reads its document list from `viewer/documents.json` instead of a hardcoded JavaScript list.
-- To add a newly created project doc to the viewer, update `viewer/documents.json`.
-- Use the **Refresh** button after updating project files or the manifest.
-- This is intentionally lightweight and local-only unless you deliberately place it behind Tailscale.

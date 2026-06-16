@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Status Debug</title>
+  <style>
+    body { font-family: monospace; background: #0d1117; color: #e6edf3; padding: 2rem; }
+    .ok { color: #3fb950; }
+    .err { color: #f85149; }
+    .warn { color: #d29922; }
+    pre { background: #161b22; padding: 1rem; border-radius: 8px; }
+    #log { margin-top: 2rem; }
+  </style>
+</head>
+<body>
+  <h1>Status Debug Page</h1>
+  <div id="status">Loading...</div>
+  <div id="log"></div>
+
+  <script>
+    function log(msg, type) {
+      const el = document.getElementById('log');
+      const line = document.createElement('div');
+      line.className = type || 'info';
+      line.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+      el.appendChild(line);
+    }
+
+    async function fetchJSON(url) {
+      log('Fetching: ' + url, 'info');
+      try {
+        const r = await fetch(url);
+        const data = await r.json();
+        log('Got: ' + url + ' keys=' + Object.keys(data).join(','), 'ok');
+        return data;
+      } catch(e) {
+        log('Error fetching ' + url + ': ' + e.message, 'err');
+        return { error: e.message };
+      }
+    }
+
+    async function fetchAll() {
+      log('fetchAll START');
+      const status = document.getElementById('status');
+      status.textContent = 'Fetching...';
+      const [health, roleStatus] = await Promise.all([
+        fetchJSON('/api/health'),
+        fetchJSON('/api/role-status')
+      ]);
+      log('health.ollama.error=' + (health.ollama && health.ollama.error));
+      log('health.openclaw.error=' + (health.openclaw && health.openclaw.error));
+      log('roleStatus.roles count=' + (roleStatus.roles && roleStatus.roles.length));
+      status.textContent = 'Done! Check log below.';
+      log('fetchAll END');
+    }
+
+    log('Script loaded, starting fetchAll');
+    fetchAll();
+  </script>
+</body>
+</html>

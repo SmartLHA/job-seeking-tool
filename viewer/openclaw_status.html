@@ -3,310 +3,865 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OpenClaw Status Dashboard</title>
+  <title>OpenClaw — Status</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
     :root {
-      --green: #22c55e;
-      --green-bg: #052e16;
-      --yellow: #eab308;
-      --yellow-bg: #422006;
-      --red: #ef4444;
-      --red-bg: #450a0a;
-      --bg: #0f172a;
-      --card-bg: #1e293b;
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --border: #334155;
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface-2: #21262d;
+      --border: #30363d;
+      --border-muted: #21262d;
+      --text: #e6edf3;
+      --text-muted: #7d8590;
+      --text-dim: #484f58;
+      --accent: #58a6ff;
+      --accent-dim: #1f3a5f;
+      --green: #3fb950;
+      --green-dim: #0d1f0d;
+      --yellow: #d29922;
+      --yellow-dim: #1f1a0a;
+      --red: #f85149;
+      --red-dim: #1f0d0d;
+      --cyan: #39c5cf;
+      --radius: 8px;
+      --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+    html, body {
+      font-family: var(--font);
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
-      padding: 1.5rem;
+      font-size: 14px;
+      line-height: 1.5;
     }
-    .header {
+
+    /* ── HEADER ─────────────────────────────────────────────────── */
+    .page-header {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      margin-bottom: 1.5rem;
-      flex-wrap: wrap;
-      gap: 0.5rem;
+      justify-content: space-between;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      position: sticky;
+      top: 0;
+      z-index: 10;
     }
-    h1 { font-size: 1.5rem; font-weight: 600; flex: 1; text-align: center; }
-    .refresh-btn {
-      background: var(--card-bg);
+
+    /* ── SIDEBAR NAV ───────────────────────────────────── */
+    .sidebar-nav {
+      position: fixed;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 44px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0.75rem 0;
+      gap: 0.25rem;
+      z-index: 100;
+    }
+    .sidebar-brand {
+      font-size: 1.25rem;
+      margin-bottom: 0.75rem;
+    }
+    .sidebar-link {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 1rem;
+      color: var(--text-dim);
+      transition: background 0.15s, color 0.15s;
+    }
+    .sidebar-link:hover {
+      background: var(--border);
+      color: var(--text);
+    }
+    .sidebar-link.active {
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+    .page-body { padding: 1rem 1rem 1rem calc(44px + 1rem); }
+    .page-header { padding: 1rem 1.5rem 1rem calc(44px + 1.5rem); }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+    }
+    .brand-name {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .brand-sub {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .last-refresh {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+    }
+    .btn-refresh {
+      background: var(--surface-2);
       color: var(--text);
       border: 1px solid var(--border);
-      padding: 0.5rem 1rem;
+      padding: 0.4rem 0.85rem;
       border-radius: 6px;
       cursor: pointer;
-      font-size: 0.875rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+      font-family: var(--font);
+      transition: border-color 0.15s, background 0.15s;
     }
-    .refresh-btn:hover { background: var(--border); }
+    .btn-refresh:hover { border-color: var(--accent); background: var(--accent-dim); }
+    .btn-refresh:active { opacity: 0.8; }
 
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 1rem;
-      margin-bottom: 1rem;
+    /* ── MAIN LAYOUT ─────────────────────────────────────────────── */
+    .page-body {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 1.25rem 1.5rem;
     }
+
+    /* ── SECTION HEADERS ─────────────────────────────────────────── */
+    .section-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 0.5rem;
+      padding-left: 0.25rem;
+    }
+
+    /* ── GRID HELPERS ────────────────────────────────────────────── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
+    .grid-auto { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem; }
+    .grid-60-40 { display: grid; grid-template-columns: 60fr 40fr; gap: 0.75rem; align-items: start; }
+    .gap-top { margin-top: 1rem; }
+    .gap-sm { margin-top: 0.5rem; }
+
+    /* ── CARDS ──────────────────────────────────────────────────── */
     .card {
-      background: var(--card-bg);
-      border-radius: 12px;
-      padding: 1.25rem;
+      background: var(--surface);
       border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
     }
     .card-header {
       display: flex;
       align-items: center;
       gap: 0.5rem;
-      margin-bottom: 1rem;
+      margin-bottom: 0.75rem;
     }
-    .card-header h2 { font-size: 0.875rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
-    .icon { font-size: 1rem; }
-    .status-dot {
-      width: 12px; height: 12px;
+    .card-header h2 {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── CACHE GRID ─────────────────────────────────────────────── */
+    .cache-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.5rem;
+    }
+    .cache-tier {
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.75rem 0.5rem;
+      text-align: center;
+    }
+    .cache-tier-name {
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.35rem;
+    }
+    .cache-tier-rows {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--green);
+    }
+    .cache-tier-label {
+      font-size: 0.6rem;
+      color: var(--text-muted);
+      margin-top: 0.15rem;
+    }
+
+    /* ── STATUS DOT ─────────────────────────────────────────────── */
+    .dot {
+      width: 8px; height: 8px;
       border-radius: 50%;
       flex-shrink: 0;
     }
-    .dot-green { background: var(--green); box-shadow: 0 0 8px var(--green); }
-    .dot-yellow { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
-    .dot-red { background: var(--red); box-shadow: 0 0 8px var(--red); }
-    .dot-gray { background: var(--muted); }
+    .dot-green { background: var(--green); }
+    .dot-yellow { background: var(--yellow); }
+    .dot-red { background: var(--red); }
+    .dot-gray { background: var(--text-dim); }
+    .dot-pulse {
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
 
-    .metric { font-size: 2.5rem; font-weight: 700; }
-    .metric.green { color: var(--green); }
-    .metric.yellow { color: var(--yellow); }
-    .metric.red { color: var(--red); }
-    .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
-
-    /* LLM Status row */
-    .llm-row {
+    /* ── MODEL INFO CARDS ────────────────────────────────────────── */
+    .model-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1rem;
-      margin-bottom: 1rem;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.6rem;
     }
-    .llm-card {
-      background: var(--card-bg);
-      border-radius: 12px;
-      padding: 1.25rem;
+    .model-card {
+      background: var(--surface);
       border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.85rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      position: relative;
+      overflow: hidden;
     }
-    .llm-card .header {
-      margin-bottom: 0.75rem;
+    .model-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
     }
-    .llm-card h3 {
-      font-size: 1rem;
+    .model-card.green::before { background: var(--green); }
+    .model-card.yellow::before { background: var(--yellow); }
+    .model-card.red::before { background: var(--red); }
+    .model-card.gray::before { background: var(--border); }
+
+    .model-top {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .model-icon {
+      font-size: 0.9rem;
+    }
+    .model-name {
+      font-size: 0.75rem;
       font-weight: 600;
+      color: var(--text-muted);
     }
-    .llm-metric {
-      font-size: 2rem;
+    .model-badge {
+      font-size: 0.55rem;
       font-weight: 700;
-      margin: 0.5rem 0;
-    }
-    .llm-badge {
-      display: inline-block;
-      font-size: 0.65rem;
-      font-weight: 700;
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
-      margin-left: 0.5rem;
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+      margin-left: auto;
     }
     .badge-green { background: var(--green); color: #000; }
     .badge-yellow { background: var(--yellow); color: #000; }
     .badge-red { background: var(--red); color: #fff; }
-    .llm-sub { font-size: 0.7rem; color: var(--muted); margin-top: 0.25rem; }
+    .badge-gray { background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border); }
 
-    /* Role cards */
-    .roles-grid {
+    .model-metric {
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      margin: 0.1rem 0;
+    }
+    .model-metric.green { color: var(--green); }
+    .model-metric.yellow { color: var(--yellow); }
+    .model-metric.red { color: var(--red); }
+    .model-metric.muted { color: var(--text-muted); }
+
+    .model-meta {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+    .model-meta strong { color: var(--text-muted); font-weight: 500; }
+
+    /* ── ROLE GRID ──────────────────────────────────────────────── */
+    .role-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(6, 1fr);
       gap: 0.75rem;
     }
     .role-card {
-      background: #0f172a;
-      border-radius: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
       padding: 1rem;
-      border: 2px solid var(--border);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
     }
-    .role-card.green { border-color: var(--green); }
-    .role-card.yellow { border-color: var(--yellow); }
-    .role-card.red { border-color: var(--red); }
-    .role-card .name { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
-    .role-card .status { font-size: 1.75rem; font-weight: 700; margin-top: 0.25rem; }
-    .role-card .session-info { font-size: 0.6rem; color: var(--muted); margin-top: 0.5rem; word-break: break-all; line-height: 1.4; }
-    .role-card .age { font-size: 0.7rem; color: var(--muted); margin-top: 0.25rem; }
-    .role-card .task-status {
-      font-size: 0.65rem;
-      padding: 0.2rem 0.4rem;
-      border-radius: 3px;
-      margin-top: 0.25rem;
-      display: inline-block;
+    .role-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.7rem 0.85rem;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
     }
-    .task-green { background: var(--green-bg); color: var(--green); border: 1px solid var(--green); }
-    .task-yellow { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
-    .task-red { background: var(--red-bg); color: var(--red); border: 1px solid var(--red); }
+    .role-card.green { border-top: 2px solid var(--green); }
+    .role-card.yellow { border-top: 2px solid var(--yellow); }
+    .role-card.red { border-top: 2px solid var(--red); }
+    .role-card.gray { border-top: 2px solid var(--border); }
 
-    /* Cron list */
-    .cron-list { list-style: none; }
-    .cron-list li {
-      padding: 0.75rem;
-      border-radius: 6px;
-      margin-bottom: 0.5rem;
+    .role-top {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
+      gap: 0.4rem;
     }
-    .cron-list li:last-child { margin-bottom: 0; }
-    .cron-list li.green { background: var(--green-bg); border: 1px solid var(--green); }
-    .cron-list li.yellow { background: var(--yellow-bg); border: 1px solid var(--yellow); }
-    .cron-list li.red { background: var(--red-bg); border: 1px solid var(--red); }
-    .cron-list .cron-name { font-size: 0.85rem; font-weight: 500; flex: 1; }
-    .cron-list .cron-time { font-size: 0.7rem; color: var(--muted); text-align: right; }
-    .cron-badge {
-      font-size: 0.65rem;
+    .role-name {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+    }
+    .role-badge {
+      font-size: 0.55rem;
       font-weight: 600;
-      padding: 0.15rem 0.4rem;
+      padding: 0.05rem 0.35rem;
       border-radius: 3px;
-      margin-left: 0.5rem;
+      margin-left: auto;
     }
-    .cron-badge-green { background: var(--green); color: #000; }
-    .cron-badge-yellow { background: var(--yellow); color: #000; }
-    .cron-badge-red { background: var(--red); color: #fff; }
+    .role-badge.green { background: var(--green-dim); color: var(--green); border: 1px solid var(--green); }
+    .role-badge.yellow { background: var(--yellow-dim); color: var(--yellow); border: 1px solid var(--yellow); }
+    .role-badge.red { background: var(--red-dim); color: var(--red); border: 1px solid var(--red); }
+    .role-badge.gray { background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border); }
 
-    /* Latest message */
-    .message-box {
-      background: linear-gradient(135deg, #1e3a5f, #2d4a6f);
-      border: 1px solid #3b82f6;
-      border-radius: 8px;
-      padding: 1rem;
-      font-size: 0.9rem;
+    .role-summary {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.3;
+    }
+    .role-session {
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      font-family: 'Courier New', monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .role-age {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      margin-top: auto;
+    }
+
+    /* ── LATEST MESSAGE ─────────────────────────────────────────── */
+    .msg-item {
+      padding: 0.6rem 0;
+      border-bottom: 1px solid var(--border-muted);
+      font-size: 0.75rem;
       line-height: 1.5;
+      width: 100%;
     }
-    .timestamp { font-size: 0.7rem; color: var(--muted); margin-top: 0.5rem; }
+    .msg-item:last-child { border-bottom: none; }
+    .msg-agent {
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      margin-bottom: 0.15rem;
+    }
+    .msg-text {
+      display: block;
+      width: 100%;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .msg-time {
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      margin-top: 0.2rem;
+    }
 
-    .full-width { grid-column: 1 / -1; }
-    .loading { opacity: 0.5; }
-    .error { color: var(--red); font-size: 0.8rem; }
+    /* ── SESSIONS SUMMARY ───────────────────────────────────────── */
+    .session-stat {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.45rem 0;
+      border-bottom: 1px solid var(--border-muted);
+      font-size: 0.75rem;
+    }
+    .session-stat:last-child { border-bottom: none; }
+    .session-stat-label { color: var(--text-muted); }
+    .session-stat-value { font-weight: 600; color: var(--text); }
 
+    /* ── RECENT SESSIONS LIST ───────────────────────────────────── */
+    .recent-list { display: flex; flex-direction: column; gap: 0.35rem; }
+    .recent-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 0.5rem;
+      background: var(--surface-2);
+      border-radius: 5px;
+      font-size: 0.7rem;
+    }
+    .recent-agent {
+      font-weight: 600;
+      color: var(--accent);
+      min-width: 60px;
+    }
+    .recent-model {
+      color: var(--text-muted);
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .recent-age { color: var(--text-dim); font-size: 0.65rem; white-space: nowrap; }
+    .recent-tokens {
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    /* ── CRON JOBS ─────────────────────────────────────────────── */
+    .cron-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .cron-table tr {
+      border-bottom: 1px solid var(--border-muted);
+    }
+    .cron-table tr:last-child { border-bottom: none; }
+    .cron-table td {
+      padding: 0.5rem 0.25rem;
+      font-size: 0.75rem;
+      vertical-align: middle;
+    }
+    .cron-name {
+      font-weight: 500;
+      color: var(--text);
+    }
+    .cron-time {
+      color: var(--text-dim);
+      font-size: 0.65rem;
+      white-space: nowrap;
+    }
+    .cron-badge {
+      display: inline-block;
+      font-size: 0.55rem;
+      font-weight: 700;
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .cron-ok { background: var(--green-dim); color: var(--green); border: 1px solid var(--green); }
+    .cron-err { background: var(--red-dim); color: var(--red); border: 1px solid var(--red); }
+    .cron-warn { background: var(--yellow-dim); color: var(--yellow); border: 1px solid var(--yellow); }
+
+    /* ── SESSIONS PANEL ─────────────────────────────────────────── */
+    .sessions-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 400px;
+    }
+    .sessions-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .sessions-panel-header h2 {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .sessions-count {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--text);
+      padding: 1rem;
+      border-bottom: 1px solid var(--border);
+      letter-spacing: -0.04em;
+    }
+    .sessions-count span {
+      font-size: 0.85rem;
+      font-weight: 400;
+      color: var(--text-dim);
+    }
+    .sessions-list { padding: 1rem; flex: 1; overflow-y: auto; min-height: 0; }
+    .sessions-list::-webkit-scrollbar { width: 5px; }
+    .sessions-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .session-row {
+      display: grid;
+      grid-template-columns: 70px 1fr 110px auto auto;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.6rem 0.75rem;
+      border-radius: 6px;
+      margin-bottom: 4px;
+      font-size: 0.85rem;
+      border-bottom: 1px solid var(--border-muted);
+    }
+    .session-row:hover { background: var(--surface-2); }
+    .session-row:last-child { border-bottom: none; }
+    .session-agent { font-weight: 700; font-size: 0.8rem; color: var(--accent); }
+    .session-agent.main { color: var(--accent); }
+    .session-agent.qa { color: var(--yellow); }
+    .session-agent.dev { color: var(--green); }
+    .session-agent.wiser { color: #bc8cff; }
+    .session-agent.helper { color: var(--cyan); }
+    .session-agent.codex { color: #79c0ff; }
+    .session-name { color: var(--text-dim); font-size: 0.72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: monospace; }
+    .session-model { color: var(--text-muted); font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .session-tokens { color: var(--text-dim); font-size: 0.78rem; white-space: nowrap; text-align: right; }
+    .session-age { color: var(--text-dim); font-size: 0.78rem; white-space: nowrap; text-align: right; }
+
+    /* ── LOADING / ERROR ────────────────────────────────────────── */
+    .loading { opacity: 0.4; transition: opacity 0.2s; }
+    .error-msg { color: var(--red); font-size: 0.75rem; padding: 0.5rem; background: var(--red-dim); border-radius: 5px; }
+    .empty { color: var(--text-dim); font-size: 0.75rem; padding: 0.5rem 0; }
+
+    /* ── RESPONSIVE ─────────────────────────────────────────────── */
+    @media (max-width: 1300px) {
+      .role-grid { grid-template-columns: repeat(3, 1fr); }
+    }
     @media (max-width: 900px) {
-      .llm-row { grid-template-columns: 1fr; }
-      .roles-grid { grid-template-columns: 1fr; }
+      .model-grid { grid-template-columns: 1fr 1fr; }
+      .role-grid { grid-template-columns: repeat(2, 1fr); }
+      .grid-2 { grid-template-columns: 1fr; }
+      .grid-2-1 { grid-template-columns: 1fr; }
+      .page-header { padding: 0.75rem 1rem 0.75rem calc(44px + 1rem); }
+      .page-body { padding: 1rem; }
+      .sidebar-nav { width: 0; overflow: hidden; }
     }
+    @media (max-width: 600px) {
+      .model-grid { grid-template-columns: 1fr; }
+    }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div style="width:80px"></div>
-    <h1>OpenClaw Status Dashboard</h1>
-    <button class="refresh-btn" onclick="fetchAll()">↻ Refresh</button>
-  </div>
-  <p id="last-refresh" style="text-align:center;font-size:0.7rem;color:var(--muted);margin-bottom:1rem">—</p>
 
-  <!-- LLM Status Row -->
-  <div class="llm-row">
+<!-- ── SIDEBAR NAV ─────────────────────────────────────── -->
+<nav class="sidebar-nav">
+  <div class="sidebar-brand">🦞</div>
+  <a class="sidebar-link active" href="http://127.0.0.1:8765/viewer/openclaw_status.html">📊</a>
+  <a class="sidebar-link" href="http://127.0.0.1:8765/viewer/kanban.html">📌</a>
+  <a class="sidebar-link" href="http://127.0.0.1:8765/viewer/multi_llm_chat.html">💬</a>
+  <a class="sidebar-link" href="http://127.0.0.1:8765/viewer/openclaw_optimization_designs.html">⚡</a>
+  <a class="sidebar-link" href="http://127.0.0.1:8765/viewer/openclaw_pulse_viewer.html">📈</a>
+  <a class="sidebar-link" href="http://127.0.0.1:8765/viewer/system_kanban.html">📊</a>
+  <a class="sidebar-link" href="http://127.0.0.1:8765/viewer/swarm_panel.html">🐝</a>
+  <a class="sidebar-link" href="http://127.0.0.1:8765/viewer/">💼</a>
+  <a class="sidebar-link" href="http://127.0.0.1:8765/viewer/index.html">📄</a>
+</nav>
+
+<!-- ── HEADER ─────────────────────────────────────────── -->
+<header class="page-header">
+  <div class="header-brand">
+    <div class="brand-icon">🦞</div>
+    <div>
+      <div class="brand-name">OpenClaw</div>
+      <div class="brand-sub">Status Dashboard</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="last-refresh" id="last-refresh">—</div>
+    <button class="btn-refresh" onclick="fetchAll()">↻ Refresh</button>
+  </div>
+</header>
+
+<!-- ── MAIN ───────────────────────────────────────────── -->
+<main class="page-body">
+
+  <!-- MODELS -->
+  <div class="section-label">◆ Models</div>
+  <div class="model-grid">
+
     <!-- MiniMax -->
-    <div class="llm-card">
-      <div class="card-header">
-        <span class="status-dot dot-gray" id="minimax-dot"></span>
-        <h3>🤖 MiniMax M2.7</h3>
+    <div class="model-card gray" id="minimax-card">
+      <div class="model-top">
+        <span class="dot dot-gray" id="minimax-dot"></span>
+        <span class="model-icon">🤖</span>
+        <span class="model-name">MiniMax M2.7</span>
+        <span class="model-badge badge-gray" id="minimax-badge">—</span>
       </div>
-      <div class="llm-metric green" id="minimax-count">—</div>
-      <div>
-        <span class="llm-badge badge-green" id="minimax-badge">ACTIVE</span>
+      <div class="model-metric muted" id="minimax-count">—</div>
+      <div class="model-meta">
+        <strong id="minimax-context">—</strong> ctx &nbsp;·&nbsp;
+        <span id="minimax-tokens-5h" style="color:var(--cyan)">—</span> 5htk
       </div>
-      <p class="llm-sub">Context: <span id="minimax-context">—</span> tokens</p>
-      <p class="llm-sub" style="margin-top:0.25rem"><span id="minimax-active" style="color:var(--yellow)">—</span></p>
-      <p class="llm-sub">5h tokens: <span id="minimax-tokens-5h" style="color:var(--cyan)">—</span></p>
+      <div class="model-meta">
+        <span id="minimax-active" style="color:var(--yellow)">—</span>
+      </div>
     </div>
 
-    <!-- E4B -->
-    <div class="llm-card">
-      <div class="card-header">
-        <span class="status-dot dot-gray" id="e4b-dot"></span>
-        <h3>🧠 Gemma 4 E4B</h3>
+    <!-- Gemma E4B -->
+    <div class="model-card gray" id="e4b-card">
+      <div class="model-top">
+        <span class="dot dot-gray" id="e4b-dot"></span>
+        <span class="model-icon">🧠</span>
+        <span class="model-name">Gemma 4 E4B</span>
+        <span class="model-badge badge-gray" id="e4b-badge">—</span>
       </div>
-      <div class="llm-metric" id="e4b-metric">—</div>
-      <div>
-        <span class="llm-badge badge-green" id="e4b-badge">LOADED</span>
+      <div class="model-metric muted" id="e4b-metric">—</div>
+      <div class="model-meta">
+        <span id="e4b-size">—</span>
       </div>
-      <p class="llm-sub">Memory: <span id="e4b-size">—</span></p>
-      <p class="llm-sub">Tokens I/O: <span id="e4b-tokens">—</span></p>
-      <p class="llm-sub" style="margin-top:0.25rem"><span id="e4b-active" style="color:var(--yellow)">—</span></p>
+      <div class="model-meta">
+        <span id="e4b-tokens" style="color:var(--cyan)">—</span>
+      </div>
     </div>
 
-    <!-- Codex -->
-    <div class="llm-card">
-      <div class="card-header">
-        <span class="status-dot dot-gray" id="codex-dot"></span>
-        <h3>⚡ ChatGPT Codex</h3>
+
+
+    <!-- ChatGPT Codex -->
+    <div class="model-card gray" id="codex-card">
+      <div class="model-top">
+        <span class="dot dot-gray" id="codex-dot"></span>
+        <span class="model-icon">⚡</span>
+        <span class="model-name">ChatGPT Codex</span>
+        <span class="model-badge badge-gray" id="codex-badge">—</span>
       </div>
-      <div class="llm-metric green" id="codex-sessions">—</div>
-      <div>
-        <span class="llm-badge badge-green" id="codex-badge">ONLINE</span>
+      <div class="model-metric muted" id="codex-sessions">—</div>
+      <div class="model-meta">
+        <span id="codex-active" style="color:var(--yellow)">—</span>
       </div>
-      <p class="llm-sub">ChatGPT Codex sessions (dev + wiser)</p>
-      <p class="llm-sub" style="margin-top:0.25rem"><span id="codex-active" style="color:var(--yellow)">—</span></p>
-      <p class="llm-sub" style="margin-top:0.25rem"><span id="codex-lastused" style="color:var(--muted)">—</span></p>
+      <div class="model-meta">
+        <span id="codex-lastused" style="color:var(--text-dim)">—</span>
+      </div>
+    </div>
+
+    <!-- Free Router -->
+    <div class="model-card gray" id="router-card">
+      <div class="model-top">
+        <span class="dot dot-gray" id="router-dot"></span>
+        <span class="model-icon">🌐</span>
+        <span class="model-name">Free Model Router</span>
+        <span class="model-badge badge-gray" id="router-badge">—</span>
+      </div>
+      <div class="model-metric muted" id="router-sessions">—</div>
+      <div class="model-meta">
+        <span id="router-active" style="color:var(--yellow)">—</span> active
+      </div>
+      <div class="model-meta">
+        API: <span id="router-status-msg" style="color:var(--yellow)">—</span>
+      </div>
+      <div class="model-meta">
+        Requests today: <span id="router-reqs" style="color:var(--green)">—</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ROLES (full width row) -->
+  <div class="gap-top">
+    <div class="section-label">◆ Roles</div>
+    <div class="role-grid" id="role-grid">
+      <div class="role-card gray" id="role-silverhand">
+        <div class="role-top">
+          <span class="dot dot-gray" id="role-silverhand-dot"></span>
+          <span class="role-name">SilverHand</span>
+          <span class="role-badge gray" id="role-silverhand-badge">—</span>
+        </div>
+        <div class="role-summary" id="role-silverhand-summary">—</div>
+        <div class="role-session" id="role-silverhand-session">—</div>
+        <div class="role-age" id="role-silverhand-age">—</div>
+      </div>
+      <div class="role-card gray" id="role-handy">
+        <div class="role-top">
+          <span class="dot dot-gray" id="role-handy-dot"></span>
+          <span class="role-name">Handy</span>
+          <span class="role-badge gray" id="role-handy-badge">—</span>
+        </div>
+        <div class="role-summary" id="role-handy-summary">—</div>
+        <div class="role-session" id="role-handy-session">—</div>
+        <div class="role-age" id="role-handy-age">—</div>
+      </div>
+      <div class="role-card gray" id="role-scout">
+        <div class="role-top">
+          <span class="dot dot-gray" id="role-scout-dot"></span>
+          <span class="role-name">Scout</span>
+          <span class="role-badge gray" id="role-scout-badge">—</span>
+        </div>
+        <div class="role-summary" id="role-scout-summary">—</div>
+        <div class="role-session" id="role-scout-session">—</div>
+        <div class="role-age" id="role-scout-age">—</div>
+      </div>
+      <div class="role-card gray" id="role-wiser">
+        <div class="role-top">
+          <span class="dot dot-gray" id="role-wiser-dot"></span>
+          <span class="role-name">Wiser</span>
+          <span class="role-badge gray" id="role-wiser-badge">—</span>
+        </div>
+        <div class="role-summary" id="role-wiser-summary">—</div>
+        <div class="role-session" id="role-wiser-session">—</div>
+        <div class="role-age" id="role-wiser-age">—</div>
+      </div>
+<div class="role-card gray" id="role-helper">
+        <div class="role-top">
+          <span class="dot dot-gray" id="role-helper-dot"></span>
+          <span class="role-name">Helper</span>
+          <span class="role-badge gray" id="role-helper-badge">—</span>
+        </div>
+        <div class="role-summary" id="role-helper-summary">—</div>
+        <div class="role-session" id="role-helper-session">—</div>
+        <div class="role-age" id="role-helper-age">—</div>
+      </div>
     </div>
   </div>
 
-  <!-- Latest Message + Sessions -->
-  <div class="grid">
+  <!-- CACHE LAYER (full width row) -->
+  <div class="card gap-top">
+    <div class="card-header">
+      <span class="dot dot-gray" id="cache-dot"></span>
+      <h2>🗄️ Cache Layer</h2>
+      <span id="cache-updated" style="font-size:0.65rem;color:var(--text-muted);margin-left:auto;"></span>
+    </div>
+    <div class="cache-grid" id="cache-grid">
+      <div class="cache-tier" id="cache-tier-awc">
+        <div class="cache-tier-name">AWC</div>
+        <div class="cache-tier-rows" id="cache-awc-rows">—</div>
+        <div class="cache-tier-label">rows</div>
+      </div>
+      <div class="cache-tier" id="cache-tier-ssc">
+        <div class="cache-tier-name">SSC</div>
+        <div class="cache-tier-rows" id="cache-ssc-rows">—</div>
+        <div class="cache-tier-label">rows</div>
+      </div>
+      <div class="cache-tier" id="cache-tier-sem">
+        <div class="cache-tier-name">SEM</div>
+        <div class="cache-tier-rows" id="cache-sem-rows">—</div>
+        <div class="cache-tier-label">rows</div>
+      </div>
+      <div class="cache-tier" id="cache-tier-hits">
+        <div class="cache-tier-name">Hits</div>
+        <div class="cache-tier-rows" id="cache-total-hits">—</div>
+        <div class="cache-tier-label">total</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LATEST MESSAGE -->
+  <div class="grid-1 gap-top">
     <div class="card">
       <div class="card-header">
-        <span class="status-dot dot-green"></span>
-        <h2>📌 Latest Messages</h2>
+        <span class="dot dot-gray"></span>
+        <h2>💬 Latest Messages</h2>
       </div>
       <div id="latest-messages">Loading...</div>
     </div>
-
-    <!-- Sessions -->
-    <div class="card">
-      <div class="card-header">
-        <span class="status-dot dot-gray" id="sessions-dot"></span>
-        <h2>💻 Sessions</h2>
-      </div>
-      <div class="metric green" id="session-count">—</div>
-      <p class="sub">total sessions</p>
-      <div id="agent-list" style="margin-top:1rem;font-size:0.8rem;color:var(--muted);"></div>
-    </div>
   </div>
 
-  <!-- Cron Jobs + CLI -->
-  <div class="grid">
+  <!-- SESSIONS + CRON JOBS BOTTOM ROW (50/50) -->
+  <div class="grid-2 gap-top">
+
+    <!-- Sessions Panel -->
+    <div class="sessions-panel">
+      <div class="sessions-panel-header">
+        <h2>💻 Sessions</h2>
+        <span class="dot dot-green dot-pulse" id="sessions-dot"></span>
+        <span id="sessions-updated" style="font-size:0.65rem;color:var(--text-muted);margin-left:auto;margin-right:0.5rem;"></span>
+      </div>
+      <div class="sessions-count" id="session-count">— <span>total</span></div>
+      <div class="sessions-list" id="sessions-list">Loading...</div>
+    </div>
+
+    <!-- Cron Jobs -->
     <div class="card">
       <div class="card-header">
-        <span class="status-dot dot-gray" id="cron-dot"></span>
+        <span class="dot dot-gray" id="cron-dot"></span>
         <h2>⏰ Cron Jobs</h2>
       </div>
-      <ul class="cron-list" id="cron-list">Loading...</ul>
+      <table class="cron-table" id="cron-table">
+        <tbody id="cron-list">Loading...</tbody>
+      </table>
+    </div>
+
+  </div>
+
+
+  <!-- APPROVED MEMORY + MESSAGES TABLE BOTTOM -->
+  <div class="grid-2 gap-top">
+    <div class="card">
+      <div class="card-header">
+        <span class="dot dot-gray"></span>
+        <h2>📌 approved_memory</h2>
+      </div>
+      <div id="shared-memory-list" class="recent-list">Loading...</div>
     </div>
 
     <div class="card">
       <div class="card-header">
-        <span class="status-dot dot-gray" id="cli-dot"></span>
-        <h2>🕐 Recent Sessions</h2>
+        <span class="dot dot-gray"></span>
+        <h2>🗃️ messages table</h2>
       </div>
-      <div id="recent-sessions-list">Loading...</div>
+      <div id="messages-table-list" class="recent-list">Loading...</div>
     </div>
   </div>
 
-  <!-- Agent Roles -->
-  <div class="grid">
-    <div class="card full-width">
-      <div class="card-header">
-        <span class="status-dot dot-gray" id="roles-dot"></span>
-        <h2>👥 Agent Roles</h2>
-      </div>
-      <div class="roles-grid" id="roles-grid">Loading...</div>
-    </div>
-  </div>
+</main>
 
-  <script>
+<script>
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
     async function fetchJSON(url) {
       try {
         const r = await fetch(url);
@@ -329,287 +884,411 @@
     function formatTime(ms) {
       if (!ms) return '—';
       const d = new Date(ms);
-      return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + 
-             ' ' + d.toLocaleDateString([], {month: 'short', day: 'numeric'});
+      return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) +
+             ' ' + d.toLocaleDateString([], {month:'short', day:'numeric'});
     }
 
-    function setDot(el, status) {
-      el.className = 'status-dot dot-' + (status === 'green' ? 'green' : status === 'yellow' ? 'yellow' : status === 'red' ? 'red' : 'gray');
+    function dot(el, status) {
+      el.className = 'dot dot-' + (status === 'green' ? 'green' : status === 'yellow' ? 'yellow' : status === 'red' ? 'red' : 'gray');
     }
 
-    function setMetricColor(el, status) {
-      el.className = 'llm-metric ' + (status === 'green' ? 'green' : status === 'yellow' ? 'yellow' : status === 'red' ? 'red' : '');
+    function cardColor(cardId, status) {
+      const card = document.getElementById(cardId);
+      card.className = 'model-card ' + (status === 'green' ? 'green' : status === 'yellow' ? 'yellow' : status === 'red' ? 'red' : 'gray');
     }
+
+    function badge(el, status, text) {
+      el.className = 'model-badge ' + (status === 'green' ? 'badge-green' : status === 'yellow' ? 'badge-yellow' : status === 'red' ? 'badge-red' : 'badge-gray');
+      el.textContent = text;
+    }
+
+    function metric(el, status) {
+      el.className = 'model-metric ' + (status === 'green' ? 'green' : status === 'yellow' ? 'yellow' : status === 'red' ? 'red' : 'muted');
+    }
+
+    // ── Fetch All ────────────────────────────────────────────────────────────
+
+    const dashboardState = {
+      health: null,
+      roleStatus: null,
+      codexUsage: null,
+    };
 
     async function fetchAll() {
       document.body.classList.add('loading');
-      document.getElementById('last-refresh').textContent = 'Last refresh: ' + new Date().toLocaleTimeString();
+      const ts = new Date().toLocaleTimeString();
+      document.getElementById('last-refresh').textContent = 'Updated ' + ts;
 
-      const [health, roleStatus, recentSessions, latestMsg] = await Promise.all([
-        fetchJSON('/api/health'),
-        fetchJSON('/api/role-status'),
-        fetchJSON('/api/recent-sessions'),
-        fetchJSON('/api/latest-message')
-      ]);
+      const fastLoads = [
+        fetchJSON('/api/role-status').then(d => {
+          dashboardState.roleStatus = d;
+          renderRoleStatus(d);
+          if (dashboardState.health) renderHealth(dashboardState.health, dashboardState.roleStatus, dashboardState.codexUsage || {});
+        }),
+        fetchJSON('/api/recent-sessions').then(renderRecentSessions),
+        fetchJSON('/api/shared-memory').then(renderSharedMemory),
+        fetchJSON('/api/messages').then(renderMessagesTable),
+        fetchJSON('/api/latest-message').then(renderLatestMessage),
+        fetchJSON('/api/cache-stats').then(renderCacheStats),
+      ];
 
-      renderHealth(health);
-      renderRoleStatus(roleStatus);
-      renderRecentSessions(recentSessions);
-      renderLatestMessage(latestMsg);
+      // Do not let slower sections block the whole page.
+      Promise.allSettled(fastLoads).finally(() => {
+        document.body.classList.remove('loading');
+      });
 
-      document.body.classList.remove('loading');
+      // Background loads: these can be slow/cached.
+      fetchJSON('/api/codex-usage').catch(() => ({error: 'fetch_failed'})).then(d => {
+        dashboardState.codexUsage = d;
+        if (dashboardState.health) renderHealth(dashboardState.health, dashboardState.roleStatus || {}, dashboardState.codexUsage);
+      });
+
+      fetchJSON('/api/health').then(d => {
+        dashboardState.health = d;
+        renderHealth(dashboardState.health, dashboardState.roleStatus || {}, dashboardState.codexUsage || {});
+      });
     }
 
-    function renderHealth(d) {
+    // ── Render: Health ─────────────────────────────────────────────────────
+
+    function renderHealth(d, roleData, codexUsage) {
+      if (d.error) { console.error(d.error); return; }
       const ollama = d.ollama || {};
-      const openclaw = d.openclaw || {};
       const cronJobs = d.cron_jobs || [];
       const running = ollama.running || [];
       const available = ollama.available || [];
-      const sessions = openclaw.sessions || {};
-      const byAgent = sessions.byAgent || [];
       const activeSessions = d.active_sessions || {};
       const modelUsage = d.model_usage || {};
+      const ollamaUsage = d.ollama_usage || {};
+      const allRoles = roleData?.roles || [];
+      const codexRole = allRoles.find(r => r.key === 'scout-dev');
+      const codexErr = codexUsage?.error;
+      const codexSessionCount = codexUsage?.session_count ?? 0;
+      const codexLastSession = codexUsage?.last_session ?? null;
+      const codexLastModel = codexUsage?.last_model ?? null;
+      const codexTotalSize = codexUsage?.total_size_mb ?? null;
+      const codexAuthStatus = codexUsage?.auth_status ?? null;
+      const codexAuthDays = codexUsage?.auth_days_left ?? null;
+      const codexAuthExpires = codexUsage?.auth_expires ?? null;
+      const codexHourly = codexUsage?.hourly_pct;
+      const codexWeekly = codexUsage?.weekly_pct;
+      const codexHourlyRemain = codexUsage?.hourly_remain;
+      const codexWeeklyRemain = codexUsage?.weekly_remain;
 
-      // MiniMax - big number = recent 5m, small = active 2h
-      const mainAgent = byAgent.find(a => a.agentId === 'main');
-      const minimaxTotal = mainAgent?.count || 0;
+      // ── MiniMax ──
+      const minimaxRecent = activeSessions.main?.recent_5m || 0;
       const minimaxActive2h = activeSessions.main?.active_2h || 0;
-      const minimaxRecent5m = activeSessions.main?.recent_5m || 0;
-      document.getElementById('minimax-count').textContent = minimaxRecent5m;
-      const minimaxDot = document.getElementById('minimax-dot');
-      const minimaxBadge = document.getElementById('minimax-badge');
-      const minimaxMetric = document.getElementById('minimax-count');
-      if (minimaxRecent5m > 0) {
-        minimaxBadge.className = 'llm-badge badge-green';
-        minimaxBadge.textContent = 'ACTIVE';
-        setDot(minimaxDot, 'green');
-        setMetricColor(minimaxMetric, 'green');
-      } else {
-        minimaxBadge.className = 'llm-badge badge-yellow';
-        minimaxBadge.textContent = 'IDLE';
-        setDot(minimaxDot, 'yellow');
-        setMetricColor(minimaxMetric, 'yellow');
-      }
-      document.getElementById('minimax-context').textContent = sessions.defaults?.contextTokens?.toLocaleString() || '—';
-      document.getElementById('minimax-active').textContent = `${minimaxActive2h} active (2h) · ${minimaxTotal} total`;
-      const mmTokens5h = modelUsage['MiniMax-M2.7'];
-      if (mmTokens5h) {
-        const totalK = (mmTokens5h.totalTokens / 1000).toFixed(1);
-        document.getElementById('minimax-tokens-5h').textContent = `${totalK}k (${mmTokens5h.count} sess)`;
-      }
+      const minimaxTotal = activeSessions.main?.total || 0;
+      const mmTokens = modelUsage['MiniMax-M2.7'] || modelUsage['MiniMax-M2'];
 
-      // E4B
-      const e4bAvailable = available.find(m => m.name === 'gemma4:e4b');
-      const e4bRunning = running.includes('gemma4:e4b');
+      document.getElementById('minimax-count').textContent = minimaxRecent;
+      const mmDot = document.getElementById('minimax-dot');
+      const mmBadge = document.getElementById('minimax-badge');
+      const mmMetric = document.getElementById('minimax-count');
+      const mmStatus = minimaxRecent > 0 ? 'green' : 'yellow';
+      dot(mmDot, mmStatus);
+      badge(mmBadge, mmStatus, minimaxRecent > 0 ? 'ACTIVE' : 'IDLE');
+      metric(mmMetric, mmStatus);
+      cardColor('minimax-card', mmStatus);
+      document.getElementById('minimax-context').textContent = '—';
+      document.getElementById('minimax-tokens-5h').textContent = mmTokens ? (mmTokens.totalTokens / 1000).toFixed(1) + 'k' : '—';
+      document.getElementById('minimax-active').textContent = `${minimaxActive2h} active · ${minimaxTotal} total`;
+
+      // ── E4B ──
+      const e4bError = ollama.error;
+      const e4bAvail = available.find(m => m.name === 'gemma4:e4b');
+      const e4bRun = running.includes('gemma4:e4b');
       const e4bDot = document.getElementById('e4b-dot');
       const e4bBadge = document.getElementById('e4b-badge');
       const e4bMetric = document.getElementById('e4b-metric');
-      if (e4bRunning) {
-        e4bMetric.textContent = 'Running';
-        e4bBadge.className = 'llm-badge badge-green';
-        e4bBadge.textContent = 'RUNNING';
-        setDot(e4bDot, 'green');
-        setMetricColor(e4bMetric, 'green');
-      } else if (e4bAvailable) {
-        e4bMetric.textContent = 'Loaded';
-        e4bBadge.className = 'llm-badge badge-yellow';
-        e4bBadge.textContent = 'LOADED';
-        setDot(e4bDot, 'yellow');
-        setMetricColor(e4bMetric, 'yellow');
-      } else {
-        e4bMetric.textContent = 'Missing';
-        e4bBadge.className = 'llm-badge badge-red';
-        e4bBadge.textContent = 'MISSING';
-        setDot(e4bDot, 'red');
-        setMetricColor(e4bMetric, 'red');
-      }
-      const e4bBytes = e4bAvailable?.size || 0;
-      const e4bGB = e4bBytes > 0 ? (e4bBytes / (1024**3)).toFixed(1) + ' GB' : '—';
+      let e4bStatus = 'gray', e4bText = '—';
+      if (e4bRun) { e4bStatus = 'green'; e4bText = 'Running'; }
+      else if (e4bAvail) { e4bStatus = 'yellow'; e4bText = 'Loaded'; }
+      else if (e4bError) { e4bStatus = 'red'; e4bText = 'Error'; }
+      else { e4bStatus = 'red'; e4bText = 'Missing'; }
+      dot(e4bDot, e4bStatus);
+      badge(e4bBadge, e4bStatus, e4bRun ? 'RUNNING' : e4bAvail ? 'LOADED' : e4bError ? 'ERR' : 'MISSING');
+      e4bMetric.textContent = e4bText;
+      metric(e4bMetric, e4bStatus);
+      cardColor('e4b-card', e4bStatus);
+      const e4bGB = e4bAvail ? (e4bAvail.size / (1024**3)).toFixed(1) + ' GB' : '—';
       document.getElementById('e4b-size').textContent = e4bGB;
-      const e4bTokens5h = modelUsage['gemma4:e4b'];
-      if (e4bTokens5h) {
-        const totalK = (e4bTokens5h.totalTokens / 1000).toFixed(1);
-        document.getElementById('e4b-tokens').textContent = `${totalK}k (${e4bTokens5h.count} sess)`;
-      } else {
-        document.getElementById('e4b-tokens').textContent = '—';
-      }
+      const e4bTk = modelUsage['gemma4:e4b'];
+      document.getElementById('e4b-tokens').textContent = e4bTk ? (e4bTk.totalTokens / 1000).toFixed(1) + 'k tokens' : '—';
 
-      // ChatGPT Codex = codex + dev + wiser combined
-      const codexTotal = (byAgent.find(a => a.agentId === 'codex')?.count || 0)
-        + (byAgent.find(a => a.agentId === 'dev')?.count || 0)
-        + (byAgent.find(a => a.agentId === 'wiser')?.count || 0);
-      const codexActive2h = (activeSessions.codex?.active_2h || 0)
-        + (activeSessions.dev?.active_2h || 0)
-        + (activeSessions.wiser?.active_2h || 0);
-      const codexRecent5m = (activeSessions.codex?.recent_5m || 0)
-        + (activeSessions.dev?.recent_5m || 0)
-        + (activeSessions.wiser?.recent_5m || 0);
-      document.getElementById('codex-sessions').textContent = codexRecent5m;
+      // ── ChatGPT Codex ──
+      // Codex sessions tracked via role-status (scout-dev key), not activeSessions
+      // Usage data from /api/codex-usage (parsed from 'openclaw models status')
       const codexDot = document.getElementById('codex-dot');
       const codexBadge = document.getElementById('codex-badge');
       const codexMetric = document.getElementById('codex-sessions');
-      if (codexRecent5m > 0) {
-        codexBadge.className = 'llm-badge badge-green';
-        codexBadge.textContent = 'ONLINE';
-        setDot(codexDot, 'green');
-        setMetricColor(codexMetric, 'green');
-      } else {
-        codexBadge.className = 'llm-badge badge-yellow';
-        codexBadge.textContent = 'OFFLINE';
-        setDot(codexDot, 'yellow');
-        setMetricColor(codexMetric, 'yellow');
+      let codexStatus = 'gray', codexText = '—';
+      if (codexRole) {
+        codexStatus = codexRole.status === 'green' ? 'green' : codexRole.status === 'amber' ? 'yellow' : codexRole.status === 'red' ? 'red' : 'gray';
+        codexText = codexRole.summary !== '—' && codexRole.summary.includes('Session') ? codexRole.age : 'No session';
       }
-      document.getElementById('codex-active').textContent = `${codexActive2h} active (2h) · ${codexTotal} total`;
+      dot(codexDot, codexStatus);
+      badge(codexBadge, codexStatus, codexRole ? (codexRole.status === 'green' ? 'ACTIVE' : codexRole.status === 'amber' ? 'IDLE' : 'ERR') : 'NO DATA');
+      codexMetric.textContent = codexRole ? (codexRole.summary !== '—' && codexRole.summary.includes('Session') ? '1' : '—') : '—';
+      metric(codexMetric, codexStatus);
+      cardColor('codex-card', codexStatus);
+      // ── ChatGPT Codex ──
+      // Priority: live hourly % > OAuth status > session count
+      if (codexHourly != null) {
+        // pct = % remaining. 100% = full, 0% = exhausted
+        const pct = codexHourly;
+        const color = pct <= 10 ? 'var(--red)' : pct <= 30 ? 'var(--yellow)' : 'var(--green)';
+        const statusLabel = pct >= 100 ? 'FULL' : pct > 90 ? 'CRIT' : pct > 70 ? 'LOW' : 'OK';
+        document.getElementById('codex-active').textContent = `${pct}% remaining`;
+        document.getElementById('codex-active').style.color = color;
+        const sub = codexHourlyRemain
+          ? `${codexHourlyRemain}${codexWeekly != null ? ` · Wk ${codexWeekly}%` : ''}`
+          : (codexWeekly != null ? `Wk ${codexWeekly}% remaining` : '—');
+        document.getElementById('codex-lastused').textContent = sub;
+        document.getElementById('codex-lastused').style.color = 'var(--text-muted)';
+      } else if (codexAuthStatus) {
+        const authColor = codexAuthDays !== null && codexAuthDays <= 5 ? 'var(--red)' : codexAuthDays !== null && codexAuthDays <= 10 ? 'var(--yellow)' : 'var(--green)';
+        document.getElementById('codex-active').textContent = codexAuthDays !== null ? `OAuth ${codexAuthDays}d left` : 'OAuth active';
+        document.getElementById('codex-active').style.color = authColor;
+        document.getElementById('codex-lastused').textContent = codexAuthExpires ? `expires ${codexAuthExpires}` : '—';
+        document.getElementById('codex-lastused').style.color = 'var(--text-muted)';
+      } else if (codexSessionCount > 0) {
+        document.getElementById('codex-active').textContent = `${codexSessionCount} sessions`;
+        document.getElementById('codex-active').style.color = 'var(--cyan)';
+        document.getElementById('codex-lastused').textContent = codexLastSession ? `last: ${codexLastSession}` : '—';
+        document.getElementById('codex-lastused').style.color = 'var(--text-muted)';
+      } else {
+        document.getElementById('codex-active').textContent = codexRole?.age || '—';
+        document.getElementById('codex-active').style.color = 'var(--yellow)';
+        document.getElementById('codex-lastused').textContent = codexRole?.summary || 'No data';
+        document.getElementById('codex-lastused').style.color = 'var(--text-dim)';
+      }
 
-      // ChatGPT Codex last used — most recent session across codex + dev + wiser
-      const codexAgents = ['codex', 'dev', 'wiser'];
-      const nowMs = Date.now();
-      let codexLastUsed = null;
-      for (const entry of (sessions.byAgent || [])) {
-        if (codexAgents.includes(entry.agentId)) {
-          for (const s of (entry.recent || [])) {
-            if (!codexLastUsed || s.updatedAt > codexLastUsed) codexLastUsed = s.updatedAt;
+      // ── Free Router ──
+      const routerRecent = activeSessions.helper?.recent_5m || 0;
+      const routerActive = activeSessions.helper?.active_2h || 0;
+      const routerDot = document.getElementById('router-dot');
+      const routerBadge = document.getElementById('router-badge');
+      const routerMetric = document.getElementById('router-sessions');
+      const routerStatus = routerRecent > 0 ? 'green' : routerActive > 0 ? 'yellow' : 'gray';
+      dot(routerDot, routerStatus);
+      badge(routerBadge, routerStatus, routerRecent > 0 ? 'ACTIVE' : routerActive > 0 ? 'SEEN' : 'IDLE');
+      routerMetric.textContent = routerRecent > 0 ? routerRecent : (routerActive || '—');
+      metric(routerMetric, routerStatus);
+      cardColor('router-card', routerStatus);
+      document.getElementById('router-active').textContent = routerActive || '—';
+      // OpenRouter status
+      fetch('/api/openrouter-status')
+        .then(r => r.json())
+        .then(data => {
+          const msgEl = document.getElementById('router-status-msg');
+          const reqsEl = document.getElementById('router-reqs');
+          if (data.status === 'ok') {
+            msgEl.textContent = 'OK';
+            msgEl.style.color = 'var(--green)';
+            reqsEl.textContent = data.requests_today ?? '0';
+          } else if (data.status === 'rate_limited') {
+            msgEl.textContent = 'RATE LIMIT';
+            msgEl.style.color = 'var(--red)';
+            reqsEl.textContent = '—';
+          } else {
+            msgEl.textContent = data.message || data.status;
+            msgEl.style.color = 'var(--red)';
+            reqsEl.textContent = '—';
           }
-        }
-      }
-      const codexLastEl = document.getElementById('codex-lastused');
-      if (codexLastUsed) {
-        const agoMs = nowMs - codexLastUsed;
-        const mins = Math.floor(agoMs / 60000);
-        const hours = Math.floor(agoMs / 3600000);
-        const days = Math.floor(agoMs / 86400000);
-        const agoStr = days > 0 ? `${days}d ago` : hours > 0 ? `${hours}h ago` : mins > 0 ? `${mins}m ago` : 'just now';
-        codexLastEl.textContent = `Last used: ${agoStr}`;
-      } else {
-        codexLastEl.textContent = 'Last used: —';
-      }
+        })
+        .catch(() => {
+          document.getElementById('router-status-msg').textContent = 'ERR';
+          document.getElementById('router-status-msg').style.color = 'var(--red)';
+        });
 
-      // Sessions - total count still shows all
-      const totalSessions = sessions.count || 0;
-      document.getElementById('session-count').textContent = totalSessions;
-      const sessionsDot = document.getElementById('sessions-dot');
-      setDot(sessionsDot, totalSessions > 0 ? 'green' : 'red');
-
-      // Active sessions per agent in last hour
-      const agentList = document.getElementById('agent-list');
-      agentList.innerHTML = byAgent.map(a => {
-        const active = (activeSessions[a.agentId] || {}).active_2h || 0;
-        const color = active > 0 ? 'var(--green)' : 'var(--muted)';
-        return `<div style="display:flex;justify-content:space-between;padding:0.25rem 0;border-bottom:1px solid var(--border)">
-          <span style="color:${color}">${a.agentId}</span>
-          <span>${a.count} total (${active} active)</span>
-        </div>`;
-      }).join('');
-
-      // Cron Jobs
-      const cronList = document.getElementById('cron-list');
+      // ── Cron Jobs ──
       const cronDot = document.getElementById('cron-dot');
+      const hasErr = cronJobs.some(j => j.last_status === 'error');
+      dot(cronDot, hasErr ? 'red' : 'green');
+      const cronListEl = document.getElementById('cron-list');
       if (!cronJobs || cronJobs.length === 0) {
-        cronList.innerHTML = '<li class="yellow"><span class="cron-name">No cron jobs found</span></li>';
-        setDot(cronDot, 'yellow');
+        cronListEl.innerHTML = '<tr><td colspan="3"><div class="empty">No cron jobs</div></td></tr>';
       } else {
-        let hasError = false;
-        cronList.innerHTML = cronJobs.map(j => {
-          const status = j.last_status === 'ok' ? 'green' : j.last_status === 'error' ? 'red' : 'yellow';
-          if (j.last_status === 'error') hasError = true;
-          return `<li class="${status}">
-            <span class="cron-name">${j.name}</span>
-            <div>
-              <span class="cron-time">${formatTime(j.last_run)}</span>
-              <span class="cron-badge cron-badge-${status}">${(j.last_status || '?').toUpperCase()}</span>
-            </div>
-          </li>`;
+        cronListEl.innerHTML = cronJobs.map(j => {
+          const status = j.last_status === 'error' ? 'err' : j.last_status === 'ok' ? 'ok' : 'warn';
+          return `<tr>
+            <td><span class="cron-name">${j.name}</span></td>
+            <td><span class="cron-time">${j.last_run ? timeAgo(j.last_run) : '—'}</span></td>
+            <td><span class="cron-badge cron-${status}">${j.last_status || '?'}</span></td>
+          </tr>`;
         }).join('');
-        setDot(cronDot, hasError ? 'red' : 'green');
       }
     }
 
-    function renderLatestMessage(data) {
-      const el = document.getElementById('latest-messages');
-      if (!data || !data.messages || data.messages.length === 0) {
-        el.innerHTML = '<div class="message-box"><span style="color:var(--muted)">All systems operational.</span></div>';
+    // ── Render: Role Status ────────────────────────────────────────────────
+
+    function renderRoleStatus(d) {
+      if (d.error) return;
+      const roles = d.roles || [];
+
+      const roleMap = {
+        silverhand: 'silverhand', silverhand_1: 'silverhand',
+        handy: 'handy', dev: 'handy',
+        scout: 'scout', qa: 'scout',
+        wiser: 'wiser', reviewer: 'wiser',
+        helper: 'helper', helper_1: 'helper',
+      };
+
+      // Initialize all as gray
+      ['silverhand','handy','scout','wiser','helper'].forEach(r => {
+        const card = document.getElementById('role-' + r);
+        const dotEl = document.getElementById('role-' + r + '-dot');
+        const badgeEl = document.getElementById('role-' + r + '-badge');
+        const summaryEl = document.getElementById('role-' + r + '-summary');
+        const sessionEl = document.getElementById('role-' + r + '-session');
+        const ageEl = document.getElementById('role-' + r + '-age');
+        if (card) card.className = 'role-card gray';
+        if (dotEl) dot(dotEl, 'gray');
+        if (badgeEl) { badgeEl.className = 'role-badge gray'; badgeEl.textContent = '—'; }
+        if (summaryEl) summaryEl.textContent = '—';
+        if (sessionEl) sessionEl.textContent = '—';
+        if (ageEl) ageEl.textContent = '—';
+      });
+
+      roles.forEach(r => {
+        const key = (roleMap[r.key] || r.key);
+        const card = document.getElementById('role-' + key);
+        const dotEl = document.getElementById('role-' + key + '-dot');
+        const badgeEl = document.getElementById('role-' + key + '-badge');
+        const summaryEl = document.getElementById('role-' + key + '-summary');
+        const sessionEl = document.getElementById('role-' + key + '-session');
+        const ageEl = document.getElementById('role-' + key + '-age');
+        if (!card) return;
+
+        const status = r.status === 'green' ? 'green' : r.status === 'yellow' ? 'yellow' : r.status === 'red' ? 'red' : 'gray';
+        card.className = 'role-card ' + status;
+        if (dotEl) dot(dotEl, status);
+        if (badgeEl) {
+          badgeEl.className = 'role-badge ' + status;
+          badgeEl.textContent = status === 'green' ? 'ACTIVE' : status === 'yellow' ? 'IDLE' : status === 'red' ? 'ERR' : '—';
+        }
+        if (summaryEl) summaryEl.textContent = r.summary || '—';
+        if (sessionEl) sessionEl.textContent = r.session_key ? r.session_key.split(':').slice(-2).join(':') : '—';
+        if (ageEl) ageEl.textContent = r.age || '—';
+      });
+    }
+
+    // ── Render: Recent Sessions ───────────────────────────────────────────
+
+    function renderRecentSessions(d) {
+      // ── Sessions Panel (top-left card) ──
+      const sessions = d.sessions || [];
+      const totalSessions = sessions.length;
+      document.getElementById('session-count').innerHTML = totalSessions + ' <span>total</span>';
+      const sessionsDot = document.getElementById('sessions-dot');
+      if (sessionsDot) sessionsDot.className = 'dot dot-' + (totalSessions > 0 ? 'green' : 'gray');
+      if (d.fetched_at) {
+        const td = new Date(d.fetched_at);
+        const el = document.getElementById('sessions-updated');
+        if (el) el.textContent = 'Updated ' + td.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      }
+      // Populate Sessions Panel list (same data as Recent Activity)
+      const sessionsListEl = document.getElementById('sessions-list');
+      if (sessions.length === 0) {
+        sessionsListEl.innerHTML = '<div class="empty">No sessions</div>';
+      } else {
+        sessionsListEl.innerHTML = sessions.slice(0, 25).map(s => {
+          const tokens = s.totalTokens ? (s.totalTokens / 1000).toFixed(0) + 'k' : '—';
+          const agentClass = (s.agent || '').toLowerCase();
+          const sessionName = s.id ? s.id.split(':').slice(2).join(':') : '—';
+          return `<div class="session-row">
+            <span class="session-agent ${agentClass}">${s.agent || '?'}</span>
+            <span class="session-name" title="${s.id || ''}">${sessionName}</span>
+            <span class="session-model">${s.model || '—'}</span>
+            <span class="session-tokens">${tokens}</span>
+            <span class="session-age">${s.age || '—'}</span>
+          </div>`;
+        }).join('');
+      }
+
+    }
+
+    // ── Render: Shared Memory ───────────────────────────────────────────
+
+    function renderSharedMemory(d) {
+      const el = document.getElementById('shared-memory-list');
+      if (d.error || !d.entries || d.entries.length === 0) {
+        el.innerHTML = '<div class="empty">No approved memory entries</div>';
         return;
       }
-      el.innerHTML = data.messages.map(m => `
-        <div class="message-box" style="margin-bottom:0.75rem">
-          <span style="color:var(--yellow);font-size:0.7rem">${m.age || ''} · ${m.session || ''}…</span>
-          <span style="display:block;margin-top:0.25rem;color:var(--text)">${escapeHtml(m.text || '')}</span>
-        </div>
-      `).join('');
-    }
-
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
-
-    function renderRoleStatus(data) {
-      const roles = data.roles || [];
-      const rolesDot = document.getElementById('roles-dot');
-      const grid = document.getElementById('roles-grid');
-
-      const hasAmber = roles.some(r => r.status === 'amber');
-      const hasRed = roles.some(r => r.status === 'red');
-      setDot(rolesDot, hasRed ? 'red' : hasAmber ? 'yellow' : 'green');
-
-      grid.innerHTML = roles.map(r => {
-        const color = r.status === 'green' ? 'var(--green)' : r.status === 'red' ? 'var(--red)' : 'var(--yellow)';
-        const icon = r.status === 'green' ? '▶' : r.status === 'red' ? '⏹' : '⏸';
-        const cardClass = r.status === 'green' ? 'green' : r.status === 'red' ? 'red' : 'yellow';
-        const statusText = r.status === 'green' ? 'RUNNING' : r.status === 'red' ? 'ERROR' : 'IDLE';
-        const taskClass = r.status === 'green' ? 'task-green' : r.status === 'red' ? 'task-red' : 'task-yellow';
-        return `<div class="role-card ${cardClass}">
-          <div class="name">${r.label}</div>
-          <div class="status" style="color:${color}">${icon}</div>
-          <span class="task-status ${taskClass}">${statusText}</span>
-          <div class="session-info">${r.session_key || '—'}</div>
-          <div class="age">${r.age || '—'}</div>
+      el.innerHTML = d.entries.slice(0, 20).map(e => {
+        const src = e.source ? e.source.split(' ')[0].split('[')[0] : '—';
+        return `<div class="recent-item">
+          <span class="recent-agent" style="color:var(--cyan)">${src}</span>
+          <span class="recent-fact">${e.fact}</span>
+          <span class="recent-age">${e.age || '—'}</span>
         </div>`;
       }).join('');
-
-      if (roles.length === 0) {
-        grid.innerHTML = '<p class="error">No role data available</p>';
-      }
     }
 
-    function renderRecentSessions(data) {
-      const container = document.getElementById('recent-sessions-list');
-      const dot = document.getElementById('cli-dot');
-      if (data.error || !data.sessions) {
-        container.innerHTML = `<span class="error">✗ ${data.error || 'No data'}</span>`;
-        setDot(dot, 'red');
+    // ── Render: Messages Table ───────────────────────────────────────────
+
+    function renderMessagesTable(d) {
+      const el = document.getElementById('messages-table-list');
+      if (d.error || !d.entries || d.entries.length === 0) {
+        el.innerHTML = '<div class="empty">No message rows</div>';
         return;
       }
-      const sessions = data.sessions || [];
-      if (sessions.length === 0) {
-        container.innerHTML = '<span style="color:var(--muted);font-size:0.8rem">No recent sessions</span>';
-        setDot(dot, 'yellow');
-        return;
-      }
-      setDot(dot, 'green');
-      container.innerHTML = '<div style="display:grid;gap:0.5rem;width:100%">' +
-        sessions.map(s => {
-          const agentColor = s.agent === 'main' ? 'var(--green)' : s.agent === 'codex' ? 'var(--yellow)' : 'var(--blue, #3b82f6)';
-          const modelShort = s.model ? s.model.replace(/minimax\/|ollama\//g, '') : '—';
-          const tokens = s.totalTokens ? `${(s.totalTokens/1000).toFixed(1)}k tok` : '—';
-          return `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:0.5rem;background:#0f172a;border-radius:6px;border:1px solid var(--border);font-size:0.75rem;gap:0.5rem">
-            <div style="display:flex;flex-direction:column;gap:0.25rem;flex:1">
-              <span style="color:${agentColor};font-weight:600">${s.agent}</span>
-              <span style="color:var(--text);word-break:break-all;font-size:0.7rem;line-height:1.3">${s.id}</span>
-            </div>
-            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.1rem;flex-shrink:0;padding-top:0.1rem">
-              <span style="color:var(--muted)">${modelShort}</span>
-              <span style="color:var(--yellow)">${s.age}</span>
-              <span style="color:var(--muted);font-size:0.65rem">${tokens}</span>
-            </div>
-          </div>`;
-        }).join('') + '</div>';
+      el.innerHTML = d.entries.slice(0, 20).map(e => {
+        const head = `${e.agent || '—'} · ${e.stage || '—'} · ${e.role || '—'} · ${e.age || '—'}`;
+        return `<div class="recent-item">
+          <span class="recent-agent" style="color:var(--green)">${e.agent || '—'}</span>
+          <span class="recent-model" title="${(e.task_key || '').replace(/"/g,'&quot;')}">${e.content || '—'}</span>
+          <span class="recent-age">${e.age || '—'}</span>
+        </div>`;
+      }).join('');
     }
+
+    // ── Render: Latest Messages ────────────────────────────────────────────
+
+    function renderLatestMessage(d) {
+      const el = document.getElementById('latest-messages');
+      if (d.error || !d.messages || d.messages.length === 0) {
+        el.innerHTML = '<div class="empty">No messages</div>';
+        return;
+      }
+      el.innerHTML = d.messages.slice(0, 5).map(m => {
+        const txt = m.text ? (m.text.length > 160 ? m.text.slice(0, 160) + '…' : m.text) : '—';
+        return `<div class="msg-item">
+          <div class="msg-agent">${m.session || '—'} · ${m.age || '—'}</div>
+          <div class="msg-text">${txt}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function renderCacheStats(d) {
+      const cacheDot = document.getElementById('cache-dot');
+      const updatedEl = document.getElementById('cache-updated');
+      if (d.error || d.status === 'error') {
+        cacheDot.className = 'dot dot-red';
+        document.getElementById('cache-awc-rows').textContent = '—';
+        document.getElementById('cache-ssc-rows').textContent = '—';
+        document.getElementById('cache-sem-rows').textContent = '—';
+        document.getElementById('cache-total-hits').textContent = '—';
+        if (updatedEl) updatedEl.textContent = 'stale/error';
+        return;
+      }
+      cacheDot.className = 'dot dot-green';
+      const awc = d.awc || {rows: 0, hits: 0};
+      const ssc = d.ssc || {rows: 0, hits: 0};
+      const sem = d.sem || {rows: 0, hits: 0};
+      document.getElementById('cache-awc-rows').textContent = `${awc.active_count ?? awc.rows}`;
+      document.getElementById('cache-ssc-rows').textContent = ssc.rows;
+      document.getElementById('cache-sem-rows').textContent = sem.rows;
+      document.getElementById('cache-total-hits').textContent = awc.hits + ssc.hits + sem.hits;
+      if (updatedEl) updatedEl.textContent = awc.last_updated ? `AWC ${awc.last_updated.slice(11,16)}` : '';
+    }
+
+    // ── Init ─────────────────────────────────────────────────────────────────
 
     fetchAll();
-    setInterval(fetchAll, 30000);
-  </script>
+    setInterval(fetchAll, 30 * 1000);
+</script>
 </body>
 </html>

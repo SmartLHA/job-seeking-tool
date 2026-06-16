@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw 記憶系統升級分享</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f0f2f5;
+    color: #1c1e21;
+    line-height: 1.7;
+    padding: 24px 16px;
+  }
+  .container {
+    max-width: 680px;
+    margin: 0 auto;
+  }
+  .card {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: 16px;
+    color: #050505;
+  }
+  h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 20px 0 10px;
+    color: #050505;
+  }
+  p { margin-bottom: 12px; }
+  .pain {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #e02433;
+    margin: 16px 0;
+  }
+  .highlight {
+    background: #f7f9fa;
+    border-left: 4px solid #1877f2;
+    padding: 12px 16px;
+    margin: 16px 0;
+    font-size: 0.95rem;
+  }
+  ul {
+    margin: 8px 0 12px 20px;
+  }
+  li { margin-bottom: 6px; }
+  .code-block {
+    background: #f4f4f4;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-family: "SF Mono", Menlo, Monaco, monospace;
+    font-size: 0.85rem;
+    overflow-x: auto;
+    margin: 12px 0;
+  }
+  .stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .stat {
+    background: #f7f9fa;
+    border: 1px solid #e4e6eb;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.9rem;
+    flex: 1 1 120px;
+  }
+  .stat strong { color: #1877f2; }
+  .rule {
+    background: #f7f9fa;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 6px 0;
+    font-size: 0.9rem;
+  }
+  .before-after {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .col {
+    background: #f7f9fa;
+    border-radius: 8px;
+    padding: 14px;
+  }
+  .col h3 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+  }
+  .col.before h3 { color: #e02433; }
+  .col.after h3 { color: #2e9b2e; }
+  .col ul { margin: 0; list-style: none; }
+  .col li { padding: 3px 0; }
+  .conclusion {
+    background: #e8f0fe;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 16px 0 12px;
+    font-size: 0.95rem;
+  }
+  .bottom-line {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #050505;
+    margin: 16px 0;
+  }
+  .tags {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #e4e6eb;
+  }
+  .tag {
+    display: inline-block;
+    background: #f0f2f5;
+    color: #65676b;
+    font-size: 0.85rem;
+    padding: 4px 10px;
+    border-radius: 12px;
+    margin: 3px 3px 0 0;
+  }
+  .divider {
+    border: none;
+    border-top: 1px solid #e4e6eb;
+    margin: 20px 0;
+  }
+  .privacy-note {
+    background: #f7f9fa;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    color: #65676b;
+    margin: 12px 0;
+  }
+  @media (max-width: 480px) {
+    .before-after { grid-template-columns: 1fr; }
+    .card { padding: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="card">
+  <h1>OpenClaw 智能助理 — 記憶系統升級分享</h1>
+
+  <p>過去一段時間，用 AI 助手幫我做嘢，最大嘅痛苦係：</p>
+
+  <p class="pain">「用完就唔記得。」</p>
+
+  <p>今個禮拜同佢做咗嘢，下個禮拜佢唔記得。上個月做咗決定，呢個月佢當冇發生過。唔同嘅 session 之間，佢唔記得我係邊個，唔記得我做過乜，唔記得我想要乜。</p>
+
+  <p>你知唔知嗰種感覺？就係每次打開對話框，都係一張白紙。就算係同一個項目，上次嘅 context 全部蒸發咗。</p>
+
+  <p><strong>呢個，就係我過去一段時間面對嘅記憶問題。</strong></p>
+</div>
+
+<div class="card">
+  <h2>我哋點解要整呢個系統？</h2>
+
+  <p>OpenClaw 係我嘅 AI 助手，幫我管理日常工作、coding、甚至決策。但係：</p>
+
+  <ul>
+    <li>記憶碎片化 — 唔同嘅 task、唔同嘅 agent，個個都係孤島</li>
+    <li>重要決定被忘記 — 幾個月前確認咗嘅方向，再問佢就唔記得</li>
+    <li>handoff 混亂 — 個個 agent 做完嘢，下一個要由頭理解一次</li>
+    <li>冇 trace — 佢幾個禮拜前嘅理解，同而家嘅唔一致，但係冇辦法知道幾時改咗</li>
+  </ul>
+
+  <p>你可能覺得，加多用戶 prompt，加多 memory 文件就得。但係當你嘅 agent 多過一個，每個都話自己係專家，你就會知道，記憶管理唔係加幾行文字咁簡單。</p>
+
+  <div class="highlight"><strong>你需要架構。</strong></div>
+</div>
+
+<div class="card">
+  <h2>我哋整咗乜？</h2>
+
+  <p>過去幾日，我哋重新架構咗成個記憶系統，唔係小修小補。</p>
+
+  <h3>底層架構</h3>
+  <ul>
+    <li>11 張 SQLite 資料庫表格，用於 pipeline、訊息、handoffs、cache</li>
+    <li>3 層 cache 架構：代理工作緩存、stage snapshot cache、共享實體記憶</li>
+    <li>自動 flush + debounce 機制，確保資料寫入唔會丢失</li>
+    <li>5,000+ 行代碼，所有自動化測試皆通過（176 個測試）</li>
+  </ul>
+
+  <h3>記憶系統分層（Trust-Ordered）</h3>
+  <div class="code-block">1. MEMORY.md — 最高信任，官方事實
+2. 結構化 handoff 文件 — 當前工作階段關鍵資訊
+3. 已確認可重用的記憶 — 已批准的事實/決定
+4. daily logs — 存檔/參考，無需第一時間讀取</div>
+
+  <h3>關鍵數字</h3>
+  <div class="stats">
+    <div class="stat">📊 <strong>5 日</strong>完成</div>
+    <div class="stat">📝 <strong>11 張</strong>DB 表格</div>
+    <div class="stat">📂 <strong>212KB</strong>DB</div>
+    <div class="stat">🧪 <strong>176 個</strong>測試通過</div>
+    <div class="stat">📋 <strong>12 條</strong>運作規則</div>
+    <div class="stat">🔍 <strong>語義搜索</strong>已整合</div>
+  </div>
+
+  <div class="privacy-note">所有記憶數據由用戶控制，儲存在本地。</div>
+
+  <h3>運作規則</h3>
+  <div class="rule">• 任何 agent 讀取記憶，必須按信任層次優先順序</div>
+  <div class="rule">• 只有主要助理可以更新 MEMORY.md</div>
+  <div class="rule">• Worker agent 唔可以直接寫 official truth</div>
+  <div class="rule">• 重要嘅記憶變更，必須留低 changelog</div>
+
+  <h3>實際功能</h3>
+  <div class="rule">• 每次新 session 開始，自動檢查所有記憶源是否可讀</div>
+  <div class="rule">• 任務切換時，自動 load 上個 stage 嘅結構化 handoff</div>
+  <div class="rule">• 重要決定被糾正時，寫入 changelog，唔會再靜靜雞消失</div>
+  <div class="rule">• 記憶大小控制 — 保持 MEMORY.md 短小，易於維護</div>
+</div>
+
+<div class="card">
+  <h2>對我意味着乜？</h2>
+
+  <div class="before-after">
+    <div class="col before">
+      <h3>之前</h3>
+      <ul>
+        <li>每次打開 chat，助理係陌生人</li>
+        <li>兩週前確認嘅方向，下週變成未知</li>
+        <li>Worker agent output 做完就冇</li>
+      </ul>
+    </div>
+    <div class="col after">
+      <h3>之後</h3>
+      <ul>
+        <li>記憶係持續嘅、有層次嘅、有 trace 嘅</li>
+        <li>助理知道我係邊個，記得我嘅項目</li>
+        <li>重要決定有 changelog，可以追蹤</li>
+      </ul>
+    </div>
+  </div>
+
+  <p>你問我係幾時開始信任呢個系統？</p>
+
+  <p>係第一次我發現，記憶變更咗，但係我查得到幾時改、點解改、邊個改嗰刻。</p>
+
+  <div class="conclusion">
+    <strong>訊息雜訊減少，核心訊號保留。</strong>
+  </div>
+
+  <hr class="divider">
+
+  <p>如果你用緊 OpenClaw，或者考慮緊用 — 記憶系統係呢個平台最核心嘅功能之一，但係最容易被低估。</p>
+
+  <p class="bottom-line">有架構嘅記憶，唔只係「記得更多」。<br>係「記得啱嘅嘢，跟住佢，唔會靜靜雞走咗去」。</p>
+
+  <p class="privacy-note" style="margin-top: 12px;">此功能已透過內部品質管控與自動化測試驗證。</p>
+
+  <div class="tags">
+    <span class="tag">#AI助手</span>
+    <span class="tag">#OpenClaw</span>
+    <span class="tag">#記憶管理</span>
+    <span class="tag">#個人生產力</span>
+    <span class="tag">#智能助理</span>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
