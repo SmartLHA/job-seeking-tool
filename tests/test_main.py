@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.main import main
+from src.job_hunt_main import main
 
 
 def _write_profile(tmp_path: Path) -> Path:

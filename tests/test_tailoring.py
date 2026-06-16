@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.config import TailoringPolicy
-from src.evaluation import evaluate_reviewed_job
-from src.models import CandidateProfile, JobAnalysis, JobPosting, ScoreBreakdown, ScoreComponent
-from src.tailoring import (
+from src.job_hunt_config import TailoringPolicy
+from src.job_hunt_evaluation import evaluate_reviewed_job
+from src.job_hunt_models import CandidateProfile, JobAnalysis, JobPosting, ScoreBreakdown, ScoreComponent, Skill, TailoredCVResult
+from src.job_hunt_tailoring import (
     save_tailored_cv,
     select_relevant_evidence,
     tailor_cv,
@@ -22,7 +22,7 @@ def build_profile() -> CandidateProfile:
         remote_preference="remote_friendly",
         salary_floor_gbp=50000,
         right_to_work_uk=True,
-        skills=["Stakeholder Management", "SQL", "Power BI", "Agile"],
+        skills=[Skill(name="Stakeholder Management"), Skill(name="SQL"), Skill(name="Power BI"), Skill(name="Agile")],
         years_experience=5,
         industries=["finance"],
         achievements=["Improved reporting workflow by 20%"],
@@ -105,11 +105,12 @@ def test_select_relevant_evidence_never_uses_achievements_or_certifications() ->
 
 
 def test_tailor_cv_builds_ats_friendly_output_without_inventing_sections() -> None:
-    tailored = tailor_cv(
+    result = tailor_cv(
         "# Master CV\n\nBusiness analysis delivery.",
         ["Required skill: SQL", "Preferred skill: Power BI", "Experience: 5 years"],
         build_job(),
     )
+    tailored = result.markdown
 
     assert "# Tailored CV - Business Analyst" in tailored
     assert "## Matching Evidence" in tailored
@@ -121,13 +122,13 @@ def test_tailor_cv_builds_ats_friendly_output_without_inventing_sections() -> No
 def test_validate_tailored_cv_accepts_supported_output_only() -> None:
     profile = build_profile()
     original_cv = "# Master CV\n\nBusiness analysis delivery."
-    tailored = tailor_cv(
+    result = tailor_cv(
         original_cv,
         ["Required skill: SQL", "Preferred skill: Power BI", "Experience: 5 years"],
         build_job(),
     )
 
-    assert validate_tailored_cv(original_cv, tailored, profile) is True
+    assert validate_tailored_cv(original_cv, result, profile) is True
 
 
 def test_validate_tailored_cv_rejects_invented_skill_or_modified_base_cv() -> None:
@@ -150,14 +151,53 @@ Keywords: Python
 
 Business analysis delivery.
 """
-    modified_base_cv = tailor_cv(
+    modified_base_cv_result = tailor_cv(
         original_cv,
         ["Required skill: SQL", "Experience: 5 years"],
         build_job(),
-    ).replace("Business analysis delivery.", "Business analysis delivery with cloud architecture.")
+    )
+    modified_base_cv_md = modified_base_cv_result.markdown.replace(
+        "Business analysis delivery.", "Business analysis delivery with cloud architecture."
+    )
 
     assert validate_tailored_cv(original_cv, invalid_skill, profile) is False
-    assert validate_tailored_cv(original_cv, modified_base_cv, profile) is False
+    assert validate_tailored_cv(original_cv, modified_base_cv_md, profile) is False
+
+
+def test_validate_tailored_cv_rejects_unexpected_generated_section_before_base_cv() -> None:
+    profile = build_profile()
+    original_cv = "# Master CV\n\nBusiness analysis delivery."
+    tailored_result = tailor_cv(original_cv, ["Required skill: SQL"], build_job())
+    tailored_md = tailored_result.markdown.replace(
+        "## Base CV",
+        "## Hidden Claims\n- Certified cloud architect\n\n## Base CV",
+    )
+
+    assert validate_tailored_cv(original_cv, tailored_md, profile) is False
+
+
+def test_validate_tailored_cv_rejects_extra_unsupported_ats_keyword_lines() -> None:
+    profile = build_profile()
+    original_cv = "# Master CV\n\nBusiness analysis delivery."
+    tailored_result = tailor_cv(original_cv, ["Required skill: SQL"], build_job())
+    tailored_md = tailored_result.markdown.replace(
+        "Keywords: SQL",
+        "Keywords: SQL\n- Cloud architecture",
+    )
+
+    assert validate_tailored_cv(original_cv, tailored_md, profile) is False
+
+
+def test_validate_tailored_cv_rejects_malformed_role_target_content() -> None:
+    profile = build_profile()
+    original_cv = "# Master CV\n\nBusiness analysis delivery."
+    tailored_result = tailor_cv(original_cv, ["Required skill: SQL"], build_job())
+    tailored_md = tailored_result.markdown.replace(
+        "- Job title: Business Analyst",
+        "- Target role: Business Analyst",
+    )
+
+    assert validate_tailored_cv(original_cv, tailored_md, profile) is False
 
 
 def test_save_tailored_cv_writes_output_in_expected_location(tmp_path: Path) -> None:
@@ -170,6 +210,97 @@ def test_save_tailored_cv_writes_output_in_expected_location(tmp_path: Path) -> 
 
     assert output_path == tmp_path / "output" / "tailored_cvs" / "job-123.md"
     assert "profile_id: cand-001" in output_path.read_text(encoding="utf-8")
+
+
+def test_tailor_cv_returns_tailored_cv_result() -> None:
+    result = tailor_cv(
+        "# Master CV\n\nBusiness analysis delivery.",
+        ["Required skill: SQL"],
+        build_job(),
+    )
+
+    assert isinstance(result, TailoredCVResult)
+
+
+def test_tailor_cv_summary_is_non_empty_string() -> None:
+    result = tailor_cv(
+        "# Master CV\n\nBusiness analysis delivery.",
+        ["Required skill: SQL"],
+        build_job(),
+        profile=build_profile(),
+    )
+
+    assert isinstance(result.summary, str)
+    assert len(result.summary.strip()) > 0
+
+
+def test_tailor_cv_promoted_contains_required_skill_bullets() -> None:
+    result = tailor_cv(
+        "# Master CV\n\nBusiness analysis delivery.",
+        ["Required skill: SQL", "Required skill: Stakeholder Management"],
+        build_job(),
+    )
+
+    # The markdown has "- Required skill: SQL" and "- Required skill: Stakeholder Management" bullets
+    # which contain the required skill keywords "SQL" and "stakeholder management"
+    assert len(result.promoted) > 0
+    assert any("SQL" in bullet or "sql" in bullet.lower() for bullet in result.promoted)
+
+
+def test_tailor_cv_matched_keywords_appear_in_markdown() -> None:
+    result = tailor_cv(
+        "# Master CV\n\nBusiness analysis delivery.",
+        ["Required skill: SQL", "Preferred skill: Power BI", "Experience: 5 years"],
+        build_job(),
+    )
+
+    for kw in result.matched:
+        assert kw.lower() in result.markdown.lower(), f"Matched keyword '{kw}' not found in markdown"
+
+
+def test_tailor_cv_missing_keywords_absent_from_markdown() -> None:
+    result = tailor_cv(
+        "# Master CV\n\nBusiness analysis delivery.",
+        ["Required skill: SQL", "Preferred skill: Power BI", "Experience: 5 years"],
+        build_job(),
+    )
+
+    for kw in result.missing:
+        assert kw.lower() not in result.markdown.lower(), f"Missing keyword '{kw}' found in markdown"
+
+
+def test_validate_tailored_cv_accepts_valid_result() -> None:
+    profile = build_profile()
+    original_cv = "# Master CV\n\nBusiness analysis delivery."
+    result = tailor_cv(
+        original_cv,
+        ["Required skill: SQL", "Preferred skill: Power BI", "Experience: 5 years"],
+        build_job(),
+        profile=profile,
+    )
+
+    assert validate_tailored_cv(original_cv, result, profile) is True
+
+
+def test_validate_tailored_cv_rejects_result_with_invented_summary() -> None:
+    profile = build_profile()
+    original_cv = "# Master CV\n\nBusiness analysis delivery."
+    result = tailor_cv(
+        original_cv,
+        ["Required skill: SQL"],
+        build_job(),
+        profile=profile,
+    )
+    # Replace the summary with an invented claim
+    invented_result = TailoredCVResult(
+        summary="",  # Empty summary should fail validation
+        promoted=result.promoted,
+        matched=result.matched,
+        missing=result.missing,
+        markdown=result.markdown,
+    )
+
+    assert validate_tailored_cv(original_cv, invented_result, profile) is False
 
 
 def test_evaluate_reviewed_job_allows_manual_review_selection_to_unlock_tailoring() -> None:

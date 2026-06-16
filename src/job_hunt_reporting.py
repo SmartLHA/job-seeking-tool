@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from src.models import ApplicationOutcome, JobAnalysis, JobPosting
+from src.job_hunt_models import ApplicationOutcome, JobAnalysis, JobPosting
 
 
 class ReportingError(ValueError):
@@ -32,6 +32,8 @@ class EvaluatedJobReportRow:
     confidence: str
     decision: str
     decision_reason: str
+    engine_decision: str
+    user_decision: str | None
     blockers: list[str]
     risk_flags: list[str]
     strengths: list[str]
@@ -74,6 +76,8 @@ def build_evaluated_job_report_row(
         confidence=analysis.confidence,
         decision=analysis.decision,
         decision_reason=analysis.decision_reason,
+        engine_decision=analysis.decision,
+        user_decision=analysis.user_decision,
         blockers=[blocker.label for blocker in analysis.blockers],
         risk_flags=[risk.label for risk in analysis.risk_flags],
         strengths=list(analysis.strengths),
@@ -153,6 +157,8 @@ def report_row_to_flat_dict(row: EvaluatedJobReportRow) -> dict[str, Any]:
         "confidence": row.confidence,
         "decision": row.decision,
         "decision_reason": row.decision_reason,
+        "engine_decision": row.engine_decision,
+        "user_decision": row.user_decision,
         "blockers": "; ".join(row.blockers),
         "risk_flags": "; ".join(row.risk_flags),
         "strengths": "; ".join(row.strengths),
@@ -183,6 +189,8 @@ def _empty_report_row() -> EvaluatedJobReportRow:
         confidence="",
         decision="",
         decision_reason="",
+        engine_decision="",
+        user_decision=None,
         blockers=[],
         risk_flags=[],
         strengths=[],

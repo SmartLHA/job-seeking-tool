@@ -1,4 +1,6 @@
-from src.models import (
+import pytest
+
+from src.job_hunt_models import (
     Blocker,
     CandidateProfile,
     JobAnalysis,
@@ -6,6 +8,8 @@ from src.models import (
     RiskFlag,
     ScoreBreakdown,
     ScoreComponent,
+    Skill,
+    effective_decision,
 )
 
 
@@ -134,3 +138,78 @@ def test_job_analysis_rejects_out_of_range_match_score() -> None:
         assert "match_score" in str(exc)
     else:
         raise AssertionError("Expected invalid match_score to raise ValueError")
+
+
+# --- Skill dataclass tests ---
+
+def test_skill_defaults() -> None:
+    s = Skill(name="Python")
+    assert s.name == "Python"
+    assert s.level == "unspecified"
+    assert s.years is None
+    assert s.evidence_type == "self-reported"
+
+
+def test_skill_rejects_empty_name() -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        Skill(name="   ")
+
+
+def test_skill_rejects_invalid_level() -> None:
+    with pytest.raises(ValueError, match="Invalid skill level"):
+        Skill(name="Python", level="beginner")
+
+
+def test_skill_rejects_invalid_evidence_type() -> None:
+    with pytest.raises(ValueError, match="Invalid evidence_type"):
+        Skill(name="Python", evidence_type="certified")
+
+
+def test_skill_rejects_negative_years() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        Skill(name="Python", years=-1)
+
+
+def test_skill_accepts_valid_fields() -> None:
+    s = Skill(name="SQL", level="senior", years=7, evidence_type="evidenced")
+    assert s.level == "senior"
+    assert s.years == 7
+    assert s.evidence_type == "evidenced"
+
+
+# --- user_decision / effective_decision tests ---
+
+def test_job_analysis_user_decision_defaults_to_none() -> None:
+    analysis = JobAnalysis(
+        job_id="job-001",
+        match_score=80,
+        score_breakdown=build_score_breakdown(),
+        decision="apply",
+        decision_reason="Good fit",
+    )
+    assert analysis.user_decision is None
+    assert analysis.user_decision_note is None
+
+
+def test_effective_decision_returns_engine_when_no_override() -> None:
+    analysis = JobAnalysis(
+        job_id="job-001",
+        match_score=80,
+        score_breakdown=build_score_breakdown(),
+        decision="apply",
+        decision_reason="Good fit",
+        user_decision=None,
+    )
+    assert effective_decision(analysis) == "apply"
+
+
+def test_effective_decision_returns_user_override_when_set() -> None:
+    analysis = JobAnalysis(
+        job_id="job-001",
+        match_score=80,
+        score_breakdown=build_score_breakdown(),
+        decision="apply",
+        decision_reason="Good fit",
+        user_decision="skip",
+    )
+    assert effective_decision(analysis) == "skip"

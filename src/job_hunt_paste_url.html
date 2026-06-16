@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Add Job — URL Pre-fill</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f7f8fa;
+      color: #1a1a2e;
+      margin: 0;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    h1 { font-size: 1.4rem; margin-bottom: 20px; }
+
+    /* ── URL input card ─────────────────────────────────────── */
+    .url-card {
+      background: #fff;
+      border: 1.5px solid #d0d7de;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+
+    .url-card h2 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin: 0 0 12px;
+      color: #444;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    .url-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    input[type="url"], input[type="text"], textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1.5px solid #d0d7de;
+      border-radius: 7px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+    input[type="url"]:focus, input[type="text"]:focus, textarea:focus {
+      border-color: #4f46e5;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+      font-family: inherit;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 7px;
+      border: none;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .2s, opacity .2s;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: #4f46e5;
+      color: #fff;
+    }
+    .btn-primary:hover { background: #4338ca; }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: #e4e7eb;
+      color: #333;
+    }
+    .btn-secondary:hover { background: #d0d7de; }
+
+    .btn-success {
+      background: #16a34a;
+      color: #fff;
+    }
+    .btn-success:hover { background: #15803d; }
+    .btn-success:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ── Error / status banner ────────────────────────────────── */
+    .status-msg {
+      padding: 10px 14px;
+      border-radius: 7px;
+      font-size: 0.875rem;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .status-msg.error {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fca5a5;
+      display: block;
+    }
+    .status-msg.info {
+      background: #eff6ff;
+      color: #1e40af;
+      border: 1px solid #93c5fd;
+      display: block;
+    }
+    .status-msg.loading {
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #d1d5db;
+      display: block;
+    }
+
+    /* ── Form fields card ─────────────────────────────────────── */
+    .fields-card {
+      background: #fff;
+      border: 1.5px solid #d0d7de;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+      display: none;
+    }
+    .fields-card.visible { display: block; }
+
+    .fields-card h2 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin: 0 0 16px;
+      color: #444;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .form-grid .full { grid-column: 1 / -1; }
+    .field label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .field input, .field textarea {
+      font-size: 0.9rem;
+    }
+
+    /* ── Source badge ─────────────────────────────────────────── */
+    .source-badge {
+      display: inline-block;
+      background: #eef2ff;
+      color: #4338ca;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      margin-bottom: 14px;
+    }
+
+    /* ── Skills tags ─────────────────────────────────────────── */
+    .skills-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+    .skill-tag {
+      background: #e0e7ff;
+      color: #3730a3;
+      font-size: 0.78rem;
+      font-weight: 500;
+      padding: 3px 9px;
+      border-radius: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <h1>➕ Add Job</h1>
+
+  <!-- ── URL input ─────────────────────────────────────────── -->
+  <div class="url-card">
+    <h2>Paste a job URL</h2>
+    <div class="url-row">
+      <input type="url" id="url-input"
+             placeholder="https://www.indeed.com/job/..." />
+      <button class="btn btn-primary" id="parse-url-btn" onclick="parseURL()">
+        Paste &amp; Parse
+      </button>
+    </div>
+
+    <!-- Fallback: paste text directly -->
+    <div style="margin-top:12px; border-top:1px solid #eee; padding-top:12px;">
+      <p style="margin:0 0 8px; font-size:0.85rem; color:#666;">
+        Or paste job description text directly:
+      </p>
+      <textarea id="text-input" placeholder="Paste job description here..."></textarea>
+      <div style="margin-top:8px; text-align:right;">
+        <button class="btn btn-secondary" id="parse-text-btn" onclick="parseText()">
+          Parse Text
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Status message ─────────────────────────────────────── -->
+  <div id="status-msg" class="status-msg"></div>
+
+  <!-- ── Parsed fields form ─────────────────────────────────── -->
+  <div class="fields-card" id="fields-card">
+    <h2>Review &amp; Edit</h2>
+
+    <div id="source-badge" class="source-badge" style="display:none;"></div>
+
+    <div class="form-grid">
+      <div class="field full">
+        <label>Job Title</label>
+        <input type="text" id="f-job_title" />
+      </div>
+      <div class="field">
+        <label>Company</label>
+        <input type="text" id="f-company" />
+      </div>
+      <div class="field">
+        <label>Location</label>
+        <input type="text" id="f-location" />
+      </div>
+      <div class="field">
+        <label>Salary Min (£)</label>
+        <input type="text" id="f-salary_min" />
+      </div>
+      <div class="field">
+        <label>Salary Max (£)</label>
+        <input type="text" id="f-salary_max" />
+      </div>
+      <div class="field">
+        <label>Work Mode</label>
+        <input type="text" id="f-work_mode" placeholder="remote / hybrid / onsite" />
+      </div>
+      <div class="field">
+        <label>Employment Type</label>
+        <input type="text" id="f-employment_type" />
+      </div>
+      <div class="field">
+        <label>Required Years Exp.</label>
+        <input type="text" id="f-required_years" />
+      </div>
+      <div class="field full" id="f-skills-wrap">
+        <label>Required Skills</label>
+        <div class="skills-wrap" id="skills-display"></div>
+      </div>
+      <div class="field full">
+        <label>Original URL</label>
+        <input type="text" id="f-url" />
+      </div>
+      <div class="field full">
+        <label>Job Description</label>
+        <textarea id="f-description" rows="8"></textarea>
+      </div>
+    </div>
+
+    <div style="margin-top:16px; display:flex; gap:10px; justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="clearForm()">Clear</button>
+      <button class="btn btn-success" id="submit-btn" onclick="submitJob()">
+        ✅ Submit Job
+      </button>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+  const STATUS = document.getElementById('status-msg');
+  const FIELDS = document.getElementById('fields-card');
+
+  function setStatus(msg, type) {
+    STATUS.className = 'status-msg ' + type;
+    STATUS.textContent = msg;
+  }
+  function clearStatus() { STATUS.className = 'status-msg'; STATUS.textContent = ''; }
+
+  function showLoading(on) {
+    document.getElementById('parse-url-btn').disabled = on;
+    document.getElementById('parse-text-btn').disabled = on;
+  }
+
+  /* ── Parse URL ─────────────────────────────────────────────── */
+  async function parseURL() {
+    const url = document.getElementById('url-input').value.trim();
+    if (!url) { setStatus('Please enter a job URL.', 'error'); return; }
+    clearStatus();
+    setStatus('Fetching & parsing…', 'loading');
+    showLoading(true);
+    try {
+      const resp = await fetch('/api/url-parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Parse failed');
+      populateForm(data, url);
+    } catch (e) {
+      setStatus('Error: ' + e.message, 'error');
+    } finally {
+      showLoading(false);
+    }
+  }
+
+  /* ── Parse pasted text ──────────────────────────────────────── */
+  async function parseText() {
+    const text = document.getElementById('text-input').value.trim();
+    if (!text) { setStatus('Please paste some job text first.', 'error'); return; }
+    clearStatus();
+    setStatus('Parsing…', 'loading');
+    showLoading(true);
+    try {
+      const resp = await fetch('/api/text-parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Parse failed');
+      populateForm(data, '');
+    } catch (e) {
+      setStatus('Error: ' + e.message, 'error');
+    } finally {
+      showLoading(false);
+    }
+  }
+
+  /* ── Populate form fields ──────────────────────────────────── */
+  function populateForm(data, url) {
+    clearStatus();
+    FIELDS.classList.add('visible');
+
+    setField('f-job_title', data.job_title);
+    setField('f-company', data.company);
+    setField('f-location', data.location);
+    setField('f-salary_min', data.salary_min_gbp);
+    setField('f-salary_max', data.salary_max_gbp);
+    setField('f-work_mode', data.work_mode || '');
+    setField('f-employment_type', data.employment_type || '');
+    setField('f-required_years', data.required_years_experience || '');
+    setField('f-url', url || data.source_ref || '');
+    setField('f-description', data.description_raw || '');
+
+    // Skills
+    const skillsEl = document.getElementById('skills-display');
+    skillsEl.innerHTML = '';
+    (data.required_skills || []).forEach(s => {
+      const tag = document.createElement('span');
+      tag.className = 'skill-tag';
+      tag.textContent = s;
+      skillsEl.appendChild(tag);
+    });
+
+    // Source badge
+    const badge = document.getElementById('source-badge');
+    if (data.source_ref) {
+      badge.style.display = 'inline-block';
+      badge.textContent = 'Source: ' + data.source_ref;
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  function setField(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.value = (val !== null && val !== undefined) ? String(val) : '';
+  }
+
+  /* ── Submit ────────────────────────────────────────────────── */
+  async function submitJob() {
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    clearStatus();
+    setStatus('Saving…', 'loading');
+    try {
+      const payload = {
+        job_title: val('f-job_title'),
+        company:   val('f-company'),
+        location:  val('f-location'),
+        salary_min_gbp: parseFloat(val('f-salary_min')) || null,
+        salary_max_gbp: parseFloat(val('f-salary_max')) || null,
+        work_mode:  val('f-work_mode') || null,
+        employment_type: val('f-employment_type') || null,
+        required_years_experience: parseFloat(val('f-required_years')) || null,
+        required_skills: getSkills(),
+        description_raw: val('f-description'),
+        source_ref: val('f-url') || null,
+      };
+
+      const resp = await fetch('/api/job-submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Submit failed');
+
+      setStatus('✅ Job saved: ' + data.job_id, 'info');
+      // Reset form
+      setTimeout(() => { clearForm(); }, 2000);
+    } catch (e) {
+      setStatus('Error: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function val(id) {
+    const el = document.getElementById(id);
+    return el ? el.value.trim() : '';
+  }
+
+  function getSkills() {
+    const tags = document.getElementById('skills-display').querySelectorAll('.skill-tag');
+    return Array.from(tags).map(t => t.textContent.trim());
+  }
+
+  function clearForm() {
+    FIELDS.classList.remove('visible');
+    document.getElementById('url-input').value = '';
+    document.getElementById('text-input').value = '';
+    clearStatus();
+  }
+</script>
+
+</body>
+</html>

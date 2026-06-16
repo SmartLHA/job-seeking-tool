@@ -4,7 +4,26 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src.models import CandidateProfile
+from src.job_hunt_models import CandidateProfile, Skill, VALID_SKILL_LEVELS, VALID_EVIDENCE_TYPES
+
+
+def parse_cv_file(path: Path) -> str:
+    """Extract text from .txt, .pdf, .docx files."""
+    suffix = path.suffix.lower()
+    if suffix == ".txt":
+        return path.read_text(encoding="utf-8", errors="replace")
+    elif suffix == ".pdf":
+        from pypdf import PdfReader
+
+        reader = PdfReader(path)
+        return "\n".join(page.extract_text() for page in reader.pages)
+    elif suffix == ".docx":
+        from docx import Document
+
+        doc = Document(path)
+        return "\n".join(p.text for p in doc.paragraphs)
+    else:
+        raise ValueError(f"Unsupported file type: {suffix}")
 
 
 class ProfileValidationError(ValueError):
@@ -17,7 +36,6 @@ class ProfileValidationError(ValueError):
 REQUIRED_PROFILE_LIST_FIELDS = (
     "target_roles",
     "locations",
-    "skills",
     "industries",
     "achievements",
     "certifications",
@@ -36,6 +54,7 @@ OPTIONAL_PROFILE_FIELDS = {
     "achievements",
     "certifications",
     "master_cv_ref",
+    "master_cv_text",
 }
 
 
@@ -81,9 +100,12 @@ def candidate_profile_from_dict(
         for field_name in REQUIRED_PROFILE_LIST_FIELDS
     }
 
+    skills = _load_skills(payload.get("skills", []))
+
     name = _optional_string(payload.get("name"), "name")
     remote_preference = _optional_string(payload.get("remote_preference"), "remote_preference")
     master_cv_ref = _optional_string(payload.get("master_cv_ref"), "master_cv_ref")
+    master_cv_text = _optional_text_or_empty(payload.get("master_cv_text"), "master_cv_text")
     salary_floor_gbp = _optional_non_negative_int(payload.get("salary_floor_gbp"), "salary_floor_gbp")
     right_to_work_uk = _optional_bool(payload.get("right_to_work_uk"), "right_to_work_uk")
     years_experience = _optional_non_negative_float(
@@ -98,12 +120,13 @@ def candidate_profile_from_dict(
         remote_preference=remote_preference,
         salary_floor_gbp=salary_floor_gbp,
         right_to_work_uk=right_to_work_uk,
-        skills=normalised_lists["skills"],
+        skills=skills,
         years_experience=years_experience,
         industries=normalised_lists["industries"],
         achievements=normalised_lists["achievements"],
         certifications=normalised_lists["certifications"],
         master_cv_ref=master_cv_ref,
+        master_cv_text=master_cv_text,
     )
 
     if source_path is not None and profile.master_cv_ref:
@@ -121,12 +144,13 @@ def candidate_profile_to_dict(profile: CandidateProfile) -> dict[str, Any]:
         "remote_preference": profile.remote_preference,
         "salary_floor_gbp": profile.salary_floor_gbp,
         "right_to_work_uk": profile.right_to_work_uk,
-        "skills": profile.skills,
+        "skills": [_skill_to_dict(s) for s in profile.skills],
         "years_experience": profile.years_experience,
         "industries": profile.industries,
         "achievements": profile.achievements,
         "certifications": profile.certifications,
         "master_cv_ref": profile.master_cv_ref,
+        "master_cv_text": profile.master_cv_text,
     }
 
 
@@ -177,6 +201,45 @@ def _read_json_file(path: str | Path) -> dict[str, Any]:
     return raw_payload
 
 
+def _coerce_skill(raw: Any) -> Skill:
+    """Coerce a plain string or dict into a Skill. Raises ProfileValidationError on bad input."""
+    if isinstance(raw, str):
+        name = raw.strip()
+        if not name:
+            raise ProfileValidationError("skills contains an empty string entry")
+        return Skill(name=name)
+    if isinstance(raw, dict):
+        if "name" not in raw:
+            raise ProfileValidationError(f"skill dict missing 'name' key: {raw!r}")
+        known_keys = {"name", "level", "years", "evidence_type"}
+        filtered = {k: v for k, v in raw.items() if k in known_keys}
+        try:
+            return Skill(**filtered)
+        except (TypeError, ValueError) as exc:
+            raise ProfileValidationError(f"invalid skill entry {raw!r}: {exc}") from exc
+    raise ProfileValidationError(
+        f"invalid skill entry type {type(raw).__name__!r}: {raw!r}; expected str or dict"
+    )
+
+
+def _load_skills(value: Any) -> list[Skill]:
+    """Load the skills list from raw payload, coercing strings and dicts."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ProfileValidationError("skills must be a list")
+    return [_coerce_skill(item) for item in value]
+
+
+def _skill_to_dict(skill: Skill) -> dict[str, Any]:
+    return {
+        "name": skill.name,
+        "level": skill.level,
+        "years": skill.years,
+        "evidence_type": skill.evidence_type,
+    }
+
+
 def _normalise_string_list(value: Any, field_name: str) -> list[str]:
     if value is None:
         return []
@@ -203,6 +266,15 @@ def _optional_string(value: Any, field_name: str) -> str | None:
     if not cleaned:
         raise ProfileValidationError(f"{field_name} must not be empty when provided")
     return cleaned
+
+
+def _optional_text_or_empty(value: Any, field_name: str) -> str | None:
+    """Return stripped string or None for optional text fields; allow empty strings."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ProfileValidationError(f"{field_name} must be a string when provided")
+    return value or None
 
 
 def _optional_non_negative_int(value: Any, field_name: str) -> int | None:

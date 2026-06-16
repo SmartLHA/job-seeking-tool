@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.models import ApplicationOutcome
-from src.outcomes import (
+from src.job_hunt_models import ApplicationOutcome
+from src.job_hunt_outcomes import (
     ALLOWED_OUTCOME_STATUSES,
     OutcomeValidationError,
     create_outcome_record,

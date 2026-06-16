@@ -5,7 +5,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from src.models import (
+from src.job_hunt_models import (
     ApplicationOutcome,
     Blocker,
     JobAnalysis,
@@ -14,8 +14,8 @@ from src.models import (
     ScoreBreakdown,
     ScoreComponent,
 )
-from src.outcomes import outcome_from_dict, outcome_to_dict
-from src.reviewed_input import reviewed_job_from_dict, reviewed_job_to_dict
+from src.job_hunt_outcomes import outcome_from_dict, outcome_to_dict
+from src.job_hunt_reviewed_input import reviewed_job_from_dict, reviewed_job_to_dict
 
 
 class StorageError(ValueError):
@@ -167,6 +167,9 @@ def job_analysis_from_dict(payload: dict[str, Any], *, job_id: str | None = None
             confidence=_required_string(payload.get("confidence"), "confidence"),
             tailoring_ready=_optional_bool(payload.get("tailoring_ready"), "tailoring_ready"),
             tailoring_notes=_optional_string(payload.get("tailoring_notes"), "tailoring_notes"),
+            ats_score=_optional_int(payload.get("ats_score"), "ats_score"),
+            user_decision=_optional_string(payload.get("user_decision"), "user_decision"),
+            user_decision_note=_optional_string(payload.get("user_decision_note"), "user_decision_note"),
         )
     except (TypeError, ValueError) as exc:
         raise StorageError(f"invalid analysis payload: {exc}") from exc
@@ -253,6 +256,14 @@ def _required_number(value: Any, field_name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise StorageError(f"{field_name} must be numeric")
     return float(value)
+
+
+def _optional_int(value: Any, field_name: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise StorageError(f"{field_name} must be an integer when provided")
+    return value
 
 
 def _optional_bool(value: Any, field_name: str) -> bool | None:

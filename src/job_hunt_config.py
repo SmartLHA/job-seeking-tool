@@ -67,7 +67,19 @@ class DecisionPolicy:
     )
 
 
-DEFAULT_DECISION_POLICY = DecisionPolicy()
+DEFAULT_DECISION_POLICY = DecisionPolicy(
+    critical_risk_codes=frozenset(
+        {
+            "missing-required-skills",
+            "salary-below-floor",
+            "marginal-source-quality",
+        }
+    )
+)
+
+
+SOURCE_QUALITY_SKIP_THRESHOLD: int = 40
+SOURCE_QUALITY_REVIEW_THRESHOLD: int = 70
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,4 +91,16 @@ class TailoringPolicy:
 
 
 DEFAULT_TAILORING_POLICY = TailoringPolicy()
+
+
+# Sources that are fully wired end-to-end (fetch + normalise + orchestrator)
+# Add a source here only when its client and orchestrator path are complete and tested.
+ENABLED_SOURCES: list[str] = ["Reed"]
+
+
+def get_enabled_sources() -> list[str]:
+    """Return the list of currently enabled job sources."""
+    return list(ENABLED_SOURCES)
+
+
 __all__ = ["ScoringWeights"]

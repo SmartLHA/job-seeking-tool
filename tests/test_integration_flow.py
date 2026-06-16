@@ -3,18 +3,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.evaluation import evaluate_reviewed_job
-from src.models import Blocker, CandidateProfile
-from src.outcomes import create_outcome_record, update_outcome
-from src.profile import load_candidate_profile, resolve_master_cv_path, save_candidate_profile, save_master_cv
-from src.reporting import (
+from src.job_hunt_evaluation import evaluate_reviewed_job
+from src.job_hunt_models import Blocker, CandidateProfile, Skill
+from src.job_hunt_outcomes import create_outcome_record, update_outcome
+from src.job_hunt_profile import load_candidate_profile, resolve_master_cv_path, save_candidate_profile, save_master_cv
+from src.job_hunt_reporting import (
     build_evaluated_job_report_row,
     export_report_csv,
     export_report_json,
     summarise_report_rows,
 )
-from src.reviewed_input import reviewed_job_from_dict
-from src.storage import (
+from src.job_hunt_reviewed_input import reviewed_job_from_dict
+from src.job_hunt_storage import (
     load_application_outcome,
     load_job_analysis,
     load_raw_input,
@@ -36,11 +36,11 @@ def build_profile() -> CandidateProfile:
         salary_floor_gbp=50000,
         right_to_work_uk=True,
         skills=[
-            "Stakeholder Management",
-            "Process Mapping",
-            "SQL",
-            "Agile",
-            "Requirements Gathering",
+            Skill(name="Stakeholder Management"),
+            Skill(name="Process Mapping"),
+            Skill(name="SQL"),
+            Skill(name="Agile"),
+            Skill(name="Requirements Gathering"),
         ],
         years_experience=5,
         industries=["finance", "technology"],

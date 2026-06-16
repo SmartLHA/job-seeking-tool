@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from src.models import Blocker, JobAnalysis, JobPosting, RiskFlag, ScoreBreakdown, ScoreComponent
-from src.outcomes import create_outcome_record, update_outcome
-from src.reporting import (
+from src.job_hunt_models import Blocker, JobAnalysis, JobPosting, RiskFlag, ScoreBreakdown, ScoreComponent
+from src.job_hunt_outcomes import create_outcome_record, update_outcome
+from src.job_hunt_reporting import (
     ReportingError,
     build_evaluated_job_report_row,
     export_report_csv,
@@ -160,3 +160,26 @@ def test_export_report_csv_writes_flat_rows(tmp_path: Path) -> None:
     assert exported_rows[0]["blockers"] == "Salary floor check"
     assert exported_rows[0]["strengths"] == "stakeholder management; process mapping"
     assert exported_rows[0]["outcome_status"] == "applied"
+
+
+def test_report_row_includes_engine_decision_and_user_decision_columns() -> None:
+    """Report rows must export both engine_decision and user_decision."""
+    import dataclasses
+    analysis = dataclasses.replace(build_analysis(), user_decision="skip", user_decision_note="Changed mind")
+    row = build_evaluated_job_report_row(build_job(), analysis)
+    assert row.engine_decision == "apply"
+    assert row.user_decision == "skip"
+
+    flat = report_row_to_flat_dict(row)
+    assert flat["engine_decision"] == "apply"
+    assert flat["user_decision"] == "skip"
+
+
+def test_report_row_user_decision_none_when_not_overridden() -> None:
+    row = build_evaluated_job_report_row(build_job(), build_analysis())
+    assert row.engine_decision == "apply"
+    assert row.user_decision is None
+
+    flat = report_row_to_flat_dict(row)
+    assert flat["engine_decision"] == "apply"
+    assert flat["user_decision"] is None

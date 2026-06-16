@@ -5,12 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from src.models import Blocker, JobAnalysis, JobPosting, RiskFlag, ScoreBreakdown, ScoreComponent
-from src.outcomes import create_outcome_record, update_outcome
-from src.storage import (
+from src.job_hunt_models import Blocker, JobAnalysis, JobPosting, RiskFlag, ScoreBreakdown, ScoreComponent
+from src.job_hunt_outcomes import create_outcome_record, update_outcome
+from src.job_hunt_storage import (
     StorageError,
     ensure_storage_layout,
     job_analysis_from_dict,
+    job_analysis_to_dict,
     load_application_outcome,
     load_job_analysis,
     load_raw_input,
@@ -44,7 +45,7 @@ def build_job() -> JobPosting:
     )
 
 
-def build_analysis(job_id: str = "job-001") -> JobAnalysis:
+def build_analysis(job_id: str = "job-001", *, ats_score: int | None = None) -> JobAnalysis:
     return JobAnalysis(
         job_id=job_id,
         match_score=82,
@@ -80,6 +81,7 @@ def build_analysis(job_id: str = "job-001") -> JobAnalysis:
         confidence="medium",
         tailoring_ready=True,
         tailoring_notes="Safe to tailor from approved truth sources.",
+        ats_score=ats_score,
     )
 
 
@@ -110,6 +112,30 @@ def test_save_and_load_raw_input_round_trips_without_touching_reviewed_or_analys
     assert loaded == raw_payload
     assert not (root / "reviewed_jobs" / "raw-001.json").exists()
     assert not (root / "analyses" / "raw-001.json").exists()
+
+
+
+
+def test_save_and_load_raw_input_round_trips_nested_source_snapshot(tmp_path: Path) -> None:
+    root = tmp_path / "state"
+    raw_payload = {
+        "input_method": "reed_search",
+        "source_type": "reed",
+        "source_ref": "123",
+        "description_raw": "Reviewed description",
+        "source_snapshot": {
+            "source": "reed",
+            "source_job_id": "123",
+            "captured_at": "2026-05-14T00:00:00+00:00",
+            "capture_stage": "select",
+            "snapshot_version": "pl-04-v1",
+            "description_raw": "Original Reed description",
+        },
+    }
+
+    save_raw_input(raw_payload, "reed-123", root)
+
+    assert load_raw_input("reed-123", root) == raw_payload
 
 
 def test_save_and_load_reviewed_job_uses_reviewed_state_directory(tmp_path: Path) -> None:
@@ -216,3 +242,50 @@ def test_load_job_analysis_rejects_invalid_nested_payloads(tmp_path: Path) -> No
 def test_job_analysis_from_dict_rejects_missing_job_id() -> None:
     with pytest.raises(StorageError, match="job_id"):
         job_analysis_from_dict({"match_score": 50, "score_breakdown": {}})
+
+
+def test_job_analysis_ats_score_round_trips() -> None:
+    analysis = build_analysis(ats_score=74)
+    d = job_analysis_to_dict(analysis)
+    assert d["ats_score"] == 74
+    restored = job_analysis_from_dict(d)
+    assert restored.ats_score == 74
+
+
+def test_job_analysis_ats_score_none_round_trips() -> None:
+    analysis = build_analysis()   # no ats_score → None
+    d = job_analysis_to_dict(analysis)
+    assert d.get("ats_score") is None or "ats_score" not in d
+    restored = job_analysis_from_dict(d)
+    assert restored.ats_score is None
+
+
+def test_job_analysis_user_decision_round_trips() -> None:
+    import dataclasses
+    analysis = dataclasses.replace(build_analysis(), user_decision="skip", user_decision_note="Not a good fit")
+    d = job_analysis_to_dict(analysis)
+    assert d["user_decision"] == "skip"
+    assert d["user_decision_note"] == "Not a good fit"
+    restored = job_analysis_from_dict(d)
+    assert restored.user_decision == "skip"
+    assert restored.user_decision_note == "Not a good fit"
+
+
+def test_job_analysis_user_decision_none_round_trips() -> None:
+    analysis = build_analysis()  # user_decision defaults to None
+    d = job_analysis_to_dict(analysis)
+    restored = job_analysis_from_dict(d)
+    assert restored.user_decision is None
+    assert restored.user_decision_note is None
+
+
+def test_job_analysis_from_dict_backward_compat_missing_user_decision() -> None:
+    """Old JSON without user_decision fields must load without error, defaulting to None."""
+    analysis = build_analysis()
+    d = job_analysis_to_dict(analysis)
+    # Simulate old JSON: remove user_decision fields
+    d.pop("user_decision", None)
+    d.pop("user_decision_note", None)
+    restored = job_analysis_from_dict(d)
+    assert restored.user_decision is None
+    assert restored.user_decision_note is None

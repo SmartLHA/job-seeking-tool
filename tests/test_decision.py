@@ -1,5 +1,5 @@
-from src.models import Blocker, RiskFlag
-from src.decision import decide_application
+from src.job_hunt_models import Blocker, RiskFlag
+from src.job_hunt_decision import decide_application
 
 
 def test_blocker_overrides_score_and_forces_skip() -> None:

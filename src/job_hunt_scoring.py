@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from src.config import DEFAULT_SCORING_POLICY, ScoringPolicy
-from src.models import CandidateProfile, ConfidenceLevel, JobPosting, RiskFlag, ScoreBreakdown, ScoreComponent
+from src.job_hunt_ats_scorer import score_cv
+
+from src.job_hunt_config import DEFAULT_SCORING_POLICY, ScoringPolicy
+from src.job_hunt_models import CandidateProfile, ConfidenceLevel, JobPosting, RiskFlag, ScoreBreakdown, ScoreComponent
 
 
 @dataclass(slots=True)
@@ -24,13 +26,16 @@ def score_job(
     job: JobPosting,
     policy: ScoringPolicy = DEFAULT_SCORING_POLICY,
 ) -> ScoringResult:
+    # Extract skill names from Skill objects for matching
+    candidate_skill_names = [s.name for s in profile.skills]
+
     required_score, required_reason, matched_required, missing_required = _score_required_skills(
-        profile.skills,
+        candidate_skill_names,
         job.required_skills,
         policy,
     )
     preferred_score, preferred_reason, matched_preferred, missing_preferred = _score_preferred_skills(
-        profile.skills,
+        candidate_skill_names,
         job.preferred_skills,
         policy,
     )

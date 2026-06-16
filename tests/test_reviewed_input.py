@@ -1,5 +1,5 @@
-from src.models import JobPosting
-from src.reviewed_input import (
+from src.job_hunt_models import JobPosting
+from src.job_hunt_reviewed_input import (
     ReviewedInputValidationError,
     reviewed_job_from_dict,
     reviewed_job_to_dict,

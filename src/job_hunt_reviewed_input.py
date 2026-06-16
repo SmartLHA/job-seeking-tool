@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.models import JobPosting
+from src.job_hunt_models import JobPosting
 
 
 class ReviewedInputValidationError(ValueError):
@@ -36,6 +36,7 @@ OPTIONAL_REVIEWED_JOB_FIELDS = {
     "notes",
     "salary_min_gbp",
     "salary_max_gbp",
+    "source_quality_score",
 }
 
 
@@ -90,6 +91,7 @@ def reviewed_job_from_dict(
         notes=_optional_string(payload.get("notes"), "notes", empty_as_none=True),
         salary_min_gbp=_optional_non_negative_int(payload.get("salary_min_gbp"), "salary_min_gbp"),
         salary_max_gbp=_optional_non_negative_int(payload.get("salary_max_gbp"), "salary_max_gbp"),
+        source_quality_score=_optional_non_negative_int(payload.get("source_quality_score"), "source_quality_score"),
     )
 
 
@@ -113,6 +115,7 @@ def reviewed_job_to_dict(job: JobPosting) -> dict[str, Any]:
         "notes": job.notes,
         "salary_min_gbp": job.salary_min_gbp,
         "salary_max_gbp": job.salary_max_gbp,
+        "source_quality_score": job.source_quality_score,
     }
 
 

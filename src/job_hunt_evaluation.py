@@ -1,16 +1,39 @@
 from __future__ import annotations
 
-from src.config import (
+from src.job_hunt_config import (
     DEFAULT_DECISION_POLICY,
     DEFAULT_SCORING_POLICY,
     DEFAULT_TAILORING_POLICY,
+    SOURCE_QUALITY_REVIEW_THRESHOLD,
+    SOURCE_QUALITY_SKIP_THRESHOLD,
     DecisionPolicy,
     ScoringPolicy,
     TailoringPolicy,
 )
-from src.decision import decide_application
-from src.models import Blocker, CandidateProfile, JobAnalysis, JobPosting
-from src.scoring import score_job
+from src.job_hunt_ats_scorer import score_cv
+from src.job_hunt_decision import decide_application
+from src.job_hunt_models import Blocker, CandidateProfile, JobAnalysis, JobPosting, RiskFlag
+from src.job_hunt_scoring import score_job
+
+
+def _source_quality_blockers_and_flags(job: JobPosting) -> tuple[list[Blocker], list[RiskFlag]]:
+    sq = job.source_quality_score
+    if sq is None:
+        return [], []
+    if sq < SOURCE_QUALITY_SKIP_THRESHOLD:
+        return [Blocker(
+            code="low-source-quality",
+            label="Low source quality",
+            reason=f"Source quality score {sq}/100 is below the minimum threshold ({SOURCE_QUALITY_SKIP_THRESHOLD}). Job data may be incomplete or unreliable.",
+            severity="high",
+        )], []
+    if sq < SOURCE_QUALITY_REVIEW_THRESHOLD:
+        return [], [RiskFlag(
+            code="marginal-source-quality",
+            label="Marginal source quality",
+            reason=f"Source quality score {sq}/100. Review the extracted job fields carefully before applying.",
+        )]
+    return [], []
 
 
 # This module is intentionally small: it composes the existing scoring and
@@ -28,10 +51,13 @@ def evaluate_reviewed_job(
 ) -> JobAnalysis:
     scoring_result = score_job(profile, job, policy=scoring_policy)
     blocker_list = list(blockers or [])
+    sq_blockers, sq_flags = _source_quality_blockers_and_flags(job)
+    blocker_list.extend(sq_blockers)
+    combined_risk_flags = list(scoring_result.risk_flags) + sq_flags
     decision_result = decide_application(
         match_score=scoring_result.match_score,
         blockers=blocker_list,
-        risk_flags=scoring_result.risk_flags,
+        risk_flags=combined_risk_flags,
         policy=decision_policy,
     )
 
@@ -41,6 +67,12 @@ def evaluate_reviewed_job(
         review_selected_for_tailoring=review_selected_for_tailoring,
     )
 
+    ats_score = None
+    if profile.master_cv_text:
+        job_keywords = list(job.required_skills) + list(job.preferred_skills)
+        ats_result = score_cv(profile.master_cv_text, job_keywords)
+        ats_score = ats_result["overall"]
+
     return JobAnalysis(
         job_id=job.job_id,
         match_score=scoring_result.match_score,
@@ -49,12 +81,13 @@ def evaluate_reviewed_job(
         strengths=scoring_result.strengths,
         missing_required_skills=scoring_result.missing_required_skills,
         missing_preferred_skills=scoring_result.missing_preferred_skills,
-        risk_flags=scoring_result.risk_flags,
+        risk_flags=combined_risk_flags,
         decision=decision_result.decision,
         decision_reason=decision_result.decision_reason,
         confidence=scoring_result.confidence,
         tailoring_ready=tailoring_ready,
         tailoring_notes=tailoring_notes,
+        ats_score=ats_score,
     )
 
 

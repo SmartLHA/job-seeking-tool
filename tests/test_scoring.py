@@ -1,5 +1,5 @@
-from src.models import CandidateProfile, JobPosting
-from src.scoring import score_job
+from src.job_hunt_models import CandidateProfile, JobPosting, Skill
+from src.job_hunt_scoring import score_job
 
 
 def build_candidate() -> CandidateProfile:
@@ -11,7 +11,7 @@ def build_candidate() -> CandidateProfile:
         remote_preference="remote_friendly",
         salary_floor_gbp=50000,
         right_to_work_uk=True,
-        skills=["Stakeholder Management", "Process Mapping", "SQL", "Agile"],
+        skills=[Skill(name="Stakeholder Management"), Skill(name="Process Mapping"), Skill(name="SQL"), Skill(name="Agile")],
         years_experience=5,
         industries=["finance", "technology"],
         achievements=[],

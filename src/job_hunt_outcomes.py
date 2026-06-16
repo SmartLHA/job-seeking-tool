@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from src.models import ApplicationOutcome, OutcomeEvent, OutcomeStatus
+from src.job_hunt_models import ApplicationOutcome, OutcomeEvent, OutcomeStatus
 
 
 class OutcomeValidationError(ValueError):

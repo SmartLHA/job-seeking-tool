@@ -1,5 +1,7 @@
-from src.evaluation import evaluate_reviewed_job
-from src.models import Blocker, CandidateProfile, JobPosting
+import dataclasses
+
+from src.job_hunt_evaluation import evaluate_reviewed_job
+from src.job_hunt_models import Blocker, CandidateProfile, JobPosting, Skill
 
 
 def build_candidate() -> CandidateProfile:
@@ -11,7 +13,7 @@ def build_candidate() -> CandidateProfile:
         remote_preference="remote_friendly",
         salary_floor_gbp=50000,
         right_to_work_uk=True,
-        skills=["Stakeholder Management", "Process Mapping", "SQL", "Agile"],
+        skills=[Skill(name="Stakeholder Management"), Skill(name="Process Mapping"), Skill(name="SQL"), Skill(name="Agile")],
         years_experience=5,
         industries=["finance", "technology"],
         achievements=[],
@@ -124,3 +126,71 @@ def test_evaluate_reviewed_job_defaults_low_salary_mismatch_to_review() -> None:
     assert analysis.decision == "review"
     assert analysis.tailoring_ready is False
     assert any(flag.code == "salary-below-floor" for flag in analysis.risk_flags)
+
+
+def test_source_quality_none_applies_no_gate() -> None:
+    analysis = evaluate_reviewed_job(
+        build_candidate(),
+        build_job(source_quality_score=None),
+    )
+
+    assert analysis.decision == "apply"
+    assert not any(b.code == "low-source-quality" for b in analysis.blockers)
+    assert not any(f.code in ("low-source-quality", "marginal-source-quality") for f in analysis.risk_flags)
+
+
+def test_source_quality_below_skip_threshold_produces_skip() -> None:
+    analysis = evaluate_reviewed_job(
+        build_candidate(),
+        build_job(source_quality_score=30),
+    )
+
+    assert analysis.decision == "skip"
+    assert any(b.code == "low-source-quality" for b in analysis.blockers)
+
+
+def test_source_quality_marginal_forces_review() -> None:
+    analysis = evaluate_reviewed_job(
+        build_candidate(),
+        build_job(source_quality_score=55),
+    )
+
+    assert analysis.decision == "review"
+    assert any(f.code == "marginal-source-quality" for f in analysis.risk_flags)
+    assert not any(b.code == "low-source-quality" for b in analysis.blockers)
+
+
+def test_source_quality_above_threshold_has_no_effect() -> None:
+    analysis = evaluate_reviewed_job(
+        build_candidate(),
+        build_job(source_quality_score=80),
+    )
+
+    assert analysis.decision == "apply"
+    assert not any(b.code == "low-source-quality" for b in analysis.blockers)
+    assert not any(f.code == "marginal-source-quality" for f in analysis.risk_flags)
+
+
+def test_ats_score_populated_when_cv_present() -> None:
+    candidate = build_candidate()
+    candidate = dataclasses.replace(
+        candidate,
+        master_cv_text="Summary\n\nExperience\n\nSkills\n\nstakeholder management process mapping SQL Agile " * 10,
+    )
+    analysis = evaluate_reviewed_job(candidate, build_job())
+    assert isinstance(analysis.ats_score, int)
+    assert 0 <= analysis.ats_score <= 100
+    # ATS score must not affect the match score or decision
+    assert analysis.match_score == 100.0
+    assert analysis.decision == "apply"
+
+
+def test_ats_score_none_when_cv_absent() -> None:
+    analysis = evaluate_reviewed_job(build_candidate(), build_job())
+    assert analysis.ats_score is None
+
+
+def test_evaluate_reviewed_job_sets_user_decision_to_none() -> None:
+    analysis = evaluate_reviewed_job(build_candidate(), build_job())
+    assert analysis.user_decision is None
+    assert analysis.user_decision_note is None

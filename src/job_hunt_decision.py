@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.config import DEFAULT_DECISION_POLICY, DecisionPolicy
-from src.models import Blocker, Decision, RiskFlag
+from src.job_hunt_config import DEFAULT_DECISION_POLICY, DecisionPolicy
+from src.job_hunt_models import Blocker, Decision, RiskFlag
 
 
 @dataclass(frozen=True, slots=True)

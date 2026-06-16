@@ -6,11 +6,11 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from src.orchestrator import LocalEvaluationRunResult, run_local_evaluation_flow
-from src.profile import ProfileValidationError
-from src.reviewed_input import ReviewedInputValidationError
-from src.storage import StorageError
-from src.outcomes import OutcomeValidationError
+from src.job_hunt_orchestrator import LocalEvaluationRunResult, run_local_evaluation_flow
+from src.job_hunt_profile import ProfileValidationError
+from src.job_hunt_reviewed_input import ReviewedInputValidationError
+from src.job_hunt_storage import StorageError
+from src.job_hunt_outcomes import OutcomeValidationError
 
 
 def build_parser() -> argparse.ArgumentParser:
