@@ -649,10 +649,10 @@ Acceptance criteria:
 - the contract is reviewable before code starts
 
 First recommended coding task after that artifact is approved:
-- `src/models.py`
-- `src/config.py`
-- `src/scoring.py`
-- `src/decision.py`
+- `src/job_hunt_models.py`
+- `src/job_hunt_config.py`
+- `src/job_hunt_scoring.py`
+- `src/job_hunt_decision.py`
 - sample fixtures for structured jobs
 - tests for scoring and decision behavior
 
@@ -721,49 +721,49 @@ This coding work has **not** been started yet because Mic asked for planning/con
 - Added `docs/architecture_guardrails.md` to lock pre-implementation architecture discipline.
 - Recorded the gstack-inspired workflow discipline and role split between SilverHand and Handy.
 - Handy completed Task 1 (models foundation).
-- `src/models.py` and `tests/test_models.py` now exist as the first approved implementation slice.
+- `src/job_hunt_models.py` and `tests/test_models.py` now exist as the first approved implementation slice.
 - Gatekeeper verification passed for the models slice.
 - Handy completed Task 1.5 (testing environment setup).
 - `requirements-dev.txt` now exists with minimal pytest support.
 - `python3 -m pytest` now runs successfully in the repo, and the current model tests are passing.
 - Handy completed Task 2 (config + scoring foundation).
-- `src/config.py`, `src/scoring.py`, and `tests/test_scoring.py` now exist.
+- `src/job_hunt_config.py`, `src/job_hunt_scoring.py`, and `tests/test_scoring.py` now exist.
 - Deterministic scoring is now implemented with confidence kept separate from match score.
 - Handy completed Task 3 (decision foundation).
-- `src/decision.py` and `tests/test_decision.py` now exist.
-- Decision policy is now configurable in `src/config.py`.
+- `src/job_hunt_decision.py` and `tests/test_decision.py` now exist.
+- Decision policy is now configurable in `src/job_hunt_config.py`.
 - Handy completed Task 4 (profile/loading foundation).
-- `src/profile.py` and `tests/test_profile.py` now exist.
+- `src/job_hunt_profile.py` and `tests/test_profile.py` now exist.
 - Local-first profile JSON loading and master CV file loading are now implemented.
 - Handy completed Task 5 (reviewed-input foundation).
-- `src/reviewed_input.py` and `tests/test_reviewed_input.py` now exist.
+- `src/job_hunt_reviewed_input.py` and `tests/test_reviewed_input.py` now exist.
 - Reviewed job payloads can now be normalized into structured `JobPosting` data without turning this into a broad ingestion subsystem.
 - Handy completed Task 6 (storage foundation).
-- `src/storage.py` and `tests/test_storage.py` now exist.
+- `src/job_hunt_storage.py` and `tests/test_storage.py` now exist.
 - Local JSON storage now preserves separate state folders for raw inputs, reviewed jobs, and derived analyses.
 - Handy completed Task 7 (evaluation flow foundation).
-- `src/evaluation.py` and `tests/test_evaluation.py` now exist.
+- `src/job_hunt_evaluation.py` and `tests/test_evaluation.py` now exist.
 - Reviewed job evaluation can now produce a full `JobAnalysis` by composing scoring and decision.
 - Handy completed Task 8 (outcomes foundation).
-- `src/outcomes.py` and `tests/test_outcomes.py` now exist.
+- `src/job_hunt_outcomes.py` and `tests/test_outcomes.py` now exist.
 - Local outcomes tracking and separate `outcomes/` persistence are now implemented.
 - Handy completed Task 9 (minimal reporting/export foundation).
-- `src/reporting.py` and `tests/test_reporting.py` now exist.
+- `src/job_hunt_reporting.py` and `tests/test_reporting.py` now exist.
 - Lightweight JSON/CSV reporting/export is now implemented for evaluated jobs and optional outcomes.
 - Handy completed Task 9.5 (integration flow tests).
 - `tests/test_integration_flow.py` now exists.
 - The current core modules now have integration-level coverage across profile, reviewed input, evaluation, storage, reporting, and outcomes.
 - Handy completed Task 10 (minimal CLI/app entry foundation).
-- `src/orchestrator.py`, `src/main.py`, `tests/test_orchestrator.py`, and `tests/test_main.py` now exist.
+- `src/job_hunt_orchestrator.py`, `src/job_hunt_main.py`, `tests/test_orchestrator.py`, and `tests/test_main.py` now exist.
 - A lightweight local CLI-first flow now wires together profile loading, reviewed input, evaluation, storage, and reporting.
 - Current repo verification passes with `65` tests green.
 - Default low-salary mismatch behavior now routes to `review` via the configurable policy/risk layer.
 - Built a lightweight local document viewer under `viewer/` so project markdown can be browsed in one place.
 - Improved the viewer with grouped document categories, search, a dashboard home page, and summary cards driven by `PROJECT_CONTEXT.md` and `PROJECT_LOG.md`.
 - Handy completed Task 11 (minimal local UI shell).
-- `src/ui.py` and `tests/test_ui.py` now exist as the minimal localhost browser UI entry.
+- `src/job_hunt_ui.py` and `tests/test_ui.py` now exist as the minimal localhost browser UI entry.
 - One-job browser flow covers URL/text context entry, field review/edit, evaluation, outcome recording, and recent job history.
-- `src/orchestrator.py` updated with a UI helper so the browser UI submits reviewed payloads through the existing orchestration path.
+- `src/job_hunt_orchestrator.py` updated with a UI helper so the browser UI submits reviewed payloads through the existing orchestration path.
 - Repo verification holds at `69` tests passing.
 - UI request-level coverage added for GET `/`, POST `/evaluate`, POST `/outcome`, and job history endpoints.
 - Docs tightened in `docs/ui_scope.md` to clarify current UI input boundaries and tailoring status.

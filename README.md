@@ -40,16 +40,18 @@ Not implemented yet:
 Main code lives in `src/`.
 
 Key modules currently in use:
-- `src/profile.py`
-- `src/reviewed_input.py`
-- `src/scoring.py`
-- `src/decision.py`
-- `src/evaluation.py`
-- `src/storage.py`
-- `src/reporting.py`
-- `src/outcomes.py`
-- `src/orchestrator.py`
-- `src/main.py`
+- `src/job_hunt_profile.py`
+- `src/job_hunt_reviewed_input.py`
+- `src/job_hunt_scoring.py`
+- `src/job_hunt_decision.py`
+- `src/job_hunt_evaluation.py`
+- `src/job_hunt_storage.py`
+- `src/job_hunt_reporting.py`
+- `src/job_hunt_outcomes.py`
+- `src/job_hunt_orchestrator.py`
+- `src/job_hunt_parsing.py`
+- `src/job_hunt_ui.py`
+- `src/job_hunt_main.py`
 
 Tests live in `tests/`.
 
@@ -154,24 +156,39 @@ python3 -m src.main \
 
 A very small browser UI is now available for the current one-job workflow.
 It stays intentionally thin and local-first:
-- enter URL or copied-text context
-- review/edit the structured fields used for scoring
+- search Reed first from the default landing page
+- select a Reed result to prefill the Evaluate form
+- review/edit the structured fields used for scoring before evaluating
+- keep manual URL/copied-text input available as the Manual Fallback tab
 - run evaluation and save results locally
 - inspect score, blockers, strengths, gaps, and decision
 - record a basic local outcome status
 - review recent evaluated jobs
 
+Current Reed-first workflow:
+
+```text
+Open app → Search Reed → Select job → Review prefilled Evaluate form → Evaluate
+```
+
+Current limitations:
+- Reed is the only wired search source in this phase.
+- Manual Fallback remains available from the search page, no-results state, and Reed-error state.
+- Optional filters such as salary, remote/hybrid, and employment type are best-effort because Reed may not confirm every field consistently.
+- Selecting a Reed job does not auto-evaluate or auto-apply; the user must review and click Evaluate.
+- Adzuna and LinkedIn are future source boundaries only; they are not implemented in this phase.
+
 Start it with:
 
 ```bash
-python3 -m src.ui \
+python3 src/job_hunt_ui.py \
   --profile /path/to/candidate_profile.json
 ```
 
 Optional flags:
 
 ```bash
-python3 -m src.ui \
+python3 src/job_hunt_ui.py \
   --profile /path/to/candidate_profile.json \
   --state-root data/state \
   --report-dir output/reports \

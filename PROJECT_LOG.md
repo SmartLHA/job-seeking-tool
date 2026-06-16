@@ -1,974 +1,179 @@
-# PROJECT_LOG.md
+## 2026-06-16
 
-This is the project logbook for the job-search copilot product work.
+### P4-2 · GAP-G — Cover Letter Extension + Route
+- **Status:** ✅ COMPLETE — 291/291 tests green
+- **Changes:**
+  - `src/job_hunt_cover_letter.py` — Added keyword-only `tone` ("professional"/"conversational"/"concise"), `length` ("brief"/"standard"/"detailed"), `points` params to `generate_cover_letter_text()`; added `_apply_tone()`, `_filter_grounded_points()`, `save_cover_letter()` helpers; input validation raises `ValueError` on invalid tone/length
+  - `src/job_hunt_ui.py` — Added `POST /cover-letter` route; decision gate blocks skip (400); accepts apply and review; saves to `output/cover_letters/<job_id>.txt`; returns `{letter, word_count, saved_path}`
+  - `tests/test_cover_letter.py` — 9 new tests: verbatim why_company_text, all tones, length comparison, grounded points, error validation
+  - `tests/test_ui.py` — 4 new route tests: apply → 200, skip → 400, missing fields → 400, unknown job → 404
+- **Method:** Claude Code subagent
 
-Use it to capture:
-- dated progress updates
-- key decisions
-- naming changes
-- scope changes
-- notable risks
-- implementation milestones
-- next recommended actions
+### P4-1 · GAP-F — Tailor CV Enrichment + Route
+- **Status:** ✅ COMPLETE — 278/278 tests green
+- **Changes:**
+  - `src/job_hunt_models.py` — Added `TailoredCVResult` dataclass (`summary`, `promoted`, `matched`, `missing`, `markdown`; `slots=True`)
+  - `src/job_hunt_tailoring.py` — `tailor_cv()` now returns `TailoredCVResult`; added `_build_summary()`, `_build_promoted()` helpers; computes `matched`/`missing` keyword diff; `validate_tailored_cv()` accepts `TailoredCVResult`, validates promoted bullets appear verbatim in markdown; `save_tailored_cv()` accepts `TailoredCVResult | str`
+  - `src/job_hunt_ui.py` — Added `POST /tailor` route with decision gate (403 skip, 400 review without `manual_selected=true`, proceed on apply); returns `{summary, promoted, matched, missing, markdown, saved_path}`
+  - `tests/test_tailoring.py` — 6 existing tests updated to use new API; 7 new tests: return type, summary, promoted, matched/missing invariants, validation accept/reject
+  - `tests/test_ui.py` — 4 new route tests: apply → 200, skip → 403, review without manual_selected → 400, unknown job → 404
+- **Method:** Claude Code subagent
+
+### P3-1 · GAP-H — Board Aggregate + SQLite Index
+- **Status:** ✅ COMPLETE — 267/267 tests green
+- **Changes:**
+  - `src/job_hunt_index.py` — New module: SQLite schema (`jobs` table), `open_db()`, `upsert_job()`, `query_jobs_list()`, `query_board()` (6 columns + active/interviews/offers/response_rate stats + `allowed_transitions` per card), `rebuild_index()` (wipes and rebuilds from JSON, skips bad files)
+  - `src/job_hunt_ui.py` — Added `GET /jobs`, `GET /board`, `POST /jobs/save` routes; startup auto-rebuild if DB missing; upsert hooks after evaluate, outcome update, and decision-override writes
+  - `tests/test_index.py` — New: 10 tests covering upsert, query, board grouping, stats, transitions, replace semantics, NULL handling, rebuild from JSON
+  - `tests/test_ui.py` — 4 new route tests: empty jobs list, board 6 columns, save creates not_applied outcome, list after save
+- **Method:** Claude Code subagent
+
+### P2-3 · GAP-E — Decision Override Persistence
+- **Status:** ✅ COMPLETE — 253/253 tests green
+- **Changes:**
+  - `src/job_hunt_models.py` — Added `user_decision: str | None = None` and `user_decision_note: str | None = None` to `JobAnalysis`; added module-level `effective_decision(analysis)` function
+  - `src/job_hunt_storage.py` — `job_analysis_from_dict()` reads both new fields with `None` defaults (backward compat)
+  - `src/job_hunt_tailoring.py` — Tailoring gate now uses `effective_decision()` instead of raw `decision`
+  - `src/job_hunt_cover_letter.py` — Cover letter gate now uses `effective_decision()`
+  - `src/job_hunt_reporting.py` — Report rows export both `engine_decision` and `user_decision` columns
+  - `src/job_hunt_ui.py` — Added `POST /job/<job_id>/decision` route (set/clear override, returns JSON with engine + user decision); Evaluate screen shows Apply/Review/Skip override buttons with active-highlight and "Overridden" badge
+  - `tests/test_models.py` — 3 new tests: defaults, effective_decision no-override, effective_decision with override
+  - `tests/test_storage.py` — 3 new tests: round-trip with values, round-trip None, backward compat with old JSON
+  - `tests/test_evaluation.py` — 1 new test: `user_decision=None` on all new analyses
+  - `tests/test_reporting.py` — 2 new tests: engine_decision and user_decision columns present
+  - `tests/test_ui.py` — 4 new route tests: valid set, clear with null, invalid value → 400, unknown job → 404
+- **Method:** Claude Code subagent
+
+### P2-2 · JOB-008 — ATS Scorer Integration
+- **Status:** ✅ COMPLETE — 240/240 tests green
+- **Changes:**
+  - `src/job_hunt_models.py` — Added `ats_score: int | None = None` to `JobAnalysis`
+  - `src/job_hunt_evaluation.py` — Calls `score_cv()` after scoring when `profile.master_cv_text` is set; `None` when absent; score does not affect `match_score` or `decision`
+  - `src/job_hunt_storage.py` — `job_analysis_from_dict()` reads `ats_score` with `None` default (backward compat)
+  - `src/job_hunt_ui.py` — Evaluate screen shows "ATS readiness: N / 100" or "ATS score: N/A (no CV on file)" in score breakdown panel
+  - `tests/test_evaluation.py` — 2 new tests: score populated when CV present, None when absent
+  - `tests/test_storage.py` — 2 new tests: ats_score round-trips with value and None
+- **Method:** Claude Code subagent
+
+### P2-1 · Source Quality Gating
+- **Status:** ✅ COMPLETE — 236/236 tests green
+- **Changes:**
+  - `src/job_hunt_models.py` — Added `source_quality_score: int | None = None` to `JobPosting`
+  - `src/job_hunt_config.py` — Added `SOURCE_QUALITY_SKIP_THRESHOLD = 40`, `SOURCE_QUALITY_REVIEW_THRESHOLD = 70`; added `"marginal-source-quality"` to `DEFAULT_DECISION_POLICY.critical_risk_codes`
+  - `src/job_hunt_evaluation.py` — Added `_source_quality_blockers_and_flags()` and injected into `evaluate_reviewed_job()`
+  - `src/job_hunt_orchestrator.py` — Populates `source_quality_score` from normalised Reed result
+  - `src/job_hunt_reviewed_input.py` — Accepts `source_quality_score` in `reviewed_job_from_dict()` with `None` default
+  - `src/job_hunt_ui.py` — Evaluate screen shows amber badge (40–69) or red badge (<40) for source quality
+  - `tests/test_evaluation.py` — 4 new tests: None no-gate, <40 skip, 40–69 review, ≥70 no effect
+- **Method:** Claude Code subagent
+
+### P1-2 · GAP-C/I — Source Feature Flag
+- **Status:** ✅ COMPLETE — 29/29 tests green
+- **Changes:**
+  - `src/job_hunt_config.py` — Added `ENABLED_SOURCES: list[str] = ["Reed"]` and `get_enabled_sources()` helper
+  - `src/job_hunt_ui.py` — Added `GET /sources` route returning `{"enabled": ["Reed"]}`; Find Jobs tab now shows Reed as active, Adzuna and LinkedIn greyed out with "Coming soon"
+  - `tests/test_ui.py` — Added `test_get_sources_returns_enabled_list`
+- **Method:** Claude Code subagent (parallel build)
+
+### P1-3 · GAP-D — Field Provenance (Null Contract)
+- **Status:** ✅ COMPLETE — 232/232 tests green
+- **Changes:**
+  - `src/job_hunt_parsing.py` — All extraction functions now return `None` (scalars) or `[]` (lists) when a field is not found; `work_mode` returns `"unknown"` (not `None`); `job_id` falls back to `uuid4()[:8]` when both title and company are `None`; `_normalise_work_mode()` returns `"unknown"` for missing input
+  - `src/job_hunt_ui.py` — Field-review badges added to Add Job form: "Auto-filled" (green) for present values, "Not found" (amber) for `null`/empty; badge visibility toggled by `parseAndPreview()` JS after prefill; CSS classes `.field-badge`, `.badge-autofilled`, `.badge-notfound` added to global stylesheet
+  - `tests/test_parsing.py` — 15 null-contract tests covering every scalar and list field
+- **Method:** Claude Code subagent (parallel build, combined with P1-4)
+
+### P1-4 · JOB-009 — Harden URL Fetcher
+- **Status:** ✅ COMPLETE — 232/232 tests green
+- **Changes:**
+  - `src/job_hunt_parsing.py` — `parse_job_from_url()` hardened with 8 security controls: host allowlist (`ALLOWED_HOSTS` frozenset), HTTPS-first redirect revalidation (max 3 hops), 8s network / 2s parse split timeout, content-type guard, 5MB content-size guard, robots.txt fail-closed (`_RobotsCache` with 5-min TTL — any error blocks the fetch), script/style/iframe stripping, SSRF prevention (private/loopback IP rejection via `_check_ssrf()`)
+  - `src/job_hunt_paste_fetch.py` — Zeroed out (dead code; file cannot be deleted in sandbox but is empty and has no imports)
+  - `tests/test_parsing.py` — 14 URL hardening tests: allowlist, SSRF, robots.txt fail-closed, content-type/size, redirect revalidation, max hops, HTTP scheme rejection
+- **Method:** Claude Code subagent (parallel build, combined with P1-3)
+
+### P1-1 · GAP-B — Skill Dataclass
+- **Status:** ✅ COMPLETE — 73/73 tests green
+- **Scope:** Replaced `CandidateProfile.skills: list[str]` with `list[Skill]` across the full blast radius.
+- **Changes:**
+  - `src/job_hunt_models.py` — Added `Skill` dataclass (`name`, `level`, `years`, `evidence_type`) with `__post_init__` validation; constants `VALID_SKILL_LEVELS`, `VALID_EVIDENCE_TYPES`
+  - `src/job_hunt_profile.py` — `_coerce_skill()` backward-coerces plain JSON strings to `Skill` on load; `_skill_to_dict()` serialises back; round-trip clean
+  - `src/job_hunt_scoring.py` — extracts `s.name` list before skill-match loop
+  - `src/job_hunt_tailoring.py` — lookup dicts use `skill.name` (lines 22, 121)
+  - `src/job_hunt_cover_letter.py` — `_match_skills()` accepts `list[Skill]` via `hasattr` guard
+  - `src/job_hunt_ui.py` — My Profile page: skills table (name / level / years) replaces comma input; JS encodes rows to `skills_json` on submit; save handler parses `skills_json` first, falls back to comma-split; summary row shows `s.name` not raw string
+  - `docs/data_contract.md` — Skills contract section updated with Skill object shape, valid values, and coercion note
+- **Tests added:**
+  - `tests/test_models.py` — 6 Skill validation tests (defaults, empty name, bad level, bad evidence_type, negative years, valid fields)
+  - `tests/test_profile.py` — 5 coercion/round-trip tests (plain string coercion, dict round-trip, missing name, bad level, save-reload)
+  - `tests/test_scoring.py`, `test_tailoring.py`, `test_cover_letter.py`, `test_evaluation.py`, `test_integration_flow.py` — all `build_candidate()`/`build_profile()` fixtures updated to `list[Skill]`
+- **Design review:** Wiser (5 blockers) and Codex reviews applied; design doc updated before build; 8 recurring design doc mistake patterns saved to memory.
 
 ---
 
-## 2026-04-04
-
-### Session summary
-
-Initial planning and workspace/project setup took place before implementation.
-
-### What was discussed
-
-- Product concept: local-first AI job search decision-support and application-preparation product for the UK market.
-- Product goals:
-  - ingest jobs
-  - structure job data
-  - score job fit
-  - decide Apply / Review / Skip
-  - generate truthful tailored CVs and cover letters
-  - track outcomes over time
-- Product is **not** meant to be:
-  - mass auto-apply
-  - browser automation
-  - speculative/fabricated candidate output
-  - background account interaction
-  - application-volume optimization
-
-### Key constraints captured
-
-- deterministic logic first
-- explainability
-- local-first privacy
-- truthful output
-- modular code
-- small testable steps
-- human approval required before final application actions
-
-### Product naming status
-
-- `JOB Smart` was discussed but rejected as the final product name.
-- Reason: Mic said the name is already used by others.
-- Current folder name is `Job Seeking Tool`.
-- Final public product name is still undecided.
-
-### Planning artifacts created
-
-Created in project folder:
-- `PROJECT_CONTEXT.md`
-- `docs/product_spec.md`
-- `docs/function_list.md`
-- `docs/development_sequence.md`
-- `docs/development_rules.md`
-
-### Development direction captured
-
-- Python backend only for MVP
-- local-first storage only
-- SQLite + JSON/JSONL preferred
-- no auto-apply in v1
-- no browser automation in v1
-- deterministic scoring before LLM generation
-- all generated CV/cover letter content must be truthful
-- no invented skills, years, titles, achievements, or certifications
-- every core logic module must have tests
-- do not refactor unrelated files
-- keep dependencies light
-- prefer modular, explicit code over clever abstractions
-
-### High-level architecture discussed
-
-Modules planned:
-- models
-- config
-- storage
-- profile
-- ingestion
-- parsing
-- eligibility
-- scoring
-- decision
-- tailoring
-- cover_letter
-- reporting
-- outcomes
-- orchestrator
-- main
-
-### Current status
-
-- Planning in progress.
-- No core product implementation has started yet.
-- Foundation docs and project memory have been created first.
-
-### Clarification checklist outcomes
-
-Mic confirmed:
-
-1. Primary target user for v1:
-   - Mic + a few similar UK job seekers
-
-2. Main user goals:
-   - better Apply / Review / Skip decisions
-   - higher quality tailored CVs
-
-3. MVP input stance:
-   - lightweight input via job URL and manual copied text
-   - not a broad ingestion-focused MVP
-
-4. URL handling in MVP:
-   - allowed only if very simple and deterministic
-
-5. Tailoring in MVP:
-   - CV only
-   - cover letters deferred
-
-6. Truth source design:
-   - candidate profile + master CV only
-
-7. Scoring philosophy:
-   - balanced
-
-8. Early storage strategy:
-   - hybrid from the start
-
-9. Duplicate detection priority:
-   1. same company + title + location
-   2. same source ID
-   3. same company + title
-   4. same normalized description hash
-   5. same URL
-
-10. Default decision thresholds:
-   - keep current proposed thresholds for now
-
-11. Outcomes tracking depth in MVP:
-   - basic only
-
-12. Naming while final brand is undecided:
-   - keep neutral names everywhere
-
-13. UI expectation for MVP:
-   - minimal local UI in MVP
-
-14. First-version success criteria:
-   - scoring feels trustworthy
-   - tailored CV output is usable with light edits
-   - local workflow feels simple and safe
-
-15. Preferred build emphasis:
-   - scoring / decision first
-
-### Scope refinement from clarification
-
-- Earlier planning leaned more heavily toward ingestion as a visible MVP pillar.
-- Clarification narrowed this.
-- MVP may accept job URL and copied text, but should not become a broad ingestion/parsing product in v1.
-- The center of gravity is now:
-  - decision quality
-  - truthful CV tailoring
-  - simple local workflow
-  - minimal local UI
-
-### Revised recommended next step
-
-1. Update project charter/state files with the clarified v1 shape
-2. Rewrite the build sequence so it reflects scoring/decision-first while preserving lightweight URL/text input
-3. Identify the first approved non-coding artifact or implementation task
-
-### First recommended artifact / task
-
-Recommended first non-coding artifact:
-- `docs/data_contract.md`
-
-Purpose:
-- lock the MVP JobPosting structure
-- lock the MVP JobAnalysis structure
-- define required/optional/unknown fields
-- define what scoring consumes
-- define what decisioning emits
-- prevent implementation from inventing structure mid-build
-
-Recommended first coding task after artifact approval:
-- models/config/scoring/decision modules
-- sample structured job fixtures
-- tests for scoring and decision rules
-
-Reasoning:
-- Mic chose scoring/decision-first
-- MVP still accepts URL/manual text, so there must be a stable target structure
-- this artifact reduces ambiguity before coding begins
-
-### Data contract review outcome
-
-Mic confirmed:
-- the required JobPosting set is minimal but sufficient for MVP, while staying extensible later
-- salary fields remain optional
-- other listed metadata fields are in MVP scope
-- blocker categories stay as proposed for MVP
-- score breakdown shape stays as proposed for MVP
-- `review` jobs are tailoring-eligible only when manually selected
-
-### Design fine-tuning pass
-
-A follow-up design review identified several areas that needed tightening before implementation:
-- the exact MVP workflow shape
-- the boundary between lightweight input and broad ingestion
-- the need for an explicit input review/edit step before trusting scores
-- scoring policy guidance for unknown data, blockers, and preferred skills
-- clearer tailoring evidence rules
-- a minimal basic outcomes contract
-- the exact shape of the minimal local UI
-
-Updates made:
-- added workflow-shape guidance to `PROJECT_CONTEXT.md`
-- added lightweight-input boundary rules
-- added scoring-policy guidance
-- added tailoring-evidence rules
-- added basic outcomes contract guidance
-- added `docs/ui_scope.md`
-- revised the development sequence to include an explicit input review/edit phase before the local UI result flow
-
-### Project-document sync update
-
-Mic asked that project documents be kept up to date for everything created or changed.
-
-Project documents now reflect:
-- charter updates
-- clarification checklist outcomes
-- data contract creation and review outcomes
-- design fine-tuning decisions
-- revised MVP workflow and UI scope
-- current next-step recommendation: draft the first coding task brief, but do not begin implementation without explicit approval
-
-### Pre-implementation architecture guardrail pass
-
-A final architecture review was completed before implementation planning starts.
-
-Main guardrails added:
-- preserve separation between raw input, reviewed structured job data, and derived analysis
-- keep eligibility, scoring, and decision logic in separate modules
-- keep lightweight input from turning into a broad ingestion/parsing subsystem
-- require correction/review before trusted scoring when extracted data is uncertain
-- treat confidence as a first-class output separate from score
-- keep tailoring downstream of reviewed job data and analysis
-- preserve strict truth boundaries for tailoring
-- keep policy in config where practical
-
-Artifacts updated/added:
-- `PROJECT_CONTEXT.md`
-- `docs/data_contract.md`
-- `docs/architecture_guardrails.md`
-
-### Workflow-discipline note added
-
-The project docs were updated to explicitly record the gstack-inspired workflow discipline being used in this project.
-
-Key points recorded:
-- planning is separated from implementation
-- work proceeds one stage at a time
-- only the smallest sufficient process should be used
-- implementation is delegated only after scope is stable
-- review is separate from implementation
-- verification matters more than optimistic summaries
-- SilverHand acts as planner/gatekeeper and Handy acts as the development sub-agent for approved slices
-
-### Handy Task 1 — Models foundation review
-
-Handy completed the first approved implementation slice.
-
-Files added:
-- `src/models.py`
-- `tests/test_models.py`
-
-What was delivered:
-- typed dataclass-based models for:
-  - `CandidateProfile`
-  - `JobPosting`
-  - `Blocker`
-  - `RiskFlag`
-  - `ScoreComponent`
-  - `ScoreBreakdown`
-  - `JobAnalysis`
-- section comments explaining model purpose and workflow intent
-- lightweight model-level validation for empty required fields, non-negative numeric fields, salary range sanity, score bounds, and non-empty decision reason
-- test file covering model construction and key guardrails
-
-Gatekeeper review result:
-- accepted as a solid first implementation slice
-- aligns with the approved task scope
-- preserves confidence as separate from score
-- keeps the model layer readable and reasonably extensible
-- does not appear to introduce out-of-scope functionality
-
-Initial issue found during verification:
-- `pytest` was not yet available in the repo environment when Task 1 finished
-- direct Python import/construction sanity check succeeded
-
-### Handy Task 1.5 — Testing environment setup review
-
-Handy completed the testing-environment prerequisite slice.
-
-Files added/updated:
-- `requirements-dev.txt`
-
-What changed:
-- added the minimum dev dependency needed for repo-local test execution:
-  - `pytest>=8,<9`
-
-Gatekeeper verification result:
-- accepted
-- dependency footprint stayed minimal
-- no product logic scope creep occurred
-- `python3 -m pytest` now runs successfully in the repo
-
-Verified test result:
-- `5 passed`
-- current model tests are now runnable and passing
-
-Practical environment note:
-- pytest installation needed to respect the host Python environment constraints
-- running tests via `python3 -m pytest` is the reliable path
-
-### Handy Task 2 — Config + scoring foundation review
-
-Handy completed Task 2.
-
-Files added:
-- `src/config.py`
-- `src/scoring.py`
-- `tests/test_scoring.py`
-
-What was delivered:
-- typed scoring policy/config objects in `src/config.py`
-- deterministic `score_job(...)` flow in `src/scoring.py`
-- clear separation between `match_score` and `confidence`
-- scoring behavior that treats preferred skills as soft boosts
-- confidence behavior that drops with missing job data before score is heavily reduced
-- focused tests for core scoring behavior
-
-Gatekeeper verification result:
-- accepted
-- scope stayed controlled
-- code remains readable and commented
-- pytest verification passed cleanly
-
-Verified test result:
-- `10 passed`
-
-Follow-up note before Task 3:
-- Mic confirmed a mixed-neutral policy for unknown fields:
-  - some unknown fields may receive full neutral credit
-  - some unknown fields may receive partial neutral credit
-  - confidence should still decrease when important job data is missing
-
-### Handy Task 3 — Decision foundation review
-
-Handy completed Task 3.
-
-Files added:
-- `src/decision.py`
-- `tests/test_decision.py`
-
-Files updated:
-- `src/config.py`
-
-What was delivered:
-- typed decision layer kept separate from scoring
-- configurable decision policy in `src/config.py`
-- Apply / Review / Skip logic aligned to current provisional thresholds
-- blocker override behavior
-- current critical-risk handling for high-score review gating
-- focused decision tests
-
-Gatekeeper verification result:
-- accepted
-- scope stayed controlled
-- decision logic remains separate from scoring logic
-- pytest verification passed cleanly
-
-Verified test result:
-- `15 passed`
-
-Current decision-policy note:
-- `missing-required-skills` is currently treated as the critical decision risk code
-
-### Handy Task 4 — Profile/loading foundation review
-
-Handy completed Task 4.
-
-Files added:
-- `src/profile.py`
-- `tests/test_profile.py`
-
-What was delivered:
-- local-first candidate profile loading/saving helpers
-- focused profile validation via `ProfileValidationError`
-- JSON profile loading and serialization helpers
-- local master CV load/save helpers
-- relative-path resolution for `master_cv_ref`
-- tests for valid loading, failure cases, round-trip behavior, and CV file handling
-
-Gatekeeper verification result:
-- accepted
-- scope stayed controlled
-- profile loading remains separate from scoring/decision logic
-- pytest verification passed cleanly
-
-Verified test result:
-- `24 passed`
-
-Current profile-policy note:
-- unknown/extra profile keys are rejected by design in the current profile contract
-
-### Handy Task 5 — Reviewed-input foundation review
-
-Handy completed Task 5.
-
-Files added:
-- `src/reviewed_input.py`
-- `tests/test_reviewed_input.py`
-
-What was delivered:
-- narrow reviewed-input conversion layer from reviewed payloads into `JobPosting`
-- `ReviewedInputValidationError`
-- explicit unknown handling for reviewed fields
-- unknown-field rejection
-- trimmed string normalization
-- case-insensitive skill deduplication during reviewed normalization
-- tests for reviewed-input behavior and round-trip conversion
-
-Gatekeeper verification result:
-- accepted
-- scope stayed controlled
-- reviewed-input remains lightweight and separate from broad ingestion
-- pytest verification passed cleanly
-
-Verified test result:
-- `28 passed`
-
-Current reviewed-input note:
-- reviewed skill lists now deduplicate case-insensitively by implemented behavior
-
-### Handy Task 6 — Storage foundation review
-
-Handy completed Task 6.
-
-Files added:
-- `src/storage.py`
-- `tests/test_storage.py`
-
-What was delivered:
-- lightweight local JSON persistence helpers
-- explicit storage separation for:
-  - raw inputs
-  - reviewed jobs
-  - derived analyses
-- typed round-trip helpers for reviewed jobs and analyses
-- tests covering storage layout, round-trips, state separation, and invalid analysis payloads
-
-Gatekeeper verification result:
-- accepted
-- scope stayed controlled
-- raw/reviewed/analysis state separation is now enforced in storage layout
-- pytest verification passed cleanly
-
-Verified test result:
-- `35 passed`
-
-### Handy Task 7 — Evaluation flow foundation review
-
-Handy completed Task 7.
-
-Files added:
-- `src/evaluation.py`
-- `tests/test_evaluation.py`
-
-What was delivered:
-- lightweight evaluation composition layer
-- combines scoring + decision into `JobAnalysis`
-- keeps scoring and decision modules separate
-- supports injected blockers for future eligibility integration
-- sets current tailoring readiness behavior from decision outcome
-- tests for apply/review/skip evaluation flow and confidence-vs-score behavior
-
-Gatekeeper verification result:
-- accepted
-- scope stayed controlled
-- composition layer stays small and does not collapse module boundaries
-- pytest verification passed cleanly
-
-Verified test result:
-- `39 passed`
-
-### Handy Task 8 — Outcomes foundation review
-
-Handy completed Task 8.
-
-Files added:
-- `src/outcomes.py`
-- `tests/test_outcomes.py`
-
-Files updated:
-- `src/models.py`
-- `src/storage.py`
-- `tests/test_storage.py`
-
-What was delivered:
-- basic local outcomes tracking foundation
-- typed outcome models and update logic
-- separate local `outcomes/` storage state
-- simple transition validation for outcome status changes
-- tests for creation, updates, validation, persistence, and layout
-
-Gatekeeper verification result:
-- accepted
-- scope stayed controlled
-- outcomes remain basic and local-first
-- pytest verification passed cleanly
-
-Verified test result:
-- `46 passed`
-
-### Handy Task 9 — Minimal reporting/export foundation review
-
-Handy completed Task 9.
-
-Files added:
-- `src/reporting.py`
-- `tests/test_reporting.py`
-
-What was delivered:
-- lightweight local-first reporting/export helpers
-- flat report rows from reviewed jobs + analysis + optional outcomes
-- simple summary counts for decisions and outcomes
-- JSON export
-- CSV export
-- tests for row building, summary counts, JSON export, and CSV export
-
-Gatekeeper verification result:
-- accepted
-- scope stayed controlled
-- reporting remains helper-level only and does not turn into analytics/dashboard scope
-- pytest verification passed cleanly
-
-Verified test result:
-- `52 passed`
-
-### Handy Task 9.5 — Integration flow tests review
-
-Handy completed the integration-test slice.
-
-Files added:
-- `tests/test_integration_flow.py`
-
-What was delivered:
-- end-to-end integration-style coverage across current modules
-- happy-path profile → reviewed job → evaluation → storage → reporting → outcomes flow
-- blocker override coverage
-- sparse reviewed job / low-confidence coverage
-- required-skill-gap review coverage
-- storage/reporting flows with and without outcomes
-
-Gatekeeper verification result:
-- accepted
-- no product code changes were required
-- integration safety net is now in place before a CLI/app entry slice
-- pytest verification passed cleanly
-
-Verified test result:
-- `57 passed`
-
-### Handy Task 10 — Minimal CLI/app entry foundation review
-
-Handy completed Task 10.
-
-Files added:
-- `src/orchestrator.py`
-- `src/main.py`
-- `tests/test_orchestrator.py`
-- `tests/test_main.py`
-
-What was delivered:
-- lightweight local orchestration flow for one reviewed-job run
-- CLI entrypoint for profile + reviewed job + optional raw input
-- local flow wiring across profile loading, reviewed input, evaluation, storage, and reporting
-- tests for orchestration and CLI behavior
-
-Gatekeeper verification result:
-- accepted
-- scope stayed controlled
-- module boundaries were preserved while adding the entry flow
-- pytest verification passed cleanly
-
-Verified test result:
-- `62 passed`
-
-### Manual smoke-run note
-
-Additional manual smoke runs were used to probe stronger edge/exception cases.
-
-Observed:
-- sparse/unknown-heavy input produced a low-confidence skip as expected
-- required-skill gap produced a review decision as expected
-- invalid reviewed payload failed cleanly with a non-zero CLI exit code
-- low-salary case still produced `apply` under the current default policy
-
-Product decision clarified from this:
-- whether a criterion is treated as a blocker, critical risk, or softer penalty should ultimately become end-user configurable rather than permanently fixed in code assumptions
-
-### Salary-mismatch default policy adjustment
-
-Mic asked for the current low-salary mismatch case to default to `review` rather than `apply`.
-
-Implemented:
-- added `salary-below-floor` as a current critical decision risk code
-- scoring now emits that risk when known salary is below the candidate salary floor
-- decision policy now treats that critical risk as review-gating by default
-
-Gatekeeper verification result:
-- accepted
-- default behavior now matches the requested current policy
-- longer-term configurability is preserved through the policy/config layer rather than hard-coding a one-off branch
-
-Verified result:
-- repo tests now pass at `65 passed`
-- manual smoke run for the low-salary case now returns `review`
-
-### README usage note
-
-Handy created the first project `README.md`.
-
-What it now documents:
-- current implemented scope
-- current CLI entrypoint and flags
-- practical profile/reviewed-job input expectations
-- current output/state locations
-- current test command
-- reminder to keep naming neutral until branding is decided
-
-Gatekeeper verification result:
-- accepted
-- documentation stays aligned to the implemented CLI-first foundation
-- no code changes were made in this slice
-
-### UI request-level test + doc-tightening follow-up
-
-Handy added request-level UI coverage for the local UI HTTP flow.
-
-What was added in tests:
-- GET `/`
-- POST `/evaluate` success
-- POST `/evaluate` validation failure
-- GET `/job?job_id=...`
-- GET `/job/<id>`
-- GET `/job/<id>/`
-- POST `/outcome`
-
-Gatekeeper note:
-- tests now cover the actual request/response path instead of only helper-level behavior
-- Scout's earlier ambiguity about UI wording was also tightened in `docs/ui_scope.md`
-- the docs now make clear that the current UI captures URL/text as local context while reviewed structured fields are entered/edited directly, and that tailoring is status-only for now
-
-### Execution mode update
-
-Mic confirmed that after a slice passes review and tests, SilverHand may continue the next small implementation slice automatically.
-
-Guardrails still apply:
-- one slice at a time
-- notify Mic what was done
-- move directly to the next item after a slice is Completed if there is no real blocker
-- pause if a risky, ambiguous, or scope-changing issue appears
-
-### Anti-idle rule added
-
-Mic explicitly called out a repeated failure pattern where work was marked Completed but the next obvious step was not launched, causing fake idle gaps.
-
-Rule added:
-- if an item is Completed
-- and there is no blocker
-- and no user decision is needed
-- and the next step is known
-
-then SilverHand must immediately:
-1. send the Completed update
-2. launch the next concrete step
-3. send the In Progress update
-
-`ready to start` should only be used for real blockers, uncertainty, or genuine decision points.
-
-### Lean team protocol added
-
-A structured YAML protocol was added for the multi-agent team.
-
-File:
-- `docs/team_protocol.yaml`
-
-It captures:
-- lean communication rules
-- anti-idle workflow rule
-- SilverHand / Handy / Scout role boundaries
-- direct Handy → Scout handoff
-- Scout lean vs full QA modes
-- hard gates + scoring framework
-- idle Scout behavior for lean test planning
-- project-specific guardrails for the Job Seeking Tool
-
-### Local docs dashboard update
-
-A lightweight local project document viewer was added under `viewer/` so Mic can browse project markdown without opening files one by one.
-
-Viewer improvements completed:
-- grouped docs by category
-- dashboard home page instead of opening straight into a single doc
-- summary cards for:
-  - Latest development Action Done
-  - Latest Discussion outcome
-  - Outstanding Question
-  - Next Action
-- dashboard summaries now derive from `PROJECT_CONTEXT.md` and `PROJECT_LOG.md` instead of staying hardcoded
-- summary cards were polished into cleaner bullet-style summaries
-- cross-document search was added
-- mobile/LAN access instructions were added so the viewer can be opened from a phone on the same Wi‑Fi
-- viewer document list was updated to include newly added project docs such as `docs/data_contract.md`, `docs/ui_scope.md`, and `viewer/README.md`
-- viewer moved from a hardcoded document list to a manifest-driven approach using `viewer/documents.json`
-
-Purpose:
-- make project state easier to inspect locally
-- help other sessions understand that the dashboard exists
-- keep the dashboard aligned with the project memory files
-
-### Handy Task 11 — Minimal local UI shell review
-
-Handy completed the approved minimal local UI shell slice.
-
-Files added:
-- `src/ui.py`
-- `tests/test_ui.py`
-
-Files updated:
-- `src/orchestrator.py`
-- `README.md`
-
-What was delivered:
-- a tiny standard-library localhost UI entry path via `python3 -m src.ui`
-- one-job browser flow for:
-  - entering URL/copied-text context
-  - reviewing/editing structured fields
-  - running evaluation through the existing orchestration path
-  - showing score, confidence, blockers, risks, strengths, missing skills, and decision
-  - recording a basic local outcome status
-  - viewing recent evaluated jobs from local state
-- a small orchestrator helper so the UI can submit reviewed payloads directly without replacing the CLI or introducing a framework
-- focused UI/helper tests for form parsing and recent-history behavior
-
-Gatekeeper verification result:
-- pending main-session review
-- implementation stayed thin and local-first
-- CLI path remains intact
-- no heavy UI framework was added
-
-Verified test result:
-- `69 passed`
-
----
-
-## 2026-04-07
-
-### Viewer fixes — doc links, usage display, and refresh
-
-Three viewer issues were reported and fixed:
-
-**Issue 1 — All doc links were broken**
-
-Root cause: `documents.json` stored paths like `/PROJECT_CONTEXT.md` (project-root-relative), but `viewer_server.py` served files from the `viewer/` subdirectory only. The security check also rejected `..` path traversal, so sibling files outside `viewer/` couldn't be reached.
-
-Fix: Rewrote `serve_file()` to resolve from `PROJECT_ROOT` (the project root, one level above `viewer/`), map `/viewer/../*` paths to project-root-relative files, and handle `/viewer/*` paths to viewer subdir resources. Added `PROJECT_ROOT` constant and proper `isdir` → `index.html` fallback.
-
-**Issue 2 — No MiniMax token usage info in the viewer**
-
-Root cause: `usage.json` (written by a cron job) didn't include an `ok` field. The browser `fetchUsage()` checked `data.ok` which was `undefined` → falsy → always showed "Usage: unavailable".
-
-Fix: Added `_load_usage_json()` helper that injects `ok: True` when serving from `usage.json`. Also improved empty-state messages from "viewer server only" to "Usage: no session data" and "offline".
-
-**Issue 3 — Refresh button had no effect**
-
-Root cause: Browser HTTP fetch caching despite `cache: 'no-store'`.
-
-Fix: Added `?t=' + Date.now()` cache-busting query param to both `fetchDocText()` and `fetchManifest()` calls in `app.js`.
-
-**Additional fixes**
-
-- `viewer.sh` start command had wrong path (`viewer_server.py` instead of `viewer/viewer_server.py`) — fixed
-- `os.chdir()` in `main()` updated to `PROJECT_ROOT` to match new file resolution
-
-Files changed:
-- `viewer/viewer_server.py` — rewritten `serve_file()` with proper project-root resolution, added `PROJECT_ROOT`, `_load_usage_json()`
-- `viewer/documents.json` — paths changed from `/PROJECT_CONTEXT.md` to `/viewer/../PROJECT_CONTEXT.md` style (now resolved correctly by server)
-- `viewer/app.js` — cache-busting query params on fetches, improved usage empty states
-- `viewer/viewer.sh` — fixed `viewer_server.py` path in start command
-
-### Viewer always-on LaunchAgent
-
-Configured `viewer_server.py` to run permanently via a macOS LaunchAgent (`ai.openclaw.viewer.plist`) so it survives shell exits and system restarts.
-
-Files changed:
-- `~/Library/LaunchAgents/ai.openclaw.viewer.plist` — new LaunchAgent config with `KeepAlive: true`, `RunAtLoad: true`, and correct `PATH` env so subprocess calls work
-
-### Viewer LLM health dashboard section
-
-Added a new `/api/health` server endpoint and a "LLM health" dashboard card showing real-time model status:
-- Ollama: which local models are available (gemma4:e4b 9.6GB, gemma4:e2b 7.2GB) and whether they're currently running
-- OpenClaw sessions: which models are active and in which sessions (green dot = running, gray dot = stopped/loaded)
-
-Also added LLM health to the sidebar (below usage) so it's always visible.
-
-Additional fixes:
-- `viewer_server.py`: uses fixed `ENV` with correct `PATH` so subprocess calls (`openclaw status`, `ollama list/ps`) work even from LaunchAgent context
-- `app.js`: `fetchHealth()` polls `/api/health` every 30s, displays dots for model status
-- `index.html`: added `#llm-health-bar` and `#dash-health-card` elements
-- `styles.css`: added `.llm-health-bar` and `.model-dot` styles with green/gray status colours
-
-### Dashboard summary extraction fixed
-
-`buildDashboardSummary()` was returning "Nothing captured yet" for all cards despite data existing.
-
-Two bugs fixed:
-1. Section extraction regex used `(?=^##\\s+)` lookahead which failed on the last section (`## Next Recommended Step`) at EOF — added `|$` to match end-of-file
-2. Dashboard tried to read `docCache.get('/PROJECT_CONTEXT.md')` but docs are cached at `/viewer/../PROJECT_CONTEXT.md` (the withBase path) — added fallback chain so both cache-key formats work
-
-### Session cleanup
-
-Checked all sessions — only 2 active sessions found (main + one closed subagent). No stale inactive sessions requiring cleanup.
-
-### Platform config — ACP default agent + subagent allowlist
-
-Added to `openclaw.json`:
-- `acp.defaultAgent: "qa"` — enables ACP runtime for spawned subagents
-- `agents.defaults.subagents.allowAgents: ["qa", "dev"]`
-- `agents.defaults.subagents.runTimeoutSeconds: 300`
-
-Purpose: fixes WS reliability issues for subagent spawning (was causing gateway 1006 closures on large output).
-
-### Scout QA pass — smoke test (2026-04-07)
-
-Scout ran lean smoke checks via ACP runtime (first successful ACP spawn since config fix):
-
-| Check | Result |
-|-------|--------|
-| Test suite | ✅ 80 passed |
-| CLI smoke | ✅ Business Analyst @ Example Co → apply, 97.5 |
-| Viewer doc links | ⚠️ 10/11 — `viewer/README.md` path inconsistent |
-
-**Score: 85/100** — viewer manifest path bug + missing team_protocol.yaml in manifest.
-
-### Handy fix — viewer manifest
-
-Handy Task: Fixed `viewer/documents.json`:
-- Changed `Viewer README` path from `/viewer/README.md` → `/viewer/../viewer/README.md`
-- Added `docs/team_protocol.yaml` as new Protocol category entry
-
-Result: **12/12 paths now resolve** ✅
-
-Files changed:
-- `viewer/documents.json`
-
-### Scout QA pass — 8 tasks, all green (2026-04-07)
-
-Sequential QA run via Scout (Handy on leave):
-
-| # | Task | Result |
-|---|------|--------|
-| Q1 | Viewer manifest fix (Handy) | ✅ 12/12 paths |
-| Q2 | UI home page | ✅ HTTP 200, form OK |
-| Q3 | UI evaluate POST | ✅ apply, 95.0 |
-| Q4 | UI outcome POST + job GET | ✅ flash + status reflected |
-| Q5 | All sample inputs | ✅ demo/gap/salary_miss→review, sparse→skip, invalid→error |
-| Q6 | Invalid input rejection | ✅ done in Q5 |
-| Q7 | Report generation | ✅ JSON + CSV exist |
-| Q8 | Storage separation | ✅ all 3 dirs with files |
-
-**Score: 100/100.** Platform ACP config confirmed working for subagent spawning.
-
-### Cover Letter spec confirmed (2026-04-07)
-
-Decisions confirmed with Mic:
-- Near-final quality, salary blank, "why this company" included (2-3 sentences)
-- Evidence source: same as CV tailoring (profile + master CV only)
-- ATS-friendly formatting required
-
-### CV Tailoring brief finalized (2026-04-07)
-
-Decisions confirmed with Mic:
-- Review jobs require manual selection before tailoring
-- Evidence: required skills first, from skills + years only
-- ATS-friendly output required
-- Tailoring only from approved profile + master CV
-
-Briefs ready at `docs/tasks/cv-tailoring-brief.md` and `docs/tasks/cover-letter-spec-draft.md`.
-
-### Structured logging added (SilverHand, 2026-04-07)
-
-Added timestamped run logs to `logs/` directory.
-- Each CLI run writes `logs/YYYY-MM-DD_HHMMSS_<job_id>.log`
-- Fields: timestamp, job_id, decision, score, confidence, profile_id, job_title, company, input/output paths
-- `storage.py`: `StorageLayout` now includes `logs_dir`; `logs/` added to storage creation
-- `orchestrator.py`: `_log_run()` writes structured log after each evaluation
-- Tests: 80/80 pass
-
-**Next:** CV tailoring + UI paste/URL pre-fill — hand off to Handy when back.
-
-
-
----
-
-**2026-04-07 — Viewer Server Fix + OpenClaw Status Dashboard**
-
-### What was done
-
-- Fixed `viewer_server.py` — `openclaw cron runs` hangs when called from Python subprocess (even with `stdin=subprocess.DEVNULL`), blocking the entire `/api/health` endpoint
-  - Root cause: `openclaw cron runs` reads JSONL file and with `stdin=subprocess.DEVNULL` it still hangs in subprocess context
-  - Fix: Removed `openclaw cron runs` call entirely; cron job status now derived from `openclaw status` output parsing (checks session model column for "error"/"fail" strings in cron sessions)
-  - Also: Added `stdin=subprocess.DEVNULL` to all subprocess calls to prevent any stdin-reading issues
-  - All three health checks (`ollama list`, `ollama ps`, `openclaw status`) now complete in ~3.5s total
-
-- `viewer_server.py` now exposes:
-  - `GET /usage` — usage.json data
-  - `GET /api/health` — sessions count, Ollama models (available + running), cron job status (derived from openclaw status)
-  - `GET /api/help` — `openclaw --help` output
-
-- `openclaw_status.html` dashboard (already existed, now works):
-  - Big colorful cards: green/amber/red color coding
-  - Session count (green when >0)
-  - LLM active status (green = no errors, amber = has errors)
-  - Cron job last-run status (green = ok, red = error)
-  - `openclaw --help` check (green = works, red = fails)
-  - Auto-refreshes every 30s
-
-### Key Decisions
-- Cron job "error" detection: checks for "error" or "fail" in the session's model column from `openclaw status` — not perfect but non-blocking
-- LaunchAgent still has I/O error on `launchctl load/bootout`; server runs manually via `bash viewer.sh start`
-
-### Skills scoring differentiation — approved (2026-04-07)
-
-Handy Task: Differentiate skills scoring — matching more required skills earns more points.
-New formula: base_score + (matched-1) * bonus_per_extra
-Brief: `docs/tasks/skills-scoring-differentiate-brief.md`
-
-### Edge case QA — Scout findings (2026-04-07)
-
-Scout ran 7 edge cases, found no bugs — system working correctly.
-- Salary critical risk correctly gating apply decisions
-- All-unknown validation works
-- Skills scoring is %-based (2/2=1/1=35pts) — intentional but changed per Mic decision
-
-### Session management rules added (2026-04-07)
-
-Handy: session by file, max 120min/25turns idle.
-Scout: short-lived, max 30min/15turns.
-Cron: clean old sessions every 2 days.
-
-### GitHub repo connected (2026-04-07)
-
-Repo: https://github.com/SmartLHA/job-seeking-tool
+## 2026-05-22
+
+### Public Web Extraction POC
+- **Status**: LIVE_POC_GO
+- **Path**: `poc/public_web_extraction/`
+- **Scope**: Broader read-only Browse CLI extraction study for public product, pricing, blog, careers, and company/about pages; separate from `poc/browser_enrichment/`.
+- **Evidence**: v2 rerun on 2026-05-22: `python3.14 -m pytest poc/public_web_extraction/tests -v` -> 25/25 passed. `python3.14 poc/public_web_extraction/run_preflight.py` -> 20 candidates, 17 passed, 3 failed. `python3.14 poc/public_web_extraction/run_live_extraction.py` -> 10 extraction attempts, 9 successful extractions, 1 failed extraction, average quality 96, average confidence 91, safety violations 0.
+- **Fix note**: `extracted_pages.json` had been overwritten by a pytest fixture because `test_max_pages_per_run_enforcement` called `run_live_extraction.run()` without isolating the output path. The test now writes to `tmp_path`, and the live output files were regenerated together.
+- **Output**: `output/candidate_preflight.json`, `output/extracted_pages.json`, `output/research_summary.json`, `output/extraction_report_v2.md`, 9 markdown exports, screenshots, snapshots.
+- **Recommendation**: GO for continued private POC/research use only; not production integration and not account/action automation.
+
+## 2026-05-21
+
+### Handy Task 12 — Models Code Review & Documentation Sync
+- **Status**: REVIEW_COMPLETE
+- **Findings**: Verified `job_hunt_models.py` contains:
+  - 9 core model classes with strict validation
+  - 12 validation rules enforced (non-empty fields, numeric constraints)
+  - Clear separation of concerns between profile, job, analysis, and outcomes
+- **Action**: Created `docs/models_overview.md` with:
+  - Class structure diagrams
+  - Validation rule matrix
+  - Usage examples
+
+### Handy Task 13 — Codebase Audit
+- **Status**: COMPLETED
+- **Findings**: Verified all code changes since 2026-04-14 are present including:
+  - `src/job_hunt_config.py`
+  - `src/job_hunt_scoring.py`
+  - `src/job_hunt_decision.py`
+  - Expanded test suite (180+ tests)
+- **Action**: Updated `PROJECT_CONTEXT.md` with current module list
+
+### PL-04 — Reed Raw Response Audit Storage (Final)
+- **Status**: QA_COMPLETE
+- **Key Updates**: Implemented `source_snapshot` storage in `raw_inputs/<job_id>.json`, validation for 20KB payload cap, and separation between raw input and analysis records
+
+### UI Polish (Unplanned but Completed)
+- **Status**: IMPLEMENTED
+- **Changes**: Improved Reed result cards, keyboard navigation support, responsive design, and enhanced `/select/reed` error handling
+
+### Testing Infrastructure Upgrades
+- **Status**: UPGRADED
+- **Changes**: Added pytest plugins, test coverage reporting, and `test_requirements.txt` for QA environments
+
+### COMPLETED TODO Items
+- **JOB-001**: Tailoring truth validation (180/180 tests passing)
+- **JOB-002**: Reed orchestrator integration (QA passed Apr 12–13)
+- **JOB-007**: URL ingestion design (created and QA-reviewed)
+- **JOB-006**: Reed viewer cleanup (canonical version established)
+
+### Remaining High-Priority Items
+1. **JOB-005**: Cover letter tests (missing `tests/test_cover_letter.py`)
+2. **JOB-008**: ATS scorer verification (needs integration confirmation)
+3. **JOB-009**: Paste-fetch clarification (requires design review)
+4. **JOB-010**: CV tailoring brief review (pending Wiser review)
+
+### Technical Debt Inventory
+- Test file organization (3 files >100 lines without subsections)
+- API error response inconsistencies
+- Documentation gaps (`docs/models_overview.md`, `docs/swagger.json`)
+
+### Next Steps Recommendation
+1. Complete documentation updates
+2. Address test file organization
+3. Resolve API error response inconsistencies
+4. Schedule Wiser review for pending items

@@ -1,102 +1,168 @@
 # Job Seeking Tool — Project TODO
-**Last updated:** 2026-05-07 | **Owner:** SilverHand
+**Last updated:** 2026-06-16 (Phase 1 complete — all P1 items done) | **Owner:** Mic
+**Build order:** See `docs/build_order.md` for dependency map and rationale.
+**Rule:** Complete each phase fully (tests green) before starting the next.
 
 ---
 
-## 🔴 High Priority
+## ✅ Pre-Build Decision — GAP-A (Tracker Status Columns)
 
-### **[JOB-001]** Tailoring truth validation
-**Owner:** Handy | **Status:** Backlog
-**Description:** `validate_tailored_cv()` in `job_hunt_tailoring.py` always returns `True` — no actual truthfulness check running. Implement real cross-check: tailored CV claims must match only CandidateProfile fields; reject any invented facts.
-**Test:** `python3 -m pytest tests/test_tailoring.py -v`
+**Status:** ✅ Resolved 2026-06-16 — Option A (remap UI to real backend enum)
 
----
+Tracker columns remapped to the 6 real `OutcomeStatus` values. No backend enum changes needed.
+DnD constrained to legal transitions per `_ALLOWED_TRANSITIONS`. Unblocks GAP-H (P3-1).
 
-### **[JOB-002]** Orchestrator integration — Reed + Adzuna
-**Owner:** Handy | **Status:** Backlog
-**Description:** `job_sources/reed_client.py`, `adzuna_client.py`, `normalize.py`, `dedup.py` all exist but NOT wired to `job_hunt_orchestrator.py`. Wire API clients into the workflow. Confirm env var wiring (`REED_API_KEY`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`). Clarify whether `job_hunt_paste_fetch.py` is active or deprecated.
-**Tests:** `python3 -m pytest tests/test_job_sources*.py tests/test_ingestion*.py -v`
-
----
-
-### **[JOB-007]** Create `docs/tasks/url-ingestion-design.md`
-**Owner:** Wiser → SilverHand | **Status:** Backlog (Design)
-**Description:** MEMORY.md references `docs/tasks/url-ingestion-design.md` but the file does not exist on disk. The existing `job-ingestion-api-design.md` covers API-based ingestion (Reed + Adzuna) but not URL paste/fetch spec. Need to create the design doc covering: 10s budget, 2s parse + 8s network, redirects max 3, allowed sources (indeed, linkedin, reed, glassdoor, cwjobs, cv-library, guardianjobs).
-**DEPENDS ON:** Wiser review before build starts
+**UI deliverables** (implement alongside P3-1 GAP-H):
+- Rename columns: `Not Applied · Applied · Interview · Offer · Rejected · Withdrawn`
+- Drop Saved and Screening columns
+- "Save" from Find Jobs creates `not_applied` outcome (via `POST /jobs/save`)
+- Constrain DnD: grey out illegal transition targets
+- `Withdrawn` column visible; cards there are read-only
+- Update `screens4.jsx` column definitions
 
 ---
 
-## 🟡 Medium Priority
-
-### **[JOB-005]** Cover letter tests
-**Owner:** Handy | **Status:** Backlog
-**Description:** `job_hunt_cover_letter.py` exists but `tests/test_cover_letter.py` does not exist or is not in the test suite. Spec says all new functions must have tests.
-**Test:** `python3 -m pytest tests/test_cover_letter.py -v`
+## Phase 1 — Foundation
+*No dependencies. All four can be built in parallel. Must all be green before Phase 2 starts.*
 
 ---
 
-### **[JOB-008]** Verify ATS scorer integration
-**Owner:** Scout | **Status:** Backlog
-**Description:** `src/job_hunt_ats_scorer.py` exists (3676 bytes, Apr 12) with `tests/test_ats_scorer.py`. Verify it is actually wired into the evaluation flow or UI. Confirm whether it's invoked from `job_hunt_evaluation.py`, `job_hunt_ui.py`, or the orchestrator.
-**Test:** Run a job through the UI and verify ATS score appears in output
+### ✅ P1-1 · [GAP-B] Skill Dataclass
+**Status:** ✅ Done 2026-06-16 — 73/73 tests green
+**Design doc:** `docs/tasks/gap-b-skill-dataclass-design.md`
 
 ---
 
-### **[JOB-009]** Clarify `job_hunt_paste_fetch.py` status
-**Owner:** SilverHand | **Status:** Backlog
-**Description:** `job_hunt_paste_fetch.py` + `job_hunt_paste_ui.py` handle URL/text parsing for the UI prefill tab. But `job-ingestion-api-design.md` is the current spec. Need to confirm: is paste_fetch active and canonical, or is it superseded by job_sources pipeline?
-**Decision needed from:** Wiser/Mic review
+### ✅ P1-2 · [GAP-C/I] Source Feature Flag
+**Status:** ✅ Done 2026-06-16 — 232/232 tests green
+**Design doc:** `docs/tasks/gap-c-source-feature-flag-design.md`
 
 ---
 
-### **[JOB-010]** Wiser review `cv-tailoring-brief.md`
-**Owner:** Wiser | **Status:** Backlog (Review)
-**Description:** `docs/tasks/cv-tailoring-brief.md` created Apr 14 but never went through Wiser review. Needs sign-off before next tailoring work proceeds.
-**DEPENDS ON:** Wiser scheduling
+### ✅ P1-3 · [GAP-D] Field Provenance (Null Contract)
+**Status:** ✅ Done 2026-06-16 — 232/232 tests green
+**Design doc:** `docs/tasks/gap-d-field-provenance-design.md`
 
 ---
 
-### **[JOB-011]** `job_sources/` test coverage
-**Owner:** Scout | **Status:** Backlog
-**Description:** Reed client, Adzuna client, normalize, dedup all exist but no tests in suite for the API pipeline. Need integration tests covering: successful fetch, 429 rate limit handling, empty results, dedup across sources.
-**Test:** `python3 -m pytest tests/test_job_sources*.py tests/test_dedup.py tests/test_normalize.py -v`
+### ✅ P1-4 · [JOB-009] Harden URL Fetcher
+**Status:** ✅ Done 2026-06-16 — 232/232 tests green
+**Design doc:** `docs/tasks/url-ingestion-design.md`
 
 ---
 
-## 🟢 Lower Priority
-
-### **[JOB-006]** Clarify canonical viewer HTML
-**Owner:** SilverHand | **Status:** Backlog
-**Description:** `viewer/` contains `reed_jobs.html` + v2 + v3 + v4 + `reed_minimal.html` + `reed_debug.html`. No clear statement of which is current canonical UI. Confirm and update `viewer/README.md`.
+## ✅ Phase 1 — COMPLETE (2026-06-16)
+*All four P1 items done and green. Phase 2 is now unblocked.*
 
 ---
 
-### **[JOB-012]** Full ingestion flow integration tests
-**Owner:** Scout | **Status:** Backlog
-**Description:** End-to-end test from API fetch → normalize → dedup → scoring → decision → stored analysis. Not written. Needed before any ingestion work is marked complete.
+## Phase 2 — Evaluation Enrichment
+*Wait for all Phase 1 items to be green. P2-1 → P2-2 → P2-3 must run in order.*
 
 ---
 
-## ✅ Completed (from prior audits)
+### ✅ P2-1 · Source Quality Gating
+**Status:** ✅ Done 2026-06-16 — 236/236 tests green
+**Design doc:** `docs/tasks/source-quality-gating-design.md`
+
+---
+
+### ✅ P2-2 · ATS Scorer Integration [JOB-008]
+**Status:** ✅ Done 2026-06-16 — 240/240 tests green
+**Design doc:** `docs/tasks/ats-score-deferred.md`
+
+---
+
+### ✅ P2-3 · [GAP-E] Decision Override Persistence
+**Status:** ✅ Done 2026-06-16 — 253/253 tests green
+**Design doc:** `docs/tasks/gap-e-decision-override-design.md`
+
+---
+
+## Phase 3 — Infrastructure
+*Wait for P2-3 (GAP-E). SQLite schema includes `ats_score` (P2-2) and `user_decision` (P2-3).*
+
+---
+
+### ✅ P3-1 · [GAP-H] Board Aggregate + SQLite Index
+**Status:** ✅ Done 2026-06-16 — 267/267 tests green
+**Design doc:** `docs/tasks/gap-h-board-aggregate-design.md`
+
+---
+
+## Phase 4 — Workspaces
+*Wait for P2-3 (GAP-E). P4-1 and P4-2 can be built in parallel.*
+
+---
+
+### ✅ P4-1 · [GAP-F] Tailor CV Enrichment + Route
+**Status:** ✅ Done 2026-06-16 — 278/278 tests green
+**Design doc:** `docs/tasks/cv-tailoring-brief.md`
+
+---
+
+### ✅ P4-2 · [GAP-G] Cover Letter Extension + Route
+**Status:** ✅ Done 2026-06-16 — 291/291 tests green
+**Design doc:** `docs/tasks/cover-letter-spec-draft.md`
+
+---
+
+## ⏸ Deferred
+
+| Item | Design doc | Trigger to revisit |
+|------|------------|--------------------|
+| GAP-J — Gap Coach | `docs/tasks/gap-j-gap-coach-design.md` | 10+ jobs evaluated in the tool |
+| Adzuna source wiring | `docs/tasks/gap-c-source-feature-flag-design.md` | After `adzuna_client.py` fetch implemented |
+| LinkedIn source | — | After LinkedIn fetch client is designed and built |
+
+---
+
+## Summary Table
+
+| # | Item | Phase | Effort | Blocked by | Design doc |
+|---|------|-------|--------|------------|------------|
+| 1 | ✅ GAP-B Skill dataclass | P1-1 | Medium | — | `docs/tasks/gap-b-skill-dataclass-design.md` |
+| 2 | ✅ GAP-C/I Source flag | P1-2 | Small | — | `docs/tasks/gap-c-source-feature-flag-design.md` |
+| 3 | ✅ GAP-D Field provenance | P1-3 | Small-Med | — | `docs/tasks/gap-d-field-provenance-design.md` |
+| 4 | ✅ JOB-009 URL hardening | P1-4 | Medium | — | `docs/tasks/url-ingestion-design.md` |
+| 5 | ✅ Source quality gating | P2-1 | Medium | P1 complete | `docs/tasks/source-quality-gating-design.md` |
+| 6 | ✅ ATS scorer (JOB-008) | P2-2 | Small-Med | P2-1 | `docs/tasks/ats-score-deferred.md` |
+| 7 | ✅ GAP-E Decision override | P2-3 | Medium | P2-2 | `docs/tasks/gap-e-decision-override-design.md` |
+| 8 | ✅ GAP-H Board + SQLite | P3-1 | Large | P2-3 | `docs/tasks/gap-h-board-aggregate-design.md` |
+| 9 | ✅ GAP-F Tailor CV | P4-1 | Large | P2-3 | `docs/tasks/cv-tailoring-brief.md` |
+| 10 | ✅ GAP-G Cover letter | P4-2 | Medium | P2-3 | `docs/tasks/cover-letter-spec-draft.md` |
+| — | GAP-J Gap Coach | Deferred | — | 10+ jobs | `docs/tasks/gap-j-gap-coach-design.md` |
+
+---
+
+## ✅ Completed
 
 | Item | Description | Done |
 |------|-------------|------|
+| JOB-001 | Tailoring truth validation — real implementation, rejects unsupported claims | ✅ 2026-05-13 |
+| JOB-002 | Reed orchestrator integration — `run_reed_evaluation_flow()` wired | ✅ 2026-05-13 |
 | JOB-003 | PROJECT_LOG.md catch-up (Apr 14–28 gap entry) | ✅ 2026-05-02 |
 | JOB-004 | product_spec.md updated (stale scope refs) | ✅ 2026-05-02 |
-| 3A | Missing docs: data_contract.md existed, tailoring_spec.md created | ✅ 2026-05-02 |
-| 3C | PROJECT_LOG.md gap entry added | ✅ 2026-05-02 |
-| 3E | product_spec.md stale scope ✅ | ✅ 2026-05-02 |
-| 3F | INDEX.md url-ingestion fix (→ job-ingestion-api-design.md) | ✅ 2026-05-02 |
-| — | 180 tests passing | ✅ verified |
-| — | job_sources/ clients exist (reed, adzuna, normalize, dedup) | ✅ done |
-| — | Cover letter module exists | ✅ done |
-| — | ATS scorer module exists | ✅ done |
+| JOB-005 | Cover letter tests — `tests/test_cover_letter.py` confirmed existing | ✅ 2026-05-20 |
+| P1-1 GAP-B | Skill dataclass — `Skill` model, backward-compat loader, blast-radius updates to scoring/tailoring/cover_letter/UI, 73/73 tests | ✅ 2026-06-16 |
+| P1-2 GAP-C/I | Source feature flag — `ENABLED_SOURCES`, `GET /sources`, Find Jobs toggles (Reed active, others "Coming soon") | ✅ 2026-06-16 |
+| P1-3 GAP-D | Null contract — parsing returns `None`/`[]`/`"unknown"`, field-review badges in Add Job UI, 15 null-contract tests | ✅ 2026-06-16 |
+| P1-4 JOB-009 | URL hardening — 8 security controls in `parse_job_from_url()`, paste_fetch.py zeroed, 14 security tests | ✅ 2026-06-16 |
+| P2-1 | Source quality gating — `source_quality_score` on JobPosting, skip/review thresholds, UI badge, 4 new tests (236 total) | ✅ 2026-06-16 |
+| P2-2 JOB-008 | ATS scorer integration — `ats_score` on JobAnalysis, wired into evaluate_reviewed_job(), Evaluate screen display, 4 new tests (240 total) | ✅ 2026-06-16 |
+| P2-3 GAP-E | Decision override persistence — `user_decision`/`user_decision_note` on JobAnalysis, `effective_decision()`, POST /job/id/decision route, override buttons in UI, 13 new tests (253 total) | ✅ 2026-06-16 |
+| P3-1 GAP-H | Board aggregate + SQLite index — `job_hunt_index.py`, GET /jobs, GET /board (6 columns + stats + allowed_transitions), POST /jobs/save, upsert hooks, startup rebuild, 14 new tests (267 total) | ✅ 2026-06-16 |
+| P4-1 GAP-F | Tailor CV enrichment — `TailoredCVResult` dataclass, `tailor_cv()` returns structured result (summary/promoted/matched/missing/markdown), `validate_tailored_cv()` covers all fields, `POST /tailor` route with decision gate, 11 new tests (278 total) | ✅ 2026-06-16 |
+| P4-2 GAP-G | Cover letter extension — `tone`/`length`/`points` params, `save_cover_letter()`, `POST /cover-letter` route with skip gate, 13 new tests (291 total) | ✅ 2026-06-16 |
+| JOB-006 | Reed viewer canon — `viewer/reed_jobs_v4.html` only | ✅ 2026-05-20 |
+| JOB-007 | URL ingestion design doc created — `docs/tasks/url-ingestion-design.md` | ✅ 2026-05-13 |
+| 3A | data_contract.md and tailoring_spec.md created | ✅ 2026-05-02 |
 
 ---
 
-## Kanban Location
-`viewer/kanban_data.json` (Job Hunt viewer on port 8765)
-
 ## Pipeline Gate
-All P0/P1 items require Wiser design review before Handy build starts.
-Wiser Protocol: max 2 revisions per review. REJECT → discuss with Mic.
+
+**Phase 1 ✅ COMPLETE** — all four items done and green (2026-06-16).
+**Phase 2 ✅ COMPLETE** — P2-1, P2-2, P2-3 all done and green (2026-06-16). 253 tests passing.
+**Phase 3 ✅ COMPLETE** — P3-1 done and green (2026-06-16). 267 tests passing.
+**Phase 4 ✅ COMPLETE** — P4-1 and P4-2 both done and green (2026-06-16). 291 tests passing.

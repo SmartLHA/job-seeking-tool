@@ -46,8 +46,8 @@ Same pattern applies to preferred_skills_score (bonus_per_extra_preferred = weig
 
 | File | Change |
 |------|--------|
-| `src/config.py` | Add `bonus_per_extra_required` and `bonus_per_extra_preferred` to `ScoringWeights` |
-| `src/scoring.py` | Update `_score_skills()` to use new formula |
+| `src/job_hunt_config.py` | Add `bonus_per_extra_required` and `bonus_per_extra_preferred` to `ScoringWeights` |
+| `src/job_hunt_scoring.py` | Update `_score_skills()` to use new formula |
 | `tests/test_scoring.py` | Add tests: 1/1=35, 2/2=38.5, 3/3=42, 1/2=17.5 |
 | `docs/data_contract.md` | Update skills_score documentation |
 

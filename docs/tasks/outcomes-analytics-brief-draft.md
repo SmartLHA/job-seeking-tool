@@ -15,14 +15,14 @@ Track application outcomes and show basic conversion metrics over time.
 
 ## Already implemented
 
-- `src/outcomes.py` — `ApplicationOutcome` model, create/update, status history
+- `src/job_hunt_outcomes.py` — `ApplicationOutcome` model, create/update, status history
 - `OutcomeStatus = Literal["not_applied","applied","interview","rejected","offer","withdrawn"]`
 - Storage in `data/state/outcomes/`
 
 ## What may still be needed
 
-- [ ] `src/reporting.py` extension — `get_outcome_summary()` → applied count, interview rate, offer rate, rejection rate
-- [ ] `src/reporting.py` extension — `get_score_to_outcome_analysis()` — does higher score predict interview/offer?
+- [ ] `src/job_hunt_reporting.py` extension — `get_outcome_summary()` → applied count, interview rate, offer rate, rejection rate
+- [ ] `src/job_hunt_reporting.py` extension — `get_score_to_outcome_analysis()` — does higher score predict interview/offer?
 - [ ] Basic UI extension — show outcome history / simple metrics in UI (or keep CLI-only for MVP)
 - [ ] Outcome history view in UI
 

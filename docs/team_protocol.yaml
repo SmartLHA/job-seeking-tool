@@ -74,7 +74,14 @@ roles:
           low: "0-2"
           medium: "3"
           high: "4-6"
+      # Mic override 2026-04-12:
+      # - Simple dev tasks → Scout (QA)
+      # - Complex dev tasks → Handy
+      # - Codex only when Mic explicitly asks
       dev_assignment:
+        simple: Scout
+        complex: Handy
+        codex: "only when Mic explicitly asks"
         gemma_only_if_all_true:
           - score <= 2
           - single_function_or_small_script
@@ -82,15 +89,15 @@ roles:
           - no_async_concurrency_stateful_logic
           - clear_specific_requirements
           - output_easy_to_verify
-        otherwise: Codex
+        otherwise: Handy
       qa_assignment:
         model: Gemma
         strict_checklist_required: true
       escalation:
-        - if QA fails, rerun Dev on Codex
-        - Codex output must still pass Gemma QA
-        - if Codex output still fails QA, escalate to Mic and stop automatic retries
-        - after Codex plus QA fail, show summary to Mic
+        - if QA fails, rerun Dev on Handy
+        - Handy output must still pass Scout QA
+        - if Handy output still fails QA, escalate to Mic and stop automatic retries
+        - after Handy plus QA fail, show summary to Mic
   pipeline_stages:
     order:
       - office_hours    # sharpen problem before planning

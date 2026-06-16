@@ -34,8 +34,8 @@ Update UI to support two new input modes with AI pre-fill and a review step befo
 ```
 1. User enters URL or pastes text
          ↓
-2. If URL → fetch page, parse with src/parsing.py
-   If pasted text → parse with src/parsing.py
+2. If URL → fetch page, parse with src/job_hunt_parsing.py
+   If pasted text → parse with src/job_hunt_parsing.py
          ↓
 3. Pre-filled form shown to user for review/edit
          ↓
@@ -48,14 +48,14 @@ Update UI to support two new input modes with AI pre-fill and a review step befo
 
 ## Changes Required
 
-### `src/ui.py`
+### `src/job_hunt_ui.py`
 - Add URL fetch handler (`/fetch` endpoint or integrated)
 - Add text paste parsing handler
 - Add review/edit step between input and evaluation
 - Update screen flow: home → input → review → result
 - Keep existing form flow as manual fallback
 
-### `src/parsing.py` (new module)
+### `src/job_hunt_parsing.py` (new module)
 ```python
 def parse_job_from_text(raw_text: str) -> dict:
     """Parse pasted job text into structured job fields.
@@ -68,10 +68,10 @@ def parse_job_from_url(url: str) -> dict:
     Returns dict matching JobPosting shape on success, raises on failure."""
 ```
 
-### `src/orchestrator.py`
+### `src/job_hunt_orchestrator.py`
 - `submit_reviewed_job()` — already exists, works for parsed form submission
 
-### `src/models.py`
+### `src/job_hunt_models.py`
 - `JobPosting` fields already exist — no model changes needed
 
 ---
@@ -93,8 +93,8 @@ def parse_job_from_url(url: str) -> dict:
 
 | File | Change |
 |------|--------|
-| `src/parsing.py` | New module — parse from text, parse from URL |
-| `src/ui.py` | Add URL/text input screen, review step, fetch handler |
+| `src/job_hunt_parsing.py` | New module — parse from text, parse from URL |
+| `src/job_hunt_ui.py` | Add URL/text input screen, review step, fetch handler |
 | `tests/test_parsing.py` | New — text parsing, URL fetch (mocked), fallback behavior |
 | `docs/ui_scope.md` | Updated v2 (done) |
 | `docs/development_sequence.md` | Update UI scope entry |

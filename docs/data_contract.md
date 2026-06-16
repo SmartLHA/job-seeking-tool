@@ -1,6 +1,10 @@
 # Data Contract Draft
 
-Status: proposed first non-coding artifact for approval before implementation.
+**Superseded section (see below):** The job ingestion/sourcing layer has been replaced by `docs/tasks/job-ingestion-api-design.md` (Reed + Adzuna API design, Wiser review pending). The JobPosting contract below remains valid for the internal job record used in analysis and tailoring.
+
+## Status
+
+Proposed first non-coding artifact for approval before implementation.
 
 ## Purpose
 
@@ -63,7 +67,7 @@ Core candidate fields expected for scoring/tailoring:
 - `remote_preference`
 - `salary_floor_gbp`
 - `right_to_work_uk`
-- `skills`
+- `skills` — `list[Skill]`; each Skill has `name: str`, `level: str` (one of `unspecified|junior|mid|senior|expert`, default `unspecified`), `years: int | None` (default `null`), `evidence_type: str` (one of `self-reported|evidenced`, default `self-reported`). On load, plain strings are backward-coerced to `Skill(name=value)`.
 - `years_experience`
 - `industries`
 - `achievements`
@@ -164,6 +168,17 @@ Tailoring output should reference:
 - `source_cv_ref`
 - `tailored_cv_ref`
 - `tailoring_notes`
+
+## Skill Object Shape
+
+```json
+[
+  {"name": "SQL", "level": "senior", "years": 7, "evidence_type": "evidenced"},
+  {"name": "Stakeholder Management", "level": "unspecified", "years": null, "evidence_type": "self-reported"}
+]
+```
+
+Plain strings in existing JSON files are auto-coerced on load: `"Python"` → `{"name": "Python", "level": "unspecified", "years": null, "evidence_type": "self-reported"}`.
 
 ## Minimal Example — JobPosting
 
