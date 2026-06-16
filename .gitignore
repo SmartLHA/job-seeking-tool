@@ -60,5 +60,10 @@ output/reports/*.csv
 output/cover_letters/
 output/tailored_cvs/
 data/demo_profile/docs/master_cv.md
+data/mic_profile.json
+data/state/raw_inputs/
+data/state/analyses/senior-business-analyst-techcorp-uk-*.json
+data/state/reviewed_jobs/senior-business-analyst-techcorp-uk-*.json
+demo-job-001/output/
 viewer/usage.json
 viewer/conversations/
