@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import dataclasses
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +22,8 @@ from src.job_hunt_storage import (
 from src.job_sources.dedup import deduplicate_jobs
 from src.job_sources.normalize import NormalizedJob, normalize_reed
 from src.job_sources.reed_client import fetch_reed_jobs
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +96,16 @@ def run_local_evaluation_flow_from_payload(
 
     profile = load_candidate_profile(profile_path)
     master_cv_path = _load_master_cv_if_configured(profile, profile_path)
+    # Hydrate master_cv_text from disk when the profile JSON has master_cv_ref but
+    # master_cv_text was not serialised (common when CV was auto-saved via the UI).
+    # evaluate_reviewed_job() checks profile.master_cv_text for ATS scoring — without
+    # this step it always sees None and reports "N/A (no CV on file)".
+    if master_cv_path is not None and not profile.master_cv_text:
+        try:
+            _cv_text = load_master_cv(master_cv_path)
+            profile = dataclasses.replace(profile, master_cv_text=_cv_text)
+        except Exception as _cv_load_exc:
+            logger.warning("Could not load master CV text for ATS scoring: %s", _cv_load_exc)
     reviewed_job = reviewed_job_from_dict(reviewed_job_payload)
 
     layout = ensure_storage_layout(state_root)

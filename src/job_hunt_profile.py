@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+from functools import partial
 from pathlib import Path
 from typing import Any
 
-from src.job_hunt_models import CandidateProfile, Skill, VALID_SKILL_LEVELS, VALID_EVIDENCE_TYPES
+from src.job_hunt_models import CandidateProfile, Skill
+from src import job_hunt_validation as _v
 
 
 def parse_cv_file(path: Path) -> str:
@@ -240,69 +242,22 @@ def _skill_to_dict(skill: Skill) -> dict[str, Any]:
     }
 
 
-def _normalise_string_list(value: Any, field_name: str) -> list[str]:
-    if value is None:
-        return []
-    if not isinstance(value, list):
-        raise ProfileValidationError(f"{field_name} must be a list of strings")
-
-    normalised_items: list[str] = []
-    for item in value:
-        if not isinstance(item, str):
-            raise ProfileValidationError(f"{field_name} must contain only strings")
-        cleaned = item.strip()
-        if not cleaned:
-            raise ProfileValidationError(f"{field_name} must not contain empty strings")
-        normalised_items.append(cleaned)
-    return normalised_items
+_normalise_string_list = partial(_v.string_list, strip=True, dedup=False, allow_empty_items=False, error=ProfileValidationError)
 
 
-def _optional_string(value: Any, field_name: str) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ProfileValidationError(f"{field_name} must be a string when provided")
-    cleaned = value.strip()
-    if not cleaned:
-        raise ProfileValidationError(f"{field_name} must not be empty when provided")
-    return cleaned
+_optional_string = partial(_v.optional_string, error=ProfileValidationError)
 
 
-def _optional_text_or_empty(value: Any, field_name: str) -> str | None:
-    """Return stripped string or None for optional text fields; allow empty strings."""
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ProfileValidationError(f"{field_name} must be a string when provided")
-    return value or None
+_optional_text_or_empty = partial(_v.optional_text_or_empty, error=ProfileValidationError)
 
 
-def _optional_non_negative_int(value: Any, field_name: str) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ProfileValidationError(f"{field_name} must be an integer when provided")
-    if value < 0:
-        raise ProfileValidationError(f"{field_name} must be non-negative when provided")
-    return value
+_optional_non_negative_int = partial(_v.optional_int, non_negative=True, error=ProfileValidationError)
 
 
-def _optional_non_negative_float(value: Any, field_name: str) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ProfileValidationError(f"{field_name} must be numeric when provided")
-    if value < 0:
-        raise ProfileValidationError(f"{field_name} must be non-negative when provided")
-    return float(value)
+_optional_non_negative_float = partial(_v.optional_non_negative_float, error=ProfileValidationError)
 
 
-def _optional_bool(value: Any, field_name: str) -> bool | None:
-    if value is None:
-        return None
-    if not isinstance(value, bool):
-        raise ProfileValidationError(f"{field_name} must be a boolean when provided")
-    return value
+_optional_bool = partial(_v.optional_bool, error=ProfileValidationError)
 
 
 def _resolve_local_path(base_path: str | Path, relative_or_absolute_path: str) -> Path:

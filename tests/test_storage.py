@@ -1,4 +1,5 @@
 from __future__ import annotations
+import dataclasses
 
 import json
 from pathlib import Path
@@ -289,3 +290,33 @@ def test_job_analysis_from_dict_backward_compat_missing_user_decision() -> None:
     restored = job_analysis_from_dict(d)
     assert restored.user_decision is None
     assert restored.user_decision_note is None
+
+
+def test_job_analysis_roundtrip_keyword_match_fields() -> None:
+    # F1: the new keyword-match fields survive to_dict → from_dict.
+    analysis = build_analysis(ats_score=72)
+    analysis = dataclasses.replace(
+        analysis,
+        keyword_match_rate=66,
+        keywords_required_missing=["Python"],
+        keywords_preferred_missing=["Tableau"],
+        keywords_overused=["SQL"],
+    )
+    restored = job_analysis_from_dict(job_analysis_to_dict(analysis))
+    assert restored.keyword_match_rate == 66
+    assert restored.keywords_required_missing == ["Python"]
+    assert restored.keywords_preferred_missing == ["Tableau"]
+    assert restored.keywords_overused == ["SQL"]
+
+
+def test_job_analysis_from_dict_backcompat_without_keyword_fields() -> None:
+    # Old records (saved before F1) must still load, defaulting the new fields.
+    payload = job_analysis_to_dict(build_analysis())
+    for k in ("keyword_match_rate", "keywords_required_missing",
+              "keywords_preferred_missing", "keywords_overused"):
+        payload.pop(k, None)
+    restored = job_analysis_from_dict(payload)
+    assert restored.keyword_match_rate is None
+    assert restored.keywords_required_missing == []
+    assert restored.keywords_preferred_missing == []
+    assert restored.keywords_overused == []

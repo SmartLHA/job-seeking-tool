@@ -1,231 +1,105 @@
 # Job Seeking Tool
 
-Local-first job-search decision support for the UK market.
+Local-first job-search decision support and application prep tool for the UK market.
 
-Current focus:
-- load a candidate profile
-- load a reviewed job JSON
-- run deterministic evaluation
-- save reviewed job and analysis separately
-- export simple JSON/CSV reports
-- keep outcomes tracking local
+## What it does
 
-This is an early local-first foundation with a lightweight CLI and a very small localhost UI shell.
+- Search Reed (and other configured sources) for jobs
+- Evaluate job fit with deterministic scoring → Apply / Review / Skip
+- Tailor CV to a specific job (LLM-assisted, truth-only)
+- Generate a cover letter (configurable tone, length, key points)
+- Track application outcomes locally
+- Board view of all evaluated jobs
 
-## Current status
-
-Implemented now:
-- candidate profile loading and validation
-- master CV reference checking
-- reviewed job input normalization
-- deterministic scoring
-- Apply / Review / Skip decisioning
-- evaluation flow composition
-- local state storage with separation between raw inputs, reviewed jobs, analyses, and outcomes
-- JSON/CSV report export
-- basic outcomes tracking
-- lightweight CLI entrypoint
-- minimal localhost browser UI for one-job evaluation and outcome tracking
-- local project docs viewer under `viewer/`
-
-Not implemented yet:
-- broad ingestion/parsing
-- richer/final product UI
-- CV tailoring flow
-- cover letters
-- auto-apply or browser automation
-
-## Repo shape
-
-Main code lives in `src/`.
-
-Key modules currently in use:
-- `src/job_hunt_profile.py`
-- `src/job_hunt_reviewed_input.py`
-- `src/job_hunt_scoring.py`
-- `src/job_hunt_decision.py`
-- `src/job_hunt_evaluation.py`
-- `src/job_hunt_storage.py`
-- `src/job_hunt_reporting.py`
-- `src/job_hunt_outcomes.py`
-- `src/job_hunt_orchestrator.py`
-- `src/job_hunt_parsing.py`
-- `src/job_hunt_ui.py`
-- `src/job_hunt_main.py`
-
-Tests live in `tests/`.
-
-## CLI usage
-
-Current entrypoint:
+## How to run
 
 ```bash
-python3 -m src.main \
-  --profile path/to/candidate_profile.json \
-  --reviewed-job path/to/reviewed_job.json
-```
-
-Optional flags:
-
-```bash
-python3 -m src.main \
-  --profile path/to/candidate_profile.json \
-  --reviewed-job path/to/reviewed_job.json \
-  --state-root data/state \
-  --report-dir output/reports \
-  --raw-input path/to/raw_input.json \
-  --raw-input-id raw-job-001
-```
-
-Arguments:
-- `--profile`: candidate profile JSON file
-- `--reviewed-job`: reviewed job JSON file used for evaluation
-- `--state-root`: local storage root for raw/reviewed/analysis state, default `data/state`
-- `--report-dir`: JSON/CSV report output directory, default `output/reports`
-- `--raw-input`: optional raw input JSON stored separately for auditability
-- `--raw-input-id`: optional raw input record id, defaults to the reviewed job id
-
-On success, the CLI prints a short summary including:
-- job title and company
-- decision
-- match score
-- confidence
-- saved reviewed job path
-- saved analysis path
-- generated JSON/CSV report paths
-
-If the profile includes `master_cv_ref`, the CLI also checks that the referenced local file exists and is readable.
-
-## Expected input shape
-
-### Candidate profile JSON
-
-The profile loader expects a JSON object with fields such as:
-- `candidate_id`
-- `name`
-- `target_roles`
-- `locations`
-- `remote_preference`
-- `salary_floor_gbp`
-- `right_to_work_uk`
-- `skills`
-- `years_experience`
-- `industries`
-- `achievements`
-- `certifications`
-- `master_cv_ref` (optional)
-
-Unknown profile fields are currently rejected.
-
-### Reviewed job JSON
-
-A reviewed job should be a JSON object with the structured fields needed for evaluation.
-A working example exists at:
-- `input/reviewed_job_demo.json`
-
-Typical fields include:
-- `job_id`
-- `job_title`
-- `company`
-- `description_raw`
-- `source_type`
-- `source_ref`
-- `location`
-- `work_mode`
-- `employment_type`
-- `required_skills`
-- `preferred_skills`
-- `required_years_experience`
-- `nice_to_have_years_experience`
-- `domain`
-- `notes`
-- `salary_min_gbp`
-- `salary_max_gbp`
-
-## Example run
-
-From the repo root:
-
-```bash
-python3 -m src.main \
-  --profile /path/to/candidate_profile.json \
-  --reviewed-job input/reviewed_job_demo.json
-```
-
-## Minimal local UI
-
-A very small browser UI is now available for the current one-job workflow.
-It stays intentionally thin and local-first:
-- search Reed first from the default landing page
-- select a Reed result to prefill the Evaluate form
-- review/edit the structured fields used for scoring before evaluating
-- keep manual URL/copied-text input available as the Manual Fallback tab
-- run evaluation and save results locally
-- inspect score, blockers, strengths, gaps, and decision
-- record a basic local outcome status
-- review recent evaluated jobs
-
-Current Reed-first workflow:
-
-```text
-Open app → Search Reed → Select job → Review prefilled Evaluate form → Evaluate
-```
-
-Current limitations:
-- Reed is the only wired search source in this phase.
-- Manual Fallback remains available from the search page, no-results state, and Reed-error state.
-- Optional filters such as salary, remote/hybrid, and employment type are best-effort because Reed may not confirm every field consistently.
-- Selecting a Reed job does not auto-evaluate or auto-apply; the user must review and click Evaluate.
-- Adzuna and LinkedIn are future source boundaries only; they are not implemented in this phase.
-
-Start it with:
-
-```bash
-python3 src/job_hunt_ui.py \
-  --profile /path/to/candidate_profile.json
-```
-
-Optional flags:
-
-```bash
-python3 src/job_hunt_ui.py \
-  --profile /path/to/candidate_profile.json \
+cd "/Users/lhaclaw/AI-Project-Workspace/job_hunt_Job Seeking Tool"
+PYTHONPATH=. python3 src/job_hunt_ui.py \
+  --profile data/mic_profile.json \
   --state-root data/state \
   --report-dir output/reports \
   --host 127.0.0.1 \
-  --port 8765
+  --port 9000
 ```
 
-Then open:
+Then open: **http://127.0.0.1:9000**
 
-```text
-http://127.0.0.1:8765
-```
+## Features
+
+| Feature | Status |
+|---|---|
+| Find Jobs tab — search across enabled sources | ✅ |
+| Evaluate tab — review fields, run scoring | ✅ |
+| Add Job tab — paste text or URL to ingest a job | ✅ |
+| History tab — recent evaluated jobs | ✅ |
+| Board View — kanban-style overview at `/board/view` | ✅ |
+| My Profile tab — view / edit candidate profile | ✅ |
+| Tailor CV — Actions section on job detail page | ✅ |
+| Cover Letter — form on job detail page | ✅ |
+| Outcome tracking — record apply / interview / reject | ✅ |
+| Auto-apply / browser automation | ❌ never |
+
+## UI
+
+Warm paper style (`#F1EDE4` background, Schibsted Grotesk font), left sidebar navigation, coloured decision badges (Apply / Review / Skip), score pills.
+
+## Route reference
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/` | Main app shell (tabs: search, evaluate, add_job, history) |
+| GET | `/sources` | Returns enabled job sources from config (JSON) |
+| GET | `/board` | Board data (JSON) |
+| GET | `/board/view` | Board HTML page |
+| GET | `/profile` | Profile tab page |
+| POST | `/evaluate` | Run evaluation on a reviewed job payload |
+| POST | `/jobs/save` | Save a job (accepts `source_type` or `source`) |
+| POST | `/tailor` | Tailor CV for a job (`job_id`, `manual_selected`) |
+| POST | `/cover-letter` | Generate cover letter (`job_id`, `why_company_text`, `tone`, `length`, `points`) |
+| POST | `/outcome` | Record application outcome |
+| POST | `/profile/save` | Save updated profile |
+| POST | `/profile/parse-cv` | Parse uploaded CV file into profile fields |
 
 ## Outputs
 
-A successful run currently writes:
-- reviewed job JSON under `data/state/reviewed_jobs/`
-- job analysis JSON under `data/state/analyses/`
-- optional raw input JSON under `data/state/raw_inputs/`
-- report JSON and CSV under `output/reports/`
-
-Outcome records are stored separately under the outcomes state when that flow is used.
+| Path | Contents |
+|---|---|
+| `data/state/reviewed_jobs/` | Structured job records |
+| `data/state/analyses/` | Scoring and decision results |
+| `data/state/raw_inputs/` | Raw ingestion payloads |
+| `output/reports/` | JSON/CSV reports |
+| `output/tailored_cvs/` | Tailored CV drafts |
+| `output/cover_letters/` | Cover letter drafts |
 
 ## Tests
 
-Run the current test suite with:
-
 ```bash
-python3 -m pytest
+PYTHONPATH=. python3 -m pytest
 ```
 
-## Notes
+## Known limitations
 
-This repo follows the project guardrails in:
-- `PROJECT_CONTEXT.md`
-- `docs/architecture_guardrails.md`
-- `docs/development_sequence.md`
-- `docs/development_rules.md`
+- Reed is the primary wired search source; other sources depend on config
+- CV tailoring and cover letter generation require an LLM API key in env
+- `/board` returns JSON; the HTML view is at `/board/view`
+- Profile unknown fields are currently rejected on load
+- No auto-apply, no remote data storage, no browser automation
 
-The product name is still undecided, so documentation should stay neutral.
+## Architecture notes
+
+See `PROJECT_CONTEXT.md` and `docs/architecture_guardrails.md` for guardrails.
+Key principle: deterministic scoring first, LLM only for tailoring/cover letter generation.
+
+---
+
+## CHANGELOG
+
+### 2026-06-18
+
+- **New UI** — warm paper style (`#F1EDE4`), Schibsted Grotesk font, left sidebar nav with: Find Jobs / Evaluate / Add Job / History / My Profile / Board View; coloured decision badges; score pills
+- **Tailor CV** — new "Actions" section on job detail page; `POST /tailor` with `job_id`
+- **Cover Letter** — form on job detail page; `POST /cover-letter` with `job_id`, `why_company_text`, `tone`, `length`, `points`
+- **Board View** — new sidebar nav item; `/board/view` returns full HTML page
+- **`/sources` wiring** — Find Jobs tab now dynamically reflects enabled sources from config
+- **Field name fix** — `/jobs/save` now accepts both `source_type` and `source`

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 from src.job_hunt_models import JobPosting
+from src import job_hunt_validation as _v
 
 
 class ReviewedInputValidationError(ValueError):
@@ -37,6 +39,7 @@ OPTIONAL_REVIEWED_JOB_FIELDS = {
     "salary_min_gbp",
     "salary_max_gbp",
     "source_quality_score",
+    "url",
 }
 
 
@@ -70,6 +73,7 @@ def reviewed_job_from_dict(
         description_raw=normalised_required["description_raw"],
         source_type=normalised_required["source_type"],
         source_ref=_optional_string(payload.get("source_ref"), "source_ref", empty_as_none=True),
+        url=_optional_string(payload.get("url"), "url", empty_as_none=True),
         location=_optional_string(payload.get("location"), "location", empty_as_none=True),
         work_mode=_optional_string(payload.get("work_mode"), "work_mode", empty_as_none=True),
         employment_type=_optional_string(
@@ -104,6 +108,7 @@ def reviewed_job_to_dict(job: JobPosting) -> dict[str, Any]:
         "description_raw": job.description_raw,
         "source_type": job.source_type,
         "source_ref": job.source_ref,
+        "url": job.url,
         "location": job.location,
         "work_mode": job.work_mode,
         "employment_type": job.employment_type,
@@ -119,65 +124,16 @@ def reviewed_job_to_dict(job: JobPosting) -> dict[str, Any]:
     }
 
 
-def _required_string(value: Any, field_name: str) -> str:
-    if not isinstance(value, str):
-        raise ReviewedInputValidationError(f"{field_name} must be a string")
-    cleaned = value.strip()
-    if not cleaned:
-        raise ReviewedInputValidationError(f"{field_name} must not be empty")
-    return cleaned
+_required_string = partial(_v.required_string, error=ReviewedInputValidationError)
 
 
-def _optional_string(value: Any, field_name: str, *, empty_as_none: bool = False) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ReviewedInputValidationError(f"{field_name} must be a string when provided")
-    cleaned = value.strip()
-    if not cleaned:
-        if empty_as_none:
-            return None
-        raise ReviewedInputValidationError(f"{field_name} must not be empty when provided")
-    return cleaned
+_optional_string = partial(_v.optional_string, error=ReviewedInputValidationError)
 
 
-def _normalise_string_list(value: Any, field_name: str) -> list[str]:
-    if value is None:
-        return []
-    if not isinstance(value, list):
-        raise ReviewedInputValidationError(f"{field_name} must be a list of strings")
-
-    normalised_items: list[str] = []
-    seen: set[str] = set()
-    for item in value:
-        if not isinstance(item, str):
-            raise ReviewedInputValidationError(f"{field_name} must contain only strings")
-        cleaned = item.strip()
-        if not cleaned:
-            raise ReviewedInputValidationError(f"{field_name} must not contain empty strings")
-        key = cleaned.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        normalised_items.append(cleaned)
-    return normalised_items
+_normalise_string_list = partial(_v.string_list, strip=True, dedup=True, allow_empty_items=False, error=ReviewedInputValidationError)
 
 
-def _optional_non_negative_float(value: Any, field_name: str) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ReviewedInputValidationError(f"{field_name} must be numeric when provided")
-    if value < 0:
-        raise ReviewedInputValidationError(f"{field_name} must be non-negative when provided")
-    return float(value)
+_optional_non_negative_float = partial(_v.optional_non_negative_float, error=ReviewedInputValidationError)
 
 
-def _optional_non_negative_int(value: Any, field_name: str) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ReviewedInputValidationError(f"{field_name} must be an integer when provided")
-    if value < 0:
-        raise ReviewedInputValidationError(f"{field_name} must be non-negative when provided")
-    return value
+_optional_non_negative_int = partial(_v.optional_int, non_negative=True, error=ReviewedInputValidationError)

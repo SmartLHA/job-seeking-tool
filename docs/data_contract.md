@@ -92,6 +92,14 @@ Core candidate fields expected for scoring/tailoring:
 ### Optional fields
 - `tailoring_ready`
 - `tailoring_notes`
+- `ats_score` — 0–100 ATS parse-friendliness; `None` if no master CV at evaluation
+- `user_decision` / `user_decision_note` — manual override of the engine decision
+- **F1 — per-job ATS keyword match (advisory/display only; never feeds decisioning):**
+  - `keyword_match_rate` — 0–100 coverage of the job's keywords in the CV; `None` when there is no CV or the job lists no keywords (never defaulted to 100)
+  - `keywords_required_missing` — required keywords absent from the CV (list[str])
+  - `keywords_preferred_missing` — preferred keywords absent from the CV (list[str])
+  - `keywords_overused` — keywords repeated > 4× in the CV (anti-stuffing signal)
+  - *(matched lists are derived for display = job skills − missing, so not persisted)*
 
 ## Score Breakdown Contract
 

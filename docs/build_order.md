@@ -245,8 +245,29 @@ stable `Skill` model from GAP-B to ensure evidence selection works correctly.
 | Item | Status | Trigger to revisit |
 |------|--------|--------------------|
 | GAP-J — Gap Coach | ⏸ Deferred | 10+ jobs evaluated in the tool |
-| Adzuna source | ⏸ Deferred | After `adzuna_client.py` fetch is implemented |
+| Adzuna source wiring | 🔲 Ready | Source registry in place (P5-0 done 2026-06-17) — just needs `adzuna_source.py` |
 | LinkedIn source | ⏸ Not started | After LinkedIn fetch client is designed and built |
+
+---
+
+## Phase 5 — Multi-Source Expansion *(unlocked 2026-06-17)*
+
+The source registry (`src/job_sources/source_registry.py`) was introduced on 2026-06-17 to decouple the UI from Reed-specific routing and rendering. Adding any new source now requires only a single `*_source.py` file and one import line in `src/job_hunt_ui.py` — no routing or dispatch changes needed.
+
+### P5-0 · Source Registry + Reed Decoupling ✅ (2026-06-17)
+- New file: `src/job_sources/source_registry.py` — `JobSource` dataclass + registry
+- Routes generalised: `/search/{source}` and `/select/{source}`
+- Nonce and field-limit constants renamed to be source-agnostic
+- `_render_search_jobs_tab` now iterates `all_sources()` dynamically
+- Reed registered as first `JobSource` at bottom of `src/job_hunt_ui.py`
+- `GET /board` restored to JSON; HTML board view moved to `GET /board/view`
+- 291/291 tests green
+
+### P5-1 · Adzuna Source Wiring 🔲
+- Create `src/job_sources/adzuna_source.py` with self-contained adapter
+- One import line in `src/job_hunt_ui.py`
+- Enable `"adzuna"` in `ENABLED_SOURCES`
+- Blocked by: P5-0 ✅
 
 ---
 
@@ -264,6 +285,9 @@ stable `Skill` model from GAP-B to ensure evidence selection works correctly.
 | 8 | ✅ GAP-H Board + SQLite | P3 | Large | P2-3 | `docs/tasks/gap-h-board-aggregate-design.md` |
 | 9 | ✅ GAP-F Tailor CV | P4 | Large | P2-3 | `docs/tasks/cv-tailoring-brief.md` |
 | 10 | ✅ GAP-G Cover letter | P4 | Medium | P2-3 | `docs/tasks/cover-letter-spec-draft.md` |
+| 11 | ✅ Source registry + Reed decoupling | P5-0 | Medium | P4 complete | `src/job_sources/source_registry.py` |
+| 12 | 🔲 Adzuna source wiring | P5-1 | Medium | P5-0 | `docs/tasks/gap-c-source-feature-flag-design.md` |
+| 13 | 🔲 LinkedIn source | P5-2 | Large | fetch client | — |
 | — | GAP-J Gap Coach | Deferred | — | 10+ jobs | `docs/tasks/gap-j-gap-coach-design.md` |
 
 ---

@@ -1,8 +1,8 @@
 # GAP-C/I — Source Feature Flag (Adzuna / LinkedIn)
 
-**Status:** Ready to build
-**Date:** 2026-06-16
-**Decision:** Add `get_enabled_sources()` to config; UI hides unwired source toggles
+**Status:** ✅ Complete (2026-06-17)
+**Date:** 2026-06-16 (designed) · 2026-06-17 (implemented)
+**Decision:** `get_enabled_sources()` in config + `JobSource` registry pattern; routes are generic
 
 ---
 
@@ -51,15 +51,30 @@ This means the UI does not need to be changed when a new source goes live — on
 
 ---
 
-## Adzuna Wiring (when ready — not in this ticket)
+## What Was Built (2026-06-17)
 
-When Adzuna is ready to wire:
-1. Implement `fetch_adzuna_jobs(keyword, location, max_results)` in `job_sources/adzuna_client.py`
-2. Add `run_adzuna_evaluation_flow()` or extend `run_reed_evaluation_flow()` to handle multiple sources
-3. Add `"Adzuna"` to `ENABLED_SOURCES` in config
-4. Add `GET /search/adzuna` route (or extend `/search/reed` to accept `source` param)
+`get_enabled_sources()` and `ENABLED_SOURCES` were implemented as designed. In addition,
+a full `JobSource` registry pattern was introduced (`src/job_sources/source_registry.py`)
+making routes generic — no separate route is needed per source.
 
-The UI toggle will automatically become active once `"Adzuna"` appears in `/sources`.
+Routes implemented:
+- `GET /search/{source}` — dispatches to `source.search_handler`
+- `POST /select/{source}` — dispatches to `source.select_handler`
+
+Reed is registered at the bottom of `job_hunt_ui.py` as a `JobSource` frozen dataclass.
+
+## Adzuna Wiring (when ready — P5-1)
+
+Now that the registry is in place, wiring Adzuna is much simpler:
+1. Create `src/job_sources/adzuna_source.py` implementing the `JobSource` adapter:
+   - `is_available()` — checks `ADZUNA_APP_ID`/`ADZUNA_APP_KEY` env vars
+   - `normalize_search_params()`, `search_handler()`, `select_handler()`
+   - `render_search_form()`, `render_results()`
+2. Add `from src.job_sources import adzuna_source as _adzuna_src` to `job_hunt_ui.py`
+   (the module-level import triggers `register()` at import time)
+3. Add `"adzuna"` to `ENABLED_SOURCES` in `src/job_hunt_config.py`
+
+The UI toggle activates automatically; no route changes needed.
 
 ---
 
@@ -89,10 +104,8 @@ The UI toggle will automatically become active once `"Adzuna"` appears in `/sour
 python3 -m pytest tests/test_ui.py -v -k "sources"
 ```
 
-## Source Key vs Display Label
+## Source Key vs Display Label (resolved)
 
-`ENABLED_SOURCES` uses display-friendly strings that match what the UI shows users.
-Verify before build that the internal source key used in route handlers and Reed search calls
-matches this string exactly (e.g. `"Reed"` not `"reed"` or `"reed_api"`).
-Check the existing `GET /search/reed` handler and normaliser to confirm the canonical key,
-and align `ENABLED_SOURCES` to it.
+`source_id` in the `JobSource` dataclass uses lowercase kebab (`"reed"`, `"adzuna"`).
+`ENABLED_SOURCES` also uses lowercase. `display_name` (`"Reed"`, `"Adzuna"`) is separate
+and used only for UI labels. This avoids the case-mismatch risk noted in the original design.

@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from src.job_hunt_ats_scorer import score_cv
 
 from src.job_hunt_config import DEFAULT_SCORING_POLICY, ScoringPolicy
 from src.job_hunt_models import CandidateProfile, ConfidenceLevel, JobPosting, RiskFlag, ScoreBreakdown, ScoreComponent
@@ -90,21 +89,31 @@ def score_job(
 # Required skills drive the core fit score; preferred skills are only soft boosts.
 def _score_required_skills(
     candidate_skills: Iterable[str],
-    required_skills: Iterable[str],
+    required_skills: list[str],
     policy: ScoringPolicy,
 ) -> tuple[float, str, list[str], list[str]]:
+    # QW-1: required_skills is a list (not a bare iterator) so it can be iterated
+    # by _match_skills and measured with len() without being consumed twice.
     matched, missing = _match_skills(candidate_skills, required_skills)
-    required_list = list(required_skills)
-    if not required_list:
-        return 0.0, "No required skills were provided in the reviewed job data", [], []
+    if not required_skills:
+        # MT-3: missing required-skills data is treated as NEUTRAL (full weight),
+        # consistent with how unknown location/salary/experience are scored. The
+        # uncertainty is carried by the confidence signal, not by a score penalty
+        # (and the decision layer gates low-confidence jobs away from auto-apply).
+        return (
+            policy.weights.skills_required,
+            "No required skills were provided in the reviewed job data, so score stays neutral",
+            [],
+            [],
+        )
 
     score = _score_skill_bucket(
         matched_count=len(matched),
-        total_count=len(required_list),
+        total_count=len(required_skills),
         weight=policy.weights.skills_required,
         bonus_per_extra_match=policy.weights.bonus_per_extra_required,
     )
-    reason = f"Matched {len(matched)} of {len(required_list)} required skills"
+    reason = f"Matched {len(matched)} of {len(required_skills)} required skills"
     return score, reason, matched, missing
 
 
@@ -138,7 +147,9 @@ def _score_skill_bucket(
         return 0.0
     if matched_count < total_count:
         return weight * (matched_count / total_count)
-    return weight + ((matched_count - 1) * bonus_per_extra_match)
+    # QW-8: cap the all-matched bonus so a dimension can't inflate far past its
+    # weight (which the global min(100) would otherwise silently absorb).
+    return min(weight * 1.5, weight + ((matched_count - 1) * bonus_per_extra_match))
 
 
 # Important scoring section: unknown job data should lower confidence before it
@@ -212,20 +223,32 @@ def _score_work_mode(
     job: JobPosting,
     policy: ScoringPolicy,
 ) -> tuple[float, str]:
-    preference = _normalize_text(profile.remote_preference)
+    preference_raw = _normalize_text(profile.remote_preference) or ""
     work_mode = _normalize_text(job.work_mode)
     if not work_mode or work_mode == "unknown":
         return policy.weights.work_mode * policy.work_mode_unknown_ratio, "Work mode is unknown, so only partial neutral credit is given"
-    if not preference:
+    # Support comma-separated multi-select values (e.g. "remote_only,hybrid")
+    preferences = [p.strip() for p in preference_raw.split(",") if p.strip()] if preference_raw else []
+    if not preferences:
         return policy.weights.work_mode, "Candidate work mode preference is unknown, so score stays neutral"
-    if preference == "remote_only":
-        if work_mode == "remote":
-            return policy.weights.work_mode, "Remote-only preference matches the job"
-        return 0.0, "Role is not remote despite a remote-only preference"
-    if preference in {"remote_friendly", "hybrid", "flexible"}:
-        if work_mode in {"remote", "hybrid"}:
-            return policy.weights.work_mode, "Work mode matches a flexible remote preference"
-        return 0.0, "Onsite role does not match the candidate work mode preference"
+    # Pass if ANY selected preference accepts the job's work mode
+    restrictive = False
+    for pref in preferences:
+        if pref == "remote_only":
+            restrictive = True
+            if work_mode == "remote":
+                return policy.weights.work_mode, "Remote-only preference matches the job"
+        elif pref in {"remote_friendly", "hybrid", "flexible"}:
+            restrictive = True
+            if work_mode in {"remote", "hybrid"}:
+                return policy.weights.work_mode, "Work mode matches a flexible remote preference"
+        elif pref == "onsite":
+            restrictive = True
+            if work_mode in {"onsite", "office", "unknown"}:
+                return policy.weights.work_mode, "Onsite preference matches the job"
+        # else: unknown preference token — treat as non-restrictive, skip
+    if restrictive:
+        return 0.0, "Job work mode does not match any of the candidate's selected work mode preferences"
     return policy.weights.work_mode, "No restrictive work mode preference blocks the job"
 
 

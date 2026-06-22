@@ -110,9 +110,12 @@ def test_evaluate_reviewed_job_keeps_confidence_separate_from_fit_score() -> Non
         ),
     )
 
-    assert analysis.match_score == 51.5
+    # MT-3: neutral scoring lifts the fit score (86.5), confidence stays low, and
+    # the low-confidence gate routes the sparse job to manual review — it is never
+    # auto-"apply" on thin data, and no longer wrongly auto-"skip" either.
+    assert analysis.match_score == 86.5
     assert analysis.confidence == "low"
-    assert analysis.decision == "skip"
+    assert analysis.decision == "review"
     assert any("did not include explicit required skills" in note for note in analysis.score_breakdown.notes)
 
 
@@ -194,3 +197,23 @@ def test_evaluate_reviewed_job_sets_user_decision_to_none() -> None:
     analysis = evaluate_reviewed_job(build_candidate(), build_job())
     assert analysis.user_decision is None
     assert analysis.user_decision_note is None
+
+
+def test_evaluate_populates_keyword_match_with_cv_and_none_without() -> None:
+    # F1: keyword_match_rate is populated when a master CV is present, None otherwise,
+    # and it does NOT change the decision (advisory only).
+    profile = dataclasses.replace(
+        build_candidate(),
+        master_cv_text="Business analyst experienced in SQL and Python, plus Tableau dashboards.",
+    )
+    profile_no_cv = dataclasses.replace(profile, master_cv_text=None, master_cv_ref=None)
+    job = build_job(required_skills=["SQL", "Python"], preferred_skills=["Tableau"])
+
+    with_cv = evaluate_reviewed_job(profile, job)
+    without_cv = evaluate_reviewed_job(profile_no_cv, job)
+
+    assert with_cv.keyword_match_rate is not None
+    assert 0 <= with_cv.keyword_match_rate <= 100
+    assert without_cv.keyword_match_rate is None
+    # advisory only: removing the CV must not change the engine decision
+    assert with_cv.decision == without_cv.decision

@@ -70,12 +70,9 @@ def _score_format(cv_text: str) -> int:
         if re.search(r" {4,}", line):
             return 0
 
-    # Check for section header patterns (ALL CAPS headings or Title Case headers)
-    # Common ATS-unfriendly patterns: "SKILLS", "EXPERIENCE", "PROFILE"
-    header_pattern = re.compile(r"^[A-Z][A-Z\s]{2,}:?\s*$", re.MULTILINE)
-    headers = header_pattern.findall(cv_text)
-    if len(headers) >= 3:
-        return 0
+    # QW-2: ALL-CAPS section headings (SKILLS / EXPERIENCE / EDUCATION) are the
+    # standard, ATS-friendly format — they must NOT be penalised. The previous
+    # code returned 0 here, scoring well-structured CVs *below* unstructured text.
 
     return 25
 

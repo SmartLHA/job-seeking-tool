@@ -58,11 +58,13 @@ class TestFormatScore:
 
         assert result["format_score"] == 0
 
-    def test_multiple_all_caps_headers(self) -> None:
+    def test_multiple_all_caps_headers_are_ats_friendly(self) -> None:
+        # QW-2: ALL-CAPS section headings (SUMMARY / SKILLS / EXPERIENCE) are the
+        # standard, ATS-friendly layout — they must score full format marks, not 0.
         cv = "SUMMARY\nExperienced developer\nSKILLS\nPython, SQL\nEXPERIENCE\nWork history here"
         result = score_cv(cv, [])
 
-        assert result["format_score"] == 0
+        assert result["format_score"] == 25
 
     def test_few_headers_not_flagged(self) -> None:
         cv = "John Doe\nSUMMARY\nExperienced developer"  # only one header

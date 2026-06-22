@@ -8,7 +8,7 @@ import uuid
 from html.parser import HTMLParser
 from urllib import robotparser
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 DEFAULT_USER_AGENT = "JobSeekingTool/1.0"
@@ -59,17 +59,101 @@ KNOWN_EMPLOYMENT_TYPES = (
     "internship",
 )
 KNOWN_SKILLS = (
+    # --- Data & analytics ---
     "sql",
     "python",
     "power bi",
     "tableau",
-    "stakeholder management",
-    "process mapping",
-    "agile",
-    "scrum",
+    "excel",
     "data analysis",
+    "data modelling",
+    "data migration",
+    "business intelligence",
+    "reporting",
+    "kpi",
+    "dashboard",
+    # --- BA / PM core ---
     "business analysis",
     "requirements gathering",
+    "requirements elicitation",
+    "process mapping",
+    "process improvement",
+    "gap analysis",
+    "stakeholder management",
+    "stakeholder engagement",
+    "user stories",
+    "use cases",
+    "acceptance criteria",
+    "functional specification",
+    "business requirements document",
+    "brd",
+    "traceability matrix",
+    "as-is",
+    "to-be",
+    "root cause analysis",
+    "impact assessment",
+    "cost benefit analysis",
+    "feasibility study",
+    # --- Agile / delivery ---
+    "agile",
+    "scrum",
+    "kanban",
+    "sprint",
+    "jira",
+    "confluence",
+    "product backlog",
+    "sprint planning",
+    "retrospective",
+    "refinement",
+    # --- Waterfall / governance ---
+    "waterfall",
+    "prince2",
+    "pmp",
+    "project management",
+    "change management",
+    "change control",
+    "risk management",
+    "governance",
+    "compliance",
+    "audit",
+    "steering committee",
+    # --- Systems / tech ---
+    "uml",
+    "bpmn",
+    "visio",
+    "lucidchart",
+    "sharepoint",
+    "ms project",
+    "microsoft project",
+    "erp",
+    "crm",
+    "salesforce",
+    "sap",
+    "oracle",
+    "servicenow",
+    "api",
+    "integration",
+    "system design",
+    "uat",
+    "user acceptance testing",
+    "testing",
+    "qa",
+    "quality assurance",
+    # --- Collaboration & soft skills ---
+    "workshop facilitation",
+    "facilitation",
+    "presentation",
+    "communication",
+    "problem solving",
+    "analytical",
+    "documentation",
+    "business case",
+    "strategy",
+    "transformation",
+    "digital transformation",
+    "continuous improvement",
+    "lean",
+    "six sigma",
 )
 
 # Private/loopback IP ranges for SSRF prevention
@@ -448,13 +532,67 @@ def _normalise_work_mode(value: str | None) -> str:
     return value
 
 
+_SKILL_ACRONYMS = {
+    "sql", "kpi", "brd", "uml", "bpmn", "uat", "erp", "crm", "api", "qa",
+    "sap", "pmp",
+}
+
 def _extract_skills(text: str) -> list[str]:
     lowered = text.casefold()
     found: list[str] = []
     for skill in KNOWN_SKILLS:
         if skill in lowered:
-            found.append(skill.title() if skill != "sql" else "SQL")
+            if skill in _SKILL_ACRONYMS:
+                found.append(skill.upper())
+            else:
+                found.append(skill.title())
     return found
+
+
+def extract_skills_from_cv(cv_text: str) -> tuple[list[str], str | None]:
+    """Extract skills a candidate has from their CV text.
+
+    Tries Ollama LLM first (open-ended extraction, not limited to KNOWN_SKILLS).
+    Falls back to KNOWN_SKILLS keyword scan when Ollama is unavailable or fails.
+
+    Returns (skill_list, llm_warning_or_None).
+    llm_warning is set when LLM failed and keyword fallback was used instead.
+    """
+    from src.job_hunt_llm import extract_cv_skills_with_llm  # lazy to avoid circular import
+
+    skills, llm_error = extract_cv_skills_with_llm(cv_text)
+    if skills is not None:
+        return skills, None
+
+    # Keyword fallback — surface the LLM error as a warning
+    cleaned = _clean_text(cv_text)
+    fallback_skills = _extract_skills(cleaned)
+    warning = f"LLM skill extraction unavailable ({llm_error}); used keyword fallback ({len(fallback_skills)} skills found)."
+    return fallback_skills, warning
+
+
+def extract_skills_from_text(raw_text: str) -> tuple[list[str], list[str], str | None]:
+    """Extract required and preferred skills from raw job description text.
+
+    Tries LLM extraction first (Ollama).
+    Falls back to keyword scanning against KNOWN_SKILLS when LLM is unavailable or fails.
+
+    Returns:
+        (required_skills, preferred_skills, llm_warning_or_None).
+        llm_warning is set when LLM failed and keyword fallback was used instead.
+        Keyword fallback always returns an empty preferred list.
+    """
+    from src.job_hunt_llm import extract_skills_with_llm  # lazy to avoid circular import
+
+    result, llm_error = extract_skills_with_llm(raw_text)
+    if result is not None:
+        return result["required"], result["preferred"], None
+
+    # Keyword fallback
+    cleaned = _clean_text(raw_text)
+    fallback = _extract_skills(cleaned)
+    warning = f"LLM skill extraction unavailable ({llm_error}); used keyword fallback ({len(fallback)} skills found)."
+    return fallback, [], warning
 
 
 def _extract_company_from_lines(lines: list[str]) -> str | None:

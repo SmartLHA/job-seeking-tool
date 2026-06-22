@@ -86,7 +86,10 @@ def test_unknown_job_data_lowers_confidence_before_score() -> None:
 
     assert rich_result.confidence == "high"
     assert sparse_result.confidence == "low"
-    assert sparse_result.match_score == 51.5
+    # MT-3: missing required-skills (and other unknown fields) now score neutral,
+    # so the fit score is high (86.5) while confidence stays low to carry the
+    # uncertainty. Score is no longer penalised for absent data.
+    assert sparse_result.match_score == 86.5
     assert sparse_result.match_score > 0
     assert any("did not include explicit required skills" in note for note in sparse_result.notes)
     assert sparse_result.score_breakdown.experience_score.value == 20.0

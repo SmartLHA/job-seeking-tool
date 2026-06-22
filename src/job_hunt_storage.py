@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from src.job_hunt_models import (
     ScoreComponent,
 )
 from src.job_hunt_outcomes import outcome_from_dict, outcome_to_dict
+from src import job_hunt_validation as _v
 from src.job_hunt_reviewed_input import reviewed_job_from_dict, reviewed_job_to_dict
 
 
@@ -170,6 +172,14 @@ def job_analysis_from_dict(payload: dict[str, Any], *, job_id: str | None = None
             ats_score=_optional_int(payload.get("ats_score"), "ats_score"),
             user_decision=_optional_string(payload.get("user_decision"), "user_decision"),
             user_decision_note=_optional_string(payload.get("user_decision_note"), "user_decision_note"),
+            keyword_match_rate=_optional_int(payload.get("keyword_match_rate"), "keyword_match_rate"),
+            keywords_required_missing=_string_list(
+                payload.get("keywords_required_missing", []), "keywords_required_missing"
+            ),
+            keywords_preferred_missing=_string_list(
+                payload.get("keywords_preferred_missing", []), "keywords_preferred_missing"
+            ),
+            keywords_overused=_string_list(payload.get("keywords_overused", []), "keywords_overused"),
         )
     except (TypeError, ValueError) as exc:
         raise StorageError(f"invalid analysis payload: {exc}") from exc
@@ -221,57 +231,22 @@ def _risk_flag_from_dict(payload: Any) -> RiskFlag:
     )
 
 
-def _string_list(value: Any, field_name: str) -> list[str]:
-    if value is None:
-        return []
-    if not isinstance(value, list):
-        raise StorageError(f"{field_name} must be a list of strings")
-
-    items: list[str] = []
-    for item in value:
-        if not isinstance(item, str):
-            raise StorageError(f"{field_name} must contain only strings")
-        items.append(item)
-    return items
+_string_list = partial(_v.string_list, strip=False, dedup=False, allow_empty_items=True, error=StorageError)
 
 
-def _required_string(value: Any, field_name: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise StorageError(f"{field_name} must be a non-empty string")
-    return value.strip()
+_required_string = partial(_v.required_string, message_style="combined", error=StorageError)
 
 
-def _optional_string(value: Any, field_name: str) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise StorageError(f"{field_name} must be a string when provided")
-    cleaned = value.strip()
-    if not cleaned:
-        raise StorageError(f"{field_name} must not be empty when provided")
-    return cleaned
+_optional_string = partial(_v.optional_string, error=StorageError)
 
 
-def _required_number(value: Any, field_name: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise StorageError(f"{field_name} must be numeric")
-    return float(value)
+_required_number = partial(_v.required_number, error=StorageError)
 
 
-def _optional_int(value: Any, field_name: str) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise StorageError(f"{field_name} must be an integer when provided")
-    return value
+_optional_int = partial(_v.optional_int, error=StorageError)
 
 
-def _optional_bool(value: Any, field_name: str) -> bool | None:
-    if value is None:
-        return None
-    if not isinstance(value, bool):
-        raise StorageError(f"{field_name} must be a boolean when provided")
-    return value
+_optional_bool = partial(_v.optional_bool, error=StorageError)
 
 
 def _state_file_path(root: str | Path, state_dir_name: str, record_id: str) -> Path:

@@ -12,6 +12,7 @@ from src.job_hunt_config import (
 )
 from src.job_hunt_ats_scorer import score_cv
 from src.job_hunt_decision import decide_application
+from src.job_hunt_keyword_match import compute_keyword_match
 from src.job_hunt_models import Blocker, CandidateProfile, JobAnalysis, JobPosting, RiskFlag
 from src.job_hunt_scoring import score_job
 
@@ -59,6 +60,7 @@ def evaluate_reviewed_job(
         blockers=blocker_list,
         risk_flags=combined_risk_flags,
         policy=decision_policy,
+        confidence=scoring_result.confidence,
     )
 
     tailoring_ready, tailoring_notes = _derive_tailoring_state(
@@ -72,6 +74,12 @@ def evaluate_reviewed_job(
         job_keywords = list(job.required_skills) + list(job.preferred_skills)
         ats_result = score_cv(profile.master_cv_text, job_keywords)
         ats_score = ats_result["overall"]
+
+    # F1 — per-job ATS keyword match (advisory/display only; does NOT feed the
+    # decision above). Uses the master CV when present; None otherwise.
+    keyword_match = compute_keyword_match(
+        profile.master_cv_text, list(job.required_skills), list(job.preferred_skills)
+    )
 
     return JobAnalysis(
         job_id=job.job_id,
@@ -88,6 +96,10 @@ def evaluate_reviewed_job(
         tailoring_ready=tailoring_ready,
         tailoring_notes=tailoring_notes,
         ats_score=ats_score,
+        keyword_match_rate=keyword_match.match_rate,
+        keywords_required_missing=keyword_match.required_missing,
+        keywords_preferred_missing=keyword_match.preferred_missing,
+        keywords_overused=keyword_match.overused,
     )
 
 
@@ -106,4 +118,4 @@ def _derive_tailoring_state(
             return False, "Manual selection is required before tailoring a review decision."
         return True, "Review decision was manually selected for tailoring from approved profile and CV facts only."
     return False, "Skipped jobs are not tailoring-ready."
-__all__ = ["evaluate_reviewed_job", "evaluate_job_from_raw"]
+__all__ = ["evaluate_reviewed_job"]

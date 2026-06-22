@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from src.job_hunt_config import DEFAULT_DECISION_POLICY, DecisionPolicy
-from src.job_hunt_models import Blocker, Decision, RiskFlag
+from src.job_hunt_models import Blocker, ConfidenceLevel, Decision, RiskFlag
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +17,7 @@ def decide_application(
     blockers: list[Blocker] | None = None,
     risk_flags: list[RiskFlag] | None = None,
     policy: DecisionPolicy = DEFAULT_DECISION_POLICY,
+    confidence: ConfidenceLevel = "high",
 ) -> DecisionResult:
     blockers = blockers or []
     risk_flags = risk_flags or []
@@ -29,6 +30,17 @@ def decide_application(
 
     critical_risks = [flag for flag in risk_flags if flag.code in policy.critical_risk_codes]
     if match_score >= policy.apply_threshold and not critical_risks:
+        # MT-3: a low-confidence score reflects incomplete job data (e.g. no
+        # required skills listed). Never auto-recommend "apply" on thin data —
+        # route to manual review so a human confirms before applying.
+        if confidence == "low":
+            return DecisionResult(
+                decision="review",
+                decision_reason=(
+                    f"Score {match_score:.0f} meets the apply threshold, but confidence is low "
+                    f"due to incomplete job data — routed to review instead of apply"
+                ),
+            )
         return DecisionResult(
             decision="apply",
             decision_reason=(

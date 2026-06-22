@@ -30,7 +30,8 @@ def test_parse_job_from_text_prefills_expected_fields() -> None:
     assert payload["required_years_experience"] == 5.0
     assert payload["salary_min_gbp"] == 60000
     assert payload["salary_max_gbp"] == 70000
-    assert payload["required_skills"] == ["SQL", "Power Bi", "Stakeholder Management", "Process Mapping"]
+    # Expanded KNOWN_SKILLS means more terms are found; check core skills are present
+    assert set(payload["required_skills"]) >= {"SQL", "Power Bi", "Stakeholder Management", "Process Mapping", "Reporting"}
     assert payload["source_type"] == "copied_text"
 
 

@@ -1,7 +1,7 @@
-# UI Scope — v3
+# UI Scope — v4
 
-**Updated: 2026-06-16** — Reflects the v4 UI prototype delivered in `Claude deliverable/` (2026-06-15).
-Prior version (v2, 2026-04-07) described a minimal MVP shell; this version describes the full target UI.
+**Updated: 2026-06-17** — UX hardening pass complete: CV status indicator, profile save flash banner, actionable error messages for missing CV, AI Analysis manual button, tailor result match stats.
+Prior version (v3, 2026-06-16): reflected v4 UI prototype from `Claude deliverable/`.
 
 ---
 
@@ -152,13 +152,18 @@ Logic is deterministic aggregation only — no new truth is generated.
 **Shows:**
 - Candidate name, target roles, locations
 - Key facts grid: right_to_work_uk, years_experience, salary_floor_gbp, remote_preference
-- Skills list (currently `list[str]` only — GAP-B: no level/years/evidence metadata in backend)
+- Skills table with Name / Level / Years columns (backed by `Skill` dataclass — GAP-B ✅ resolved)
 - Achievements, certifications
-- Master CV upload + parse (`POST /profile/parse-cv`)
+- **CV status indicator** (top of Upload CV section): green = CV on file (N chars), amber = ref set but no text, red = no CV — all with fix guidance
+- Master CV upload + parse (`POST /profile/parse-cv`) — auto-saves CV and profile on upload
+- **Flash confirmation banner** after Save: "Profile saved. CV: N chars on file."
 - Save profile (`POST /profile/save`)
 
-**⚠️ GAP-B:** The prototype renders per-skill level / years / evidenced-vs-self-reported columns.
-Backend model has no such metadata. Decision required: drop those UI columns, or extend `CandidateProfile`.
+**Key behaviours (2026-06-17):**
+- Uploading a CV and clicking Parse CV auto-saves the CV to disk AND the profile JSON — no extra Save click needed
+- Skills extracted from CV (LLM first, keyword fallback) are merged into the skills table automatically
+- Auto-save failure is non-fatal but now visible: shown in the status bar if it occurs
+- After Save, the redirect carries `?flash=` so the user sees confirmation of what was saved
 
 **Backend routes:** `GET /profile`, `POST /profile/save`, `POST /profile/parse-cv`
 
@@ -183,9 +188,7 @@ validate_tailored_cv() rejects any claim not in profile
 User can accept/edit → save_tailored_cv() → POST /tailor (GAP-F — route missing)
 ```
 
-**⚠️ GAP-F:** Backend produces markdown from matched skills + years. The UI shows promoted/reordered
-bullet lines + editable summary + keyword chips. Decision required: align UI to backend model,
-or extend `tailor_cv()` to return `{summary, promoted[], matched[], missing[]}`.
+**GAP-F ✅ RESOLVED:** `tailor_cv()` returns `TailoredCVResult(summary, promoted[], matched[], missing[], markdown)`. `POST /tailor` is live. Result panel in UI shows promoted / matched / missing counts alongside saved path.
 
 **Rules:**
 - `apply` decisions: auto `tailoring_ready = True`
@@ -211,9 +214,7 @@ generate_cover_letter_text(profile, master_cv, job, analysis, why_company_text)
 POST /cover-letter (GAP-G — route missing)
 ```
 
-**⚠️ GAP-G:** Backend takes one `why_company_text` input. The tone/length/talking-point toggles
-in the UI have no backend parameters. Decision required: drive UI from textarea only (matching backend),
-or extend `generate_cover_letter()` with tone/length/points.
+**GAP-G ✅ RESOLVED:** `generate_cover_letter_text()` accepts `tone`/`length`/`points`. `POST /cover-letter` is live with skip gate. Cover letter now returns 422 (not silent empty) if no master CV is on profile.
 
 ---
 
@@ -240,13 +241,21 @@ or extend `generate_cover_letter()` with tone/length/points.
 
 ---
 
-## New HTTP Routes Required (not yet implemented)
+## HTTP Routes — Current State
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| POST | `/jobs/save` | Bookmark a job from Find Jobs without evaluating |
-| GET | `/jobs` | List all jobs (scan reviewed_jobs/ + analyses/) |
-| GET | `/board` | Board aggregate: all jobs with stage + score |
-| POST | `/tailor` | Trigger tailoring, return/save tailored CV |
-| POST | `/cover-letter` | Generate and save cover letter |
-| GET | `/coach` | Gap Coach aggregate read-model |
+All originally-required routes are now implemented. One remains open.
+
+| Method | Path | Status | Purpose |
+|--------|------|--------|---------|
+| POST | `/jobs/save` | ✅ Done | Bookmark a job from Find Jobs without evaluating |
+| GET | `/jobs` | ✅ Done | List all jobs (scan reviewed_jobs/ + analyses/) |
+| GET | `/board` | ✅ Done (JSON) | Board aggregate: all jobs with stage + score |
+| GET | `/board/view` | ✅ Done (HTML) | Board Kanban view |
+| POST | `/tailor` | ✅ Done | Trigger tailoring, return/save tailored CV |
+| POST | `/cover-letter` | ✅ Done | Generate and save cover letter |
+| GET | `/job/{id}/explain` | ✅ Done | LLM explanation of job-candidate fit (on-demand) |
+| POST | `/profile/parse-cv` | ✅ Done | Upload + parse CV; auto-save to profile |
+| POST | `/profile/save` | ✅ Done | Save profile; flash confirmation on redirect |
+| GET | `/search/{source}` | ✅ Done | Generic source search (Reed wired) |
+| POST | `/select/{source}` | ✅ Done | Generic source select + prefill |
+| GET | `/coach` | 🔲 Not yet | Gap Coach aggregate read-model |

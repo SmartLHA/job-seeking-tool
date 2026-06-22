@@ -1,4 +1,3 @@
-import os
 from src.job_sources.reed_client import fetch_reed_jobs
 from src.job_sources.adzuna_client import fetch_adzuna_jobs
 from src.job_sources.normalize import normalize_reed, normalize_adzuna

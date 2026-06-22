@@ -82,6 +82,7 @@ class JobPosting:
     salary_min_gbp: int | None = None
     salary_max_gbp: int | None = None
     source_quality_score: int | None = None  # 0–100; None = quality unknown, no gate applied
+    url: str | None = None  # canonical link to the original posting (apply here)
 
     def __post_init__(self) -> None:
         required_text_fields = {
@@ -204,6 +205,13 @@ class JobAnalysis:
     ats_score: int | None = None   # 0–100; None if master CV not available at evaluation time
     user_decision: str | None = None       # "apply" | "review" | "skip" | None
     user_decision_note: str | None = None  # optional free-text reason
+    # F1 — per-job ATS keyword match (advisory/display only; never feeds decisioning).
+    # None when there is no CV or the job lists no keywords. Matched lists are
+    # derived for display (job skills - missing); only the missing lists are stored.
+    keyword_match_rate: int | None = None   # 0-100; None = not assessable
+    keywords_required_missing: list[str] = field(default_factory=list)
+    keywords_preferred_missing: list[str] = field(default_factory=list)
+    keywords_overused: list[str] = field(default_factory=list)  # anti-stuffing signal
 
     def __post_init__(self) -> None:
         if not self.job_id.strip():
@@ -212,6 +220,8 @@ class JobAnalysis:
             raise ValueError("match_score must be between 0 and 100")
         if not self.decision_reason.strip():
             raise ValueError("decision_reason must not be empty")
+        if self.keyword_match_rate is not None and not 0 <= self.keyword_match_rate <= 100:
+            raise ValueError("keyword_match_rate must be between 0 and 100")
 
 
 @dataclass(slots=True)

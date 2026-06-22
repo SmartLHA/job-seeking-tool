@@ -2,8 +2,8 @@
 
 ## Status
 
-**Updated: 2026-06-16** — Reflects implementation state after UI v4 design (Claude deliverable, 2026-06-15).
-Prior update was 2026-05-02; stale items corrected per `GAP_ANALYSIS_S_HAND.md` (2026-05-20).
+**Updated: 2026-06-18** — LLM backend switched to Google Gemini; AI Analysis redesigned with 3-section structured output and reasoning model chain; multi-select search results; per-page timestamps; dev tooling. 291 tests green.
+Prior update: 2026-06-17 (UX hardening, source registry).
 
 ---
 
@@ -39,7 +39,7 @@ A local-first AI job search decision-support and application-preparation product
 
 ---
 
-## Implementation State (as of 2026-06-16)
+## Implementation State (as of 2026-06-18)
 
 ### ✅ Implemented and working
 
@@ -56,41 +56,53 @@ A local-first AI job search decision-support and application-preparation product
 | CLI | `python3 src/job_hunt_main.py` |
 | Browser UI (search-first) | `python3 src/job_hunt_ui.py` — port 8765 |
 | Reed search → prefill → field review → evaluate | Full pipeline wired in UI and orchestrator |
-| CV tailoring (MVP) | `job_hunt_tailoring.py` — deterministic, markdown output |
+| CV tailoring (MVP) | `job_hunt_tailoring.py` — `TailoredCVResult` dataclass; `{summary, promoted[], matched[], missing[], markdown}` |
 | Tailoring truth validation | `validate_tailored_cv()` — real, rejects unsupported claims |
+| Tailoring route | `POST /tailor` with decision gate (apply/review only) |
 | URL/text prefill | `POST /prefill` → `parse_job_from_url` / `parse_job_from_text` |
-| Reed API client | `job_sources/reed_client.py` — wired to orchestrator |
-| Adzuna API normaliser | `job_sources/adzuna_client.py` + `normalize_adzuna` — exists, NOT wired to orchestrator |
-| Cover letter generation | `job_hunt_cover_letter.py` + `tests/test_cover_letter.py` — module complete, no UI path |
-| ATS scorer | `job_hunt_ats_scorer.py` + `tests/test_ats_scorer.py` — exists, NOT integrated into evaluation flow |
+| Reed API client | `job_sources/reed_client.py` — wired to orchestrator; detail fetch for full description |
+| Adzuna API normaliser | `job_sources/adzuna_client.py` + `normalize_adzuna` — exists, NOT wired to registry yet |
+| Cover letter generation | `job_hunt_cover_letter.py` — `tone`/`length`/`points` params; `POST /cover-letter` route with skip gate |
+| ATS scorer | `job_hunt_ats_scorer.py` — wired into `evaluate_reviewed_job()`; `ats_score` on `JobAnalysis`; surfaced in UI |
+| ATS keyword match (F1) | `job_hunt_keyword_match.py` — per-job keyword coverage (CV vs job required/preferred skills) with present/missing breakdown + anti-stuffing signal; `keyword_match_rate` on `JobAnalysis`; shown on job page; **advisory/display only** |
 | Deduplication | `job_sources/dedup.py` — title/company/Jaccard cross-source dedup |
+| Board aggregate + SQLite index | `job_hunt_index.py`; `GET /board` (JSON, 6 columns); `GET /board/view` (HTML); `POST /jobs/save` |
+| Decision override persistence | `user_decision`/`user_decision_note` on `JobAnalysis`; `effective_decision()`; `POST /job/{id}/decision` |
+| Skill dataclass | `Skill(name, level?, years?, evidence_type?)`; backward-compat flat-list loader |
+| Field provenance (null contract) | Parsing returns `None`/`[]`/`"unknown"` for missing; field-review badges in Add Job UI |
+| Source quality gating | `source_quality_score` on `JobPosting`; skip/review thresholds active in decision path |
+| URL ingestion hardening | 8 security controls in `parse_job_from_url()`; `paste_fetch.py` zeroed |
+| `get_enabled_sources()` flag | `ENABLED_SOURCES` in config; `GET /sources` route; Reed enabled; Adzuna/LinkedIn show "Coming soon" |
+| Source registry | `job_sources/source_registry.py` — `JobSource` frozen dataclass; `register()`/`get_source()`/`all_sources()`; routes generic `/search/{source}` and `/select/{source}` |
+| CV status indicator on Profile page | Green/amber/red strip: shows char count, file path, or "No CV on file" warning |
+| Profile save flash confirmation | Save redirects with `?flash=` showing CV char count confirmation |
+| Tailor / cover-letter actionable errors | Distinguishes missing-ref vs unreadable-file; includes fix instruction pointing to Profile page |
+| Cover letter fails fast on missing CV | No longer silently proceeds with empty CV; returns 422 with fix hint |
+| Tailor result match stats | JS result panel shows ✓ promoted / ✓ matched / ⚠ missing counts |
+| Auto-save error surface | `auto_save_error` returned in parse-cv JSON; shown in browser status bar on failure |
+| AI Analysis — structured 3-section output | Job detail page: "Run Analysis" button; result rendered as Fit Assessment / Key Risk / Recommended Action in labelled sections; DOM-safe |
+| AI Analysis — reasoning model chain | `gemini-3-flash-preview` (thinking budget 8k) → `gemini-2.5-flash` (thinking 8k) → `gemini-3.1-flash-lite`; fallback on 404 or 429 |
+| Google Gemini LLM backend | `job_hunt_llm.py` uses Gemini REST API; no extra packages; `GOOGLE_API_KEY` env var; replaces Ollama |
+| Skill extraction model chain | `gemini-3.1-flash-lite` (primary) → `gemini-2.5-flash-lite` (fallback on 404/429); keyword fallback when API unavailable |
+| LLM CV skill extraction | `extract_cv_skills_with_llm()` in `job_hunt_llm.py`; free-text skill extraction from CV; keyword fallback when API unavailable |
+| Multi-select search results | Reed results rendered as selectable cards; staging overlay for review; per-job "Evaluate" button; JS IIFE with XSS-safe DOM building |
+| Per-page last-updated timestamps | `_PAGE_UPDATED` dict in `job_hunt_ui.py`; shown in sidebar footer and job detail page footer |
+| Dev tooling | `dev.py` auto-reload watcher (polls src/ MD5 hashes); `restart.sh` quick-restart script |
+| CV auto-save on upload | Parse CV uploads write directly to profile JSON without requiring Save button |
 | Public web extraction POC | `poc/public_web_extraction/` — research only, not production |
 
 ### ⚠️ Module exists but not wired into product flow
 
 | Feature | Gap | Reference |
 |---------|-----|-----------|
-| Cover letter → UI/orchestrator | Module works; no route, no UI action | GAP-G |
-| Tailored CV → UI action | Backend works; UI still shows "not implemented" | GAP-F |
-| ATS scorer → evaluation | Score computed but not surfaced in `JobAnalysis` or UI | GAP_ANALYSIS §7 |
-| Adzuna source | Normaliser exists; no fetch client wired; no orchestrator call | GAP-C/I |
-| URL ingestion safety | Two competing implementations; canonical path not decided | JOB-009 |
-| Source quality gating | `source_quality` computed in normaliser; not used in decision path | GAP_ANALYSIS §2 |
+| Adzuna source | Normaliser exists; registry pattern ready; needs `adzuna_source.py` adapter | P5-1 |
 
-### ❌ Not yet implemented (new UI requires these)
+### ❌ Not yet implemented
 
 | Feature | Gap | Priority |
 |---------|-----|----------|
-| Tracker board aggregate read-model | No `/board` or `/jobs` aggregate route | GAP-H — High |
-| Outcome status reconciliation | UI stages ≠ backend enum | GAP-A — High |
 | Gap Coach screen | Entirely new module + route | GAP-J — Medium |
-| Save-without-evaluate (bookmark) | No `POST /jobs/save` endpoint | GAP-A/H |
-| Decision override persistence | Engine decision only; no user override stored | GAP-E |
-| Cover letter route | `POST /cover-letter` does not exist | GAP-G |
-| Tailoring route | `POST /tailor` does not exist | GAP-F |
-| Per-field `found` provenance | Parsing returns values only; null = not-found | GAP-D |
-| Profile skill metadata (level/years) | `skills` is `list[str]` only | GAP-B |
-| `get_enabled_sources()` flag | No feature flag for Adzuna/LinkedIn | GAP-I |
+| Profile skill metadata (level/years) in UI | `Skill` dataclass done; UI columns not yet wired | GAP-B UI only |
 
 ---
 
@@ -147,7 +159,7 @@ Binding between each screen and the backend is documented in:
 
 ---
 
-## Decisions Made (2026-06-16)
+## Decisions Made (2026-06-16 to 2026-06-18)
 
 All open design questions resolved:
 
@@ -161,9 +173,13 @@ All open design questions resolved:
 | Source quality gating | `<40` = blocker (skip); `40–70` = risk flag (force Review); thresholds in config |
 | ATS scorer | Integrate into `evaluate_reviewed_job()`; add `ats_score` to `JobAnalysis`; surface in UI |
 
+| LLM backend | Google Gemini REST API (no extra packages) — `GOOGLE_API_KEY` in `.env`; `gemini-3.1-flash-lite` default for extraction; reasoning chain for analysis |
+| AI Analysis output format | Structured JSON `{fit, risk, action}` from Gemini; rendered as 3 labelled sections in UI — not free-form prose |
+| Reasoning model for analysis | `gemini-3-flash-preview` primary; `gemini-2.5-flash` first fallback; `gemini-3.1-flash-lite` last resort; fallback on 404 **and** 429 |
+
 ## Open Questions
 
-None — all design decisions resolved as of 2026-06-16.
+None — all design decisions resolved as of 2026-06-18.
 
 ---
 
@@ -183,6 +199,11 @@ None — all design decisions resolved as of 2026-06-16.
 | Storage strategy | ✅ Separate folders: raw_inputs/, reviewed_jobs/, analyses/, outcomes/ |
 | Tailoring timing | ✅ apply = auto-eligible; review = manual selection required |
 | Auto-submit guard | ✅ User must click Evaluate; no auto-submit at any point in flow |
+| Source registry (GAP-C/I) | ✅ `source_registry.py` — `JobSource` frozen dataclass, generic routes `/search/{source}` and `/select/{source}`, Reed registered at bottom of `job_hunt_ui.py`; adding a source requires one new `*_source.py` file and one import (2026-06-17) |
+| Required skills extraction | ✅ Reed detail API fetched before skill extraction — full `jobDescription` HTML, not 500-char preview (2026-06-17) |
+| LLM backend | ✅ Google Gemini REST API — `GOOGLE_API_KEY` in `.env`; no extra packages needed (2026-06-18) |
+| AI Analysis format | ✅ Structured `{fit, risk, action}` JSON from Gemini; 3-section UI with colour-coded labels (2026-06-18) |
+| Reasoning model chain | ✅ `gemini-3-flash-preview` → `gemini-2.5-flash` → `gemini-3.1-flash-lite`; fallback on 404 and 429 (2026-06-18) |
 
 ---
 
@@ -206,8 +227,9 @@ src/
   job_hunt_ats_scorer.py       # ATS scoring (not integrated)
   job_hunt_ui.py               # Main local UI server (port 8765)
   job_sources/
-    reed_client.py             # Reed API fetch (wired)
-    adzuna_client.py           # Adzuna normaliser (not wired)
+    source_registry.py         # JobSource frozen dataclass + register/get_source/all_sources
+    reed_client.py             # Reed API fetch (wired) + detail fetch for full description
+    adzuna_client.py           # Adzuna normaliser (not wired to registry yet)
     normalize.py               # Reed + Adzuna normalisation
     dedup.py                   # Cross-source deduplication
 
@@ -224,5 +246,9 @@ docs/
   development_rules.md         # Build discipline
   development_sequence.md      # Phase build order
 
-tests/                         # 180+ tests
+  job_hunt_llm.py              # Google Gemini LLM integration (skill extraction + job analysis with reasoning)
+
+dev.py                         # Auto-reload dev watcher — restarts server on any src/*.py change
+restart.sh                     # Quick kill-and-restart script for the server
+tests/                         # 291 tests
 ```

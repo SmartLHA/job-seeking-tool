@@ -100,7 +100,7 @@ def generate_cover_letter_text(
         )
     if not matched_required and not profile.years_experience and len(para1_sentences) < para1_max:
         para1_sentences.append(
-            f"My skills and experience align well with the requirements of this role."
+            "My skills and experience align well with the requirements of this role."
         )
 
     # Trim to max sentences for length
