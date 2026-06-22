@@ -1,7 +1,20 @@
 # Job Seeking Tool — Project TODO
-**Last updated:** 2026-06-19 (full code-review backlog cleared incl. LT-2; full system test PASS — 325 tests green + 13/13 live-endpoint smoke + entry-point/Reed-path verified; only env-only multi_llm_chat unlink failures remain) | **Owner:** Mic
+**Last updated:** 2026-06-22 (recovered UI/F1 branch merged into `main`; documentation reconciled to source) | **Owner:** Mic
 **Build order:** See `docs/build_order.md` for dependency map and rationale.
 **Rule:** Complete each phase fully (tests green) before starting the next.
+
+---
+
+## Recovery Baseline — 2026-06-22
+
+**Status:** ✅ Recovered and merged. The following are implemented in the current
+source tree and must not be reopened as missing work: LT-1 UI split, Reed source
+registry/adapter, F1 keyword match, source-quality/ATS/decision enrichment, review
+queue and batch evaluation, board routes/views, profile handling, CV tailoring, and
+cover-letter generation.
+
+**Current next build candidates:** D1 Saved Searches (then Daily Digest phases),
+Gap Coach, Adzuna adapter, LinkedIn design/adapter, and export/packaging work.
 
 ---
 
@@ -108,7 +121,8 @@ DnD constrained to legal transitions per `_ALLOWED_TRANSITIONS`. Unblocks GAP-H 
 ---
 
 ## Phase 5 — Multi-Source Expansion
-*Source registry is in place (2026-06-17). Each new source just needs its own `*_source.py` file and one import line in `job_hunt_ui.py`.*
+*Source registry is in place. Each new source needs its own `*_source.py` adapter and
+one registration import in `src/ui_routes.py` (not the thin `job_hunt_ui.py` entry point).*
 
 ---
 
@@ -116,7 +130,7 @@ DnD constrained to legal transitions per `_ALLOWED_TRANSITIONS`. Unblocks GAP-H 
 **Status:** Ready to build — `adzuna_client.py` exists, registry pattern is in place
 **What to build:**
 1. `src/job_sources/adzuna_source.py` — implements `JobSource` adapter: `is_available()` (checks `ADZUNA_APP_ID`/`ADZUNA_APP_KEY`), `normalize_search_params()`, `search_handler()`, `select_handler()`, `render_search_form()`, `render_results()`
-2. Add `from src.job_sources import adzuna_source as _adzuna_src` to `src/job_hunt_ui.py`
+2. Add `from src.job_sources import adzuna_source as _adzuna_src` to `src/ui_routes.py`
 3. Enable `"adzuna"` in `ENABLED_SOURCES` via `src/job_hunt_config.py` once wired
 **Design doc:** `docs/tasks/gap-c-source-feature-flag-design.md`
 **Effort:** Medium

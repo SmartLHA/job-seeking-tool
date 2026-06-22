@@ -98,6 +98,30 @@ Default stack unless Mic changes it:
 - black + ruff
 - practical type hints
 
+## Current Implementation Baseline — Verified 2026-06-22
+
+The source of truth is the recovered implementation now merged into `main`, not the
+earlier monolithic checkout or unimplemented planning notes.
+
+- The browser UI is active. `src/job_hunt_ui.py` is a 19-line entry point; the UI is
+  split into `ui_routes`, `ui_handlers`, `ui_render`, `ui_utils`, and `ui_state`.
+- A source registry and a Reed adapter power generic source search/select flows.
+  Reed results retain the original posting URL, which is rendered as a safe
+  “View original posting / Apply” link on the saved job page.
+- The end-to-end workflow includes review/evaluate, a review queue and batch
+  evaluation, board APIs/views, outcome tracking, profile/CV handling, CV tailoring,
+  cover-letter generation, and optional manual Gemini analysis.
+- Evaluation uses seven weighted scoring components, categorical confidence, source
+  quality gating, an ATS readiness score, and F1 per-job keyword matching. F1 is an
+  advisory CV-coverage signal only; it never changes Apply / Review / Skip.
+- Tracker statuses are `not_applied`, `applied`, `interview`, `offer`, `rejected`,
+  and `withdrawn`.
+- Remaining product work is additive: saved searches/daily digest, Gap Coach,
+  additional source adapters, and packaging/export improvements.
+
+The references below that describe “no UI required in early phases” or “Phase 8 UI”
+are historical development sequencing, not a statement of the current product.
+
 Avoid heavy frameworks early.
 
 ## Proposed Repo Structure
@@ -679,14 +703,15 @@ This coding work has **not** been started yet because Mic asked for planning/con
 6. Whether current default decision thresholds need revision after first real sample evaluations
 7. Post-MVP priority between broader ingestion, cover letters, and richer outcomes tracking
 
-## Latest Milestone
+## Early Milestone (Historical)
 
 - **Core engine complete** — profile loading, reviewed job input, deterministic scoring, Apply/Review/Skip decisioning, evaluation flow, storage separation, outcomes tracking, reporting/export, and integration tests (69 tests passing)
 - **Minimal local UI live** — lightweight localhost browser UI with one-job evaluation flow, outcome recording, and recent job history browser
-- **Minimal CLI ready** — `python3 -m src.main` entrypoint wires profile + reviewed job → evaluation → storage → report in one command
+- **Minimal CLI ready** — this historical note referred to the early CLI. The
+  current entry point is `python3 -m src.job_hunt_main`.
 - **Docs viewer operational** — project docs browsable at localhost:8765/viewer with dashboard summary cards and cross-doc search
 
-## Latest Progress
+## Historical Project Timeline
 
 - Created project folder `Job Seeking Tool`.
 - Moved project memory into the project area.

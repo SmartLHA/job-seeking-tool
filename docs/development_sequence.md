@@ -1,5 +1,10 @@
 # Development Sequence
 
+> **Historical sequencing note — verified 2026-06-22:** The phases below describe
+> the original MVP order. The current source has already progressed beyond them:
+> the local browser UI, tailored CVs, cover letters, board/outcomes, Reed search,
+> and evaluation enrichment are implemented. See `PROJECT_TODO.md` for active work.
+
 This sequence has been revised after Mic’s clarification pass.
 
 Key shifts:

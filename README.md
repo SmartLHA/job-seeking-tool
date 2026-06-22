@@ -1,105 +1,67 @@
 # Job Seeking Tool
 
-Local-first job-search decision support and application prep tool for the UK market.
+Local-first UK job-search decision support and application preparation. It scores reviewed jobs deterministically, prepares truthful materials, tracks outcomes locally, and never auto-submits an application.
 
-## What it does
+## Current implementation
 
-- Search Reed (and other configured sources) for jobs
-- Evaluate job fit with deterministic scoring → Apply / Review / Skip
-- Tailor CV to a specific job (LLM-assisted, truth-only)
-- Generate a cover letter (configurable tone, length, key points)
-- Track application outcomes locally
-- Board view of all evaluated jobs
+- Split local UI: `src/job_hunt_ui.py` is a 19-line entry point over `ui_routes`, `ui_handlers`, `ui_render`, `ui_utils`, and `ui_state`.
+- Generic source registry with Reed currently enabled. Reed search, result selection, audit snapshots, full-detail enrichment, deduplication, batch evaluation, and review queue are implemented.
+- Deterministic Apply / Review / Skip decisions with seven weighted score components and categorical confidence.
+- Source-quality gates, ATS readiness, and F1 per-job keyword coverage. Keyword coverage is advisory only and includes missing-keyword and anti-stuffing signals.
+- Structured skills, safe URL ingestion, decision overrides, local JSON state, SQLite jobs/board index, board view, and outcome tracking.
+- Decision-gated Tailor CV and Cover Letter actions on job detail pages. Output is markdown/text; DOCX/PDF export is not implemented.
+- Optional Gemini job explanation is manually triggered and cannot alter score or decision.
 
-## How to run
+## Run the UI
 
 ```bash
-cd "/Users/lhaclaw/AI-Project-Workspace/job_hunt_Job Seeking Tool"
-PYTHONPATH=. python3 src/job_hunt_ui.py \
-  --profile data/mic_profile.json \
+python3 -m src.job_hunt_ui \
+  --profile data/mic_profile/candidate_profile.json \
   --state-root data/state \
   --report-dir output/reports \
   --host 127.0.0.1 \
   --port 9000
 ```
 
-Then open: **http://127.0.0.1:9000**
+Open `http://127.0.0.1:9000`.
 
-## Features
+Required source credentials are read from the environment. Reed needs `REED_API_KEY`; optional Gemini functions need `GOOGLE_API_KEY`.
 
-| Feature | Status |
+## Route summary
+
+| Area | Routes |
 |---|---|
-| Find Jobs tab — search across enabled sources | ✅ |
-| Evaluate tab — review fields, run scoring | ✅ |
-| Add Job tab — paste text or URL to ingest a job | ✅ |
-| History tab — recent evaluated jobs | ✅ |
-| Board View — kanban-style overview at `/board/view` | ✅ |
-| My Profile tab — view / edit candidate profile | ✅ |
-| Tailor CV — Actions section on job detail page | ✅ |
-| Cover Letter — form on job detail page | ✅ |
-| Outcome tracking — record apply / interview / reject | ✅ |
-| Auto-apply / browser automation | ❌ never |
+| Search | `GET /search/{source}`, `POST /select/{source}`, `GET /search/reed/more`, `GET /sources` |
+| Review/evaluate | `POST /prefill`, `POST /job-submit`, `POST /evaluate`, `GET /job/<id>`, `GET /review-queue`, `POST /jobs/batch-evaluate` |
+| Job actions | `POST /job/<id>/decision`, `POST /job/<id>/add-gap-skills`, `POST /job/<id>/ai-review-cv`, `POST /tailor`, `POST /cover-letter` |
+| Board/outcomes | `GET /jobs`, `GET /board`, `GET /board/view`, `POST /jobs/save`, `POST /outcome` |
+| Profile | `GET /profile`, `POST /profile/parse-cv`, `POST /profile/save` |
 
-## UI
+## State and outputs
 
-Warm paper style (`#F1EDE4` background, Schibsted Grotesk font), left sidebar navigation, coloured decision badges (Apply / Review / Skip), score pills.
+State is separated under the configured state root:
 
-## Route reference
+- `raw_inputs/`
+- `reviewed_jobs/`
+- `analyses/`
+- `outcomes/`
+- SQLite index: `job_hunt_index.db`
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/` | Main app shell (tabs: search, evaluate, add_job, history) |
-| GET | `/sources` | Returns enabled job sources from config (JSON) |
-| GET | `/board` | Board data (JSON) |
-| GET | `/board/view` | Board HTML page |
-| GET | `/profile` | Profile tab page |
-| POST | `/evaluate` | Run evaluation on a reviewed job payload |
-| POST | `/jobs/save` | Save a job (accepts `source_type` or `source`) |
-| POST | `/tailor` | Tailor CV for a job (`job_id`, `manual_selected`) |
-| POST | `/cover-letter` | Generate cover letter (`job_id`, `why_company_text`, `tone`, `length`, `points`) |
-| POST | `/outcome` | Record application outcome |
-| POST | `/profile/save` | Save updated profile |
-| POST | `/profile/parse-cv` | Parse uploaded CV file into profile fields |
-
-## Outputs
-
-| Path | Contents |
-|---|---|
-| `data/state/reviewed_jobs/` | Structured job records |
-| `data/state/analyses/` | Scoring and decision results |
-| `data/state/raw_inputs/` | Raw ingestion payloads |
-| `output/reports/` | JSON/CSV reports |
-| `output/tailored_cvs/` | Tailored CV drafts |
-| `output/cover_letters/` | Cover letter drafts |
+Reports are JSON/CSV. Tailored CVs are stored under `output/tailored_cvs/`; cover letters under `output/cover_letters/`.
 
 ## Tests
 
 ```bash
-PYTHONPATH=. python3 -m pytest
+python3 -m pytest tests/test_ui.py -q
+python3 -m pytest tests/test_keyword_match.py tests/test_evaluation.py tests/test_storage.py -q
 ```
 
-## Known limitations
+After the recovery merge and original-posting-link update, the combined UI,
+F1/evaluation, and storage regression set passed **99 tests** on 2026-06-22.
 
-- Reed is the primary wired search source; other sources depend on config
-- CV tailoring and cover letter generation require an LLM API key in env
-- `/board` returns JSON; the HTML view is at `/board/view`
-- Profile unknown fields are currently rejected on load
-- No auto-apply, no remote data storage, no browser automation
+## Documentation
 
-## Architecture notes
-
-See `PROJECT_CONTEXT.md` and `docs/architecture_guardrails.md` for guardrails.
-Key principle: deterministic scoring first, LLM only for tailoring/cover letter generation.
-
----
-
-## CHANGELOG
-
-### 2026-06-18
-
-- **New UI** — warm paper style (`#F1EDE4`), Schibsted Grotesk font, left sidebar nav with: Find Jobs / Evaluate / Add Job / History / My Profile / Board View; coloured decision badges; score pills
-- **Tailor CV** — new "Actions" section on job detail page; `POST /tailor` with `job_id`
-- **Cover Letter** — form on job detail page; `POST /cover-letter` with `job_id`, `why_company_text`, `tone`, `length`, `points`
-- **Board View** — new sidebar nav item; `/board/view` returns full HTML page
-- **`/sources` wiring** — Find Jobs tab now dynamically reflects enabled sources from config
-- **Field name fix** — `/jobs/save` now accepts both `source_type` and `source`
+- [UI scope](docs/ui_scope.md)
+- [Function list](docs/function_list.md)
+- [Product specification](docs/product_spec.md)
+- [Project TODO](PROJECT_TODO.md)

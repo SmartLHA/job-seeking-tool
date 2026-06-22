@@ -1,3 +1,25 @@
+## 2026-06-22
+
+### Recovery merge and documentation reconciliation
+- **Status:** ✅ COMPLETE — recovered implementation merged into `main` as
+  `59ff270` (`codex/recovered-ui-f1`).
+- **Recovery:** Restored the LT-1 split UI (`job_hunt_ui.py` is a 19-line entry
+  point), the Reed source adapter/registry, F1 `job_hunt_keyword_match.py`, and
+  their tests from the recovery branch. The prior monolithic-checkout diagnosis was
+  not an accurate description of the recovered source and is superseded by this
+  entry.
+- **User-facing link:** Reed normalization now preserves the original posting URL
+  as `source_ref`; the saved job page renders it as a safe “View original posting /
+  Apply” link instead of exposing only a provider ID.
+- **Documentation:** Re-baselined README, product spec, function list, UI scope,
+  index, project context, TODO, build order, and development sequence against the
+  recovered source. The two `Claude deliverable` design docs are now explicitly
+  historical/non-authoritative and may be removed manually.
+- **Verification:** `python3 -m pytest tests/test_ui.py tests/test_keyword_match.py
+  tests/test_evaluation.py tests/test_storage.py -q` → **99 passed**;
+  `git diff --check` clean; `python3 scripts/check_viewer_docs.py` → all 13 viewer
+  entries resolve.
+
 ## 2026-06-19
 
 ### F1 (v1) — Per-job ATS keyword match + keyword gap

@@ -1,9 +1,14 @@
 # Build Priority Order
 
 **Date:** 2026-06-16
-**Scope:** All approved non-implemented and not-wired items from the v4 UI design session.
+**Scope:** Historical build plan from the v4 UI design session.
 **Rule:** Items within a phase can be built in parallel. Items in a later phase must not start
 until all items in the prior phase are complete and tests are green.
+
+> **Current status (verified 2026-06-22):** This plan's foundation, enrichment,
+> board, tailoring, cover-letter, source-registry, LT-1 split, and F1 work are
+> implemented. Treat the phase detail below as implementation history. The active
+> backlog is Saved Searches/Daily Digest, Gap Coach, and additional source adapters.
 
 ---
 

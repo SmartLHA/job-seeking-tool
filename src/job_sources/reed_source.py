@@ -120,7 +120,9 @@ def reed_select_form_to_evaluate_values(form: dict[str, str], config: "object | 
     source_snapshot = validate_reed_source_snapshot_json(form.get("source_snapshot_json", ""))
     values = default_form_values()
     source_job_id = cleaned["source_job_id"]
-    source_ref = source_job_id or cleaned["url"]
+    # Prefer the advert URL so saved jobs retain a working application link.
+    # The Reed id remains in job_id and the source snapshot.
+    source_ref = cleaned["url"] or source_job_id
 
     # Fetch the full job description from Reed's detail API.
     # The search results page only carries a 500-char preview; the detail API

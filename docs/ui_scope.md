@@ -1,261 +1,60 @@
-# UI Scope — v4
+# UI Scope
 
-**Updated: 2026-06-17** — UX hardening pass complete: CV status indicator, profile save flash banner, actionable error messages for missing CV, AI Analysis manual button, tailor result match stats.
-Prior version (v3, 2026-06-16): reflected v4 UI prototype from `Claude deliverable/`.
+**Source-verified after recovery merge: 2026-06-22.** The product UI is the recovered split architecture: `ui_routes`, `ui_handlers`, `ui_render`, `ui_utils`, `ui_state`, and source adapters. `src/job_hunt_ui.py` is only the entry-point shim.
 
----
+## Current experience
 
-## Purpose
+The local-first workflow is:
 
-Define the complete UI for the Job Seeking Tool. The backend binding for each screen
-is in `Claude deliverable/docs/ui_structure_v4.md` (authoritative per-screen detail).
-This doc defines scope, UX rules, and what remains in/out.
-
----
-
-## Navigation
-
-Six sidebar items + two full-screen workspace overlays:
-
-```
-Sidebar:
-  Find Jobs  ·  Evaluate  ·  Add Job  ·  Tracker  ·  Gap Coach  ·  My Profile
-
-Workspaces (full-screen, opened from Evaluate):
-  Tailor CV  ·  Cover Letter
+```text
+Search a configured source or add a job → review fields → explicitly evaluate
+→ inspect the explainable result → prepare material or record outcome → submit manually
 ```
 
----
+Reed is the enabled source. The generic source registry makes future sources possible, but Adzuna and LinkedIn must remain unavailable until their complete source adapters are implemented and tested.
 
-## Screen Definitions
+### Search, review, and batch queue
 
-### 1. Find Jobs
+- Search uses `GET /search/{source}`; Reed supports a "more" results path.
+- Result selection uses `POST /select/{source}`, preserves a source snapshot, and fetches full Reed detail when available before extracting skills.
+- Users may stage selected results and call `POST /jobs/batch-evaluate` (maximum enforced by the handler), then inspect them through `GET /review-queue`.
+- Manual input uses `POST /prefill` and `POST /job-submit`. URL parsing remains host-allowlisted, robots-aware, SSRF-protected, and fail-closed.
+- Parsed values carry field-review provenance. Missing data remains unknown rather than invented.
 
-**Purpose:** Search job boards, filter results, bookmark or batch-evaluate.
+### Evaluate and job detail
 
-**Flow:**
-```
-Enter keyword + location
-    ↓
-Processing overlay (fetch → normalise → dedup → score → decide)
-    ↓
-Filtered result cards (salary / contract / pattern / source / posted filters)
-    ↓
-Per-card: Bookmark (Save) or Select for evaluation
-    ↓
-"Evaluate N selected" → triggers batch evaluation → results appear in Evaluate screen
-```
+- Job detail is `GET /job/<id>`; `?embed=1` is used by the review queue.
+- It shows match score, categorical confidence, source-quality state, ATS readiness, F1 ATS keyword coverage, strengths, gaps, blockers, risk flags, and decision reasoning.
+- F1 keyword matching is advisory only. It reports present/missing required and preferred keywords and warns about repeated-keyword stuffing; it does not affect decisions.
+- Users can persist an Apply/Review/Skip override through `POST /job/<id>/decision`.
+- When `source_ref` is an HTTP(S) advert URL, the page renders **View original posting / Apply**. The product never submits an application itself.
+- Optional Gemini analysis is manually triggered through `POST /job/<id>/ai-review-cv` / the job explanation flow, and is separate from deterministic scoring.
 
-**Key behaviours:**
-- Source toggles: Reed (wired), Adzuna (gate behind flag), LinkedIn (not implemented)
-- Duplicate cards marked visually (merged to `source: multi_source` by dedup)
-- Bookmark saves job without evaluating — creates a "Saved" tracker entry (needs `POST /jobs/save`)
-- Processing overlay shows the 5-step pipeline with real step labels
+### Tailoring, cover letters, profile, and outcomes
 
-**Backend routes:** `GET /search/reed`, `POST /jobs/save` (GAP — missing)
+- The job page exposes decision-gated Tailor CV and Cover Letter actions, backed by `POST /tailor` and `POST /cover-letter`.
+- Tailoring returns summary, promoted evidence, matched keywords, missing keywords, and markdown. Review decisions require manual selection; Skip is blocked.
+- Cover letters require `why_company_text`, accept only supported tone/length values, and use grounded optional points.
+- Profile editing supports structured skills, master-CV parsing, and explicit save feedback.
+- `POST /outcome` enforces the local outcome state machine.
 
----
+### Board and tracker
 
-### 2. Evaluate
+- `GET /board` returns SQLite-backed columns, statistics, cards, and allowed transitions.
+- `GET /board/view` renders the board UI; `POST /jobs/save` creates a `not_applied` bookmark.
+- The only tracker statuses are `Not Applied`, `Applied`, `Interview`, `Offer`, `Rejected`, and `Withdrawn`. Visual transitions must follow the server-provided allowed transitions.
 
-**Purpose:** Inspect evaluation results; make or override the Apply/Review/Skip decision;
-launch Tailor CV or Cover Letter workspaces.
+## Visual and safety rules
 
-**Layout:** Left panel = review queue sorted by fit score. Right panel = job detail.
+- Use the established paper/ink layout, clear decision colours, and compact metadata treatment.
+- Keep privacy, local storage, evidence boundaries, and manual submission visible in the UI.
+- Never turn categorical confidence into a probability.
+- Never treat sample/prototype data as live candidate or job data.
+- No auto-apply, credential storage, stealth automation, or mass-application behaviour.
 
-**Detail panel shows:**
-- Score dial (0–100, `match_score`)
-- Decision chip (Apply / Review / Skip) with override buttons (GAP-E — not persisted yet)
-- Confidence level bound to 3 levels: low / medium / high (NOT a numeric % — UI meter must map these)
-- 6 fixed score breakdown components: Skills · Experience · Location · Salary · Domain · Work Mode
-- Strengths list (`strengths[]`)
-- Gaps: `missing_required_skills[]` + `missing_preferred_skills[]`
-- Blockers: `blockers[]` + `risk_flags[]` as softer cautions
-- Action buttons: Tailor CV · Cover Letter · Record Outcome
+## Backlog
 
-**Backend routes:** `GET /job?job_id=`, `POST /outcome`
-
----
-
-### 3. Add Job
-
-**Purpose:** Manually add a single job via URL or pasted text, review extracted fields, then evaluate.
-
-**Flow:**
-```
-Paste URL  →  POST /prefill  →  parsed field-review form
-Paste text →  POST /prefill  →  parsed field-review form
-                                        ↓
-                              User edits any field
-                                        ↓
-                          Click "Evaluate" (explicit gate)
-                                        ↓
-                              POST /job-submit → POST /evaluate
-                                        ↓
-                              Result → Evaluate screen
-```
-
-**Key behaviours:**
-- Auto-filled fields tagged visually; `null` fields tagged "not found" (GAP-D: parsing returns values only)
-- Unknown values stay unknown — user should not be forced to guess
-- No auto-evaluation; user must review and click Evaluate
-
-**Backend routes:** `POST /prefill`, `POST /job-submit`, `POST /evaluate`
-
----
-
-### 4. Tracker (Kanban)
-
-**Purpose:** Visualise application status across the pipeline; move cards between stages.
-
-**Columns (decided 2026-06-16 — Option A, remap UI to backend):**
-
-`Not Applied · Applied · Interview · Offer · Rejected · Withdrawn`
-
-Maps directly to `OutcomeStatus`: `not_applied · applied · interview · rejected · offer · withdrawn`.
-Saved and Screening columns are dropped. Withdrawn is a visible terminal column (read-only cards).
-
-Bookmarking a job from Find Jobs creates a `not_applied` outcome record.
-DnD is constrained to legal transitions per `_ALLOWED_TRANSITIONS` — illegal target columns are greyed out.
-(e.g. Interview → Applied is blocked; Interview → Offer, Rejected, or Withdrawn are allowed)
-
-**Header stats:** Active · Interviews · Offers · Response rate
-
-**Backend routes:** `GET /board` (GAP-H — missing aggregate), `POST /outcome`
-
----
-
-### 5. Gap Coach
-
-**Purpose:** Aggregate skill gaps and strengths across all evaluated jobs to guide learning priorities.
-
-**Shows:**
-- Top recurring missing required skills (by frequency across analyses)
-- Top recurring missing preferred skills
-- Strengths that appear consistently
-- Risk flag themes
-
-**⚠️ GAP-J: No backend.** Needs:
-- `gap_coach.aggregate_gaps(analyses[]) -> theme[]`
-- `gap_coach.top_strengths(analyses[]) -> strength[]`
-- `GET /coach` route
-- Read-model scanning `analyses/` directory
-
-Logic is deterministic aggregation only — no new truth is generated.
-
----
-
-### 6. My Profile
-
-**Purpose:** View and edit the candidate profile; upload and parse master CV.
-
-**Shows:**
-- Candidate name, target roles, locations
-- Key facts grid: right_to_work_uk, years_experience, salary_floor_gbp, remote_preference
-- Skills table with Name / Level / Years columns (backed by `Skill` dataclass — GAP-B ✅ resolved)
-- Achievements, certifications
-- **CV status indicator** (top of Upload CV section): green = CV on file (N chars), amber = ref set but no text, red = no CV — all with fix guidance
-- Master CV upload + parse (`POST /profile/parse-cv`) — auto-saves CV and profile on upload
-- **Flash confirmation banner** after Save: "Profile saved. CV: N chars on file."
-- Save profile (`POST /profile/save`)
-
-**Key behaviours (2026-06-17):**
-- Uploading a CV and clicking Parse CV auto-saves the CV to disk AND the profile JSON — no extra Save click needed
-- Skills extracted from CV (LLM first, keyword fallback) are merged into the skills table automatically
-- Auto-save failure is non-fatal but now visible: shown in the status bar if it occurs
-- After Save, the redirect carries `?flash=` so the user sees confirmation of what was saved
-
-**Backend routes:** `GET /profile`, `POST /profile/save`, `POST /profile/parse-cv`
-
----
-
-## Full-Screen Workspaces
-
-### Tailor CV
-
-Opened from Evaluate screen for jobs where `tailoring_ready = True`.
-
-**Layout:** Left panel (evidence points, matched keyword chips) · Right preview pane (generated CV)
-
-**Flow:**
-```
-Evidence selected from profile + master CV by select_relevant_evidence()
-    ↓
-tailor_cv() generates markdown output
-    ↓
-validate_tailored_cv() rejects any claim not in profile
-    ↓
-User can accept/edit → save_tailored_cv() → POST /tailor (GAP-F — route missing)
-```
-
-**GAP-F ✅ RESOLVED:** `tailor_cv()` returns `TailoredCVResult(summary, promoted[], matched[], missing[], markdown)`. `POST /tailor` is live. Result panel in UI shows promoted / matched / missing counts alongside saved path.
-
-**Rules:**
-- `apply` decisions: auto `tailoring_ready = True`
-- `review` decisions: user must manually select before tailoring is available
-- `skip` decisions: tailoring not available
-
----
-
-### Cover Letter
-
-Opened from Evaluate screen.
-
-**Layout:** Left panel (why-company textarea, tone/length/talking-point toggles) · Right preview pane
-
-**Flow:**
-```
-User writes "why this company" paragraph
-    ↓
-generate_cover_letter_text(profile, master_cv, job, analysis, why_company_text)
-    ↓
-~250–300 word ATS-friendly letter: opening · role-fit · why-company · achievements · close
-    ↓
-POST /cover-letter (GAP-G — route missing)
-```
-
-**GAP-G ✅ RESOLVED:** `generate_cover_letter_text()` accepts `tone`/`length`/`points`. `POST /cover-letter` is live with skip gate. Cover letter now returns 422 (not silent empty) if no master CV is on profile.
-
----
-
-## Explicitly Out of Scope
-
-- Auto-apply or job submission on behalf of user
-- Browser automation
-- Multi-user accounts
-- Background job monitoring
-- Scraping beyond single URL at a time
-- Adzuna or LinkedIn until fetch clients are wired and a source flag exists
-- Bulk import or mass ingestion
-
----
-
-## UX Principles (unchanged from v2)
-
-- Flow must be obvious; clarity over cleverness
-- Unknown values shown explicitly, not hidden or guessed
-- User correction must be easy before scoring
-- Explainability visible without overwhelming
-- Tailoring is a deliberate action, not an automatic surprise
-- Pre-fill with AI parsing — user always reviews before Evaluate
-
----
-
-## HTTP Routes — Current State
-
-All originally-required routes are now implemented. One remains open.
-
-| Method | Path | Status | Purpose |
-|--------|------|--------|---------|
-| POST | `/jobs/save` | ✅ Done | Bookmark a job from Find Jobs without evaluating |
-| GET | `/jobs` | ✅ Done | List all jobs (scan reviewed_jobs/ + analyses/) |
-| GET | `/board` | ✅ Done (JSON) | Board aggregate: all jobs with stage + score |
-| GET | `/board/view` | ✅ Done (HTML) | Board Kanban view |
-| POST | `/tailor` | ✅ Done | Trigger tailoring, return/save tailored CV |
-| POST | `/cover-letter` | ✅ Done | Generate and save cover letter |
-| GET | `/job/{id}/explain` | ✅ Done | LLM explanation of job-candidate fit (on-demand) |
-| POST | `/profile/parse-cv` | ✅ Done | Upload + parse CV; auto-save to profile |
-| POST | `/profile/save` | ✅ Done | Save profile; flash confirmation on redirect |
-| GET | `/search/{source}` | ✅ Done | Generic source search (Reed wired) |
-| POST | `/select/{source}` | ✅ Done | Generic source select + prefill |
-| GET | `/coach` | 🔲 Not yet | Gap Coach aggregate read-model |
+- Gap Coach, deterministic aggregation over stored analyses.
+- Daily digest and saved searches.
+- Adzuna and LinkedIn source adapters.
+- DOCX/PDF application-package export.

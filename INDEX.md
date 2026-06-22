@@ -21,16 +21,16 @@ Used by SilverHand to brief Handy/Scout precisely, and by any agent to orient qu
 | File | Purpose |
 |------|---------|
 | `docs/product_spec.md` | What the product is, MVP scope, goals/non-goals, user stories. |
-| `docs/function_list.md` | All planned modules and their responsibilities. |
+| `docs/function_list.md` | Source-verified current module map, including the recovered split UI and F1 keyword matcher. |
 | `docs/development_sequence.md` | Phased build order (Phase 0–8). |
 | `docs/development_rules.md` | Non-negotiable build rules: local-first, truthful output, deterministic-first, tests. |
 | `docs/data_contract.md` | MVP data shapes — JobPosting, JobAnalysis, blockers, score breakdown. |
-| `docs/ui_scope.md` | UI screen definitions v3 (6 screens + 2 workspaces), workflow boundaries, new HTTP routes required. |
+| `docs/ui_scope.md` | Source-verified UI architecture, implemented workflows, routes, and remaining scope. |
 | `docs/build_order.md` | **Build priority order** — 4 phases, 10 items, dependency map, effort ratings, related files per item. |
 | `docs/architecture_guardrails.md` | Pre-implementation architecture discipline: state separation, module boundaries, policy config principles. |
 | `docs/team_protocol.yaml` | Multi-agent team protocol: SilverHand/Handy/Scout roles, anti-idle rule, QA modes. |
-| `Claude deliverable/docs/ui_structure_v4.md` | **Authoritative** screen → backend binding; each screen mapped to real routes/functions; GAP catalogue. |
-| `Claude deliverable/docs/function_list_v4.md` | Real function signatures (read from source) with gap annotations; HTTP route table; openclaw priority list. |
+| `Claude deliverable/docs/ui_structure_v4.md` | Historical Claude prototype/design input; not authoritative after the 2026-06-22 source reconciliation. Safe to remove manually once no longer needed. |
+| `Claude deliverable/docs/function_list_v4.md` | Historical Claude function-design input; not authoritative after the 2026-06-22 source reconciliation. Safe to remove manually once no longer needed. |
 | `Claude deliverable/Job Seeking Tool.html` | v4 interactive UI prototype — open in browser to see the full design. |
 | `docs/tasks/gap-b-skill-dataclass-design.md` | GAP-B: Extend CandidateProfile.skills to list[Skill] with level/years/evidence_type; backward-compat loader. |
 | `docs/tasks/gap-c-source-feature-flag-design.md` | GAP-C/I: get_enabled_sources() config + GET /sources route; gates Adzuna/LinkedIn toggles until wired. |
@@ -70,7 +70,7 @@ Used by SilverHand to brief Handy/Scout precisely, and by any agent to orient qu
 | `src/job_hunt_reporting.py` | `build_report_rows(jobs, analyses, outcomes)` → flat list of row dicts per job. `summarize_decisions(analyses)` → count of apply/review/skip. `export_report_json(rows, output_path)` / `export_report_csv(rows, output_path)`. CSV includes: job_id, job_title, company, match_score, confidence, decision, blockers, strengths, missing_skills. |
 | `src/job_hunt_orchestrator.py` | `run_evaluation(profile_path, reviewed_job_path, ...)` → full pipeline result. Loads profile + reviewed job → evaluates → saves reviewed job, analysis, optional raw input → generates reports. Also `submit_reviewed_job(profile_path, job_payload)` for UI: accepts unvalidated dict, converts to reviewed job, evaluates, stores, returns analysis. |
 | `src/job_hunt_main.py` | CLI entrypoint using `argparse`. `--profile` (required), `--reviewed-job` (required), `--state-root` (default `data/state`), `--report-dir` (default `output/reports`), `--raw-input`, `--raw-input-id`. Prints summary on success (job title, company, decision, score, confidence, paths). Exits non-zero on validation/evaluation errors. |
-| `src/job_hunt_ui.py` | **Thin shell (19 lines) after the LT-1 split.** **Run: `python3 -m src.job_hunt_ui --profile …`**. Re-exports back-compat symbols (`main`, `_build_handler`, `UIServerConfig`, form helpers) and is the entry point. Real implementation lives in `ui_routes` / `ui_handlers` / `ui_render` / `ui_utils` / `ui_state` below. Endpoints (unchanged): `GET /`, `GET /search/reed`, `GET /search/reed/more`, `POST /select/reed`, `POST /evaluate`, `POST /job-submit`, `GET /job/<id>` (+ `/explain`, `/decision`, `/add-gap-skills`, `/ai-review-cv`), `POST /outcome`, `POST /jobs/batch-evaluate`, `POST /jobs/save`, `GET /jobs`, `GET /board`, `GET /board/view`, `GET /review-queue`, `GET /sources`, `GET /profile`, `POST /profile/parse-cv`, `POST /profile/save`, `POST /tailor`, `POST /cover-letter`, `POST /prefill`. |
+| `src/job_hunt_ui.py` | **Thin 19-line entry point after the LT-1 split.** Run `python3 -m src.job_hunt_ui --profile …`. It imports `main` from `ui_routes`; the implementation lives in `ui_routes` / `ui_handlers` / `ui_render` / `ui_utils` / `ui_state` below. |
 | `src/ui_routes.py` | **NEW (LT-1).** HTTP server + dispatch. `UIRequest` (parsed method/path/query/form/json_body/raw_body/headers), `UIResponder` (`send_html`/`send_json`/`redirect`), `_parse_request`, `_build_handler` (slim `do_GET`/`do_POST` → standalone handlers), `main`, `build_parser`. Imports each `job_sources/*_source` for registration side effect. |
 | `src/ui_handlers.py` | **NEW (LT-1).** All request handlers as standalone `handle_*(req, config, responder)` / `render_*` functions (testable without a live server). View-model builders `_build_job_page_vm` / `_build_profile_page_vm`, `_render_search_jobs_tab` (source orchestration), `_allowed_profile_dir`, `load_recent_job_history`, `raw_input_payload_from_form`, `parse_multipart_form`, `_index_db_path`, `handle_sources`. Only layer that imports domain modules. |
 | `src/ui_render.py` | **NEW (LT-1).** All HTML rendering — **pure: data in, string out, no domain imports**. View-models `JobPageViewModel`, `ProfilePageViewModel`, `ReviewQueueViewModel`. `render_page` (reads `config.model_label`), `render_home_page`, `render_job_page`, `render_profile_page`, `render_review_queue_page`, `render_history_table`, `render_input_form`, `_render_sidebar`, `_render_add_job_*`, `_normalize_home_tab`. |
@@ -164,7 +164,7 @@ Used by SilverHand to brief Handy/Scout precisely, and by any agent to orient qu
 - **Understand the product** → `PROJECT_CONTEXT.md`
 - **Check progress/history** → `PROJECT_LOG.md`
 - **Run the CLI** → `README.md` + `src/job_hunt_main.py --help`
-- **Run the UI** → `README.md` + **`python3 src/job_hunt_ui.py`** (starts on port 8765; no `src/ui.py` entrypoint is retained)
+- **Run the UI** → `README.md` + **`python3 -m src.job_hunt_ui --profile data/mic_profile/candidate_profile.json`**
 - **Understand scoring** → `src/job_hunt_scoring.py` + `src/job_hunt_config.py` (start with `score_job()` and `ScoringWeights`)
 - **Understand decisioning** → `src/job_hunt_decision.py` + `src/job_hunt_config.py` (start with `decide_application()` and `DecisionPolicy`)
 - **Change data shapes** → `src/job_hunt_models.py` + `docs/data_contract.md`
@@ -172,7 +172,7 @@ Used by SilverHand to brief Handy/Scout precisely, and by any agent to orient qu
 - **Add a new module** → `docs/function_list.md` + `docs/architecture_guardrails.md`
 - **Understand the evaluation flow** → `src/job_hunt_evaluation.py` (wires scoring + decision)
 - **Understand the CLI orchestration** → `src/job_hunt_orchestrator.py` + `src/job_hunt_main.py`
-- **Understand the UI** → `src/job_hunt_ui.py` (endpoint routing + form handling + profile/CV upload tabs)
+- **Understand the UI** → `src/ui_routes.py`, then `src/ui_handlers.py`, `src/ui_render.py`, `src/ui_utils.py`, and `src/ui_state.py`
 - **Write tests** → any `tests/test_*.py` for the pattern
 - **Browse docs visually** → `http://127.0.0.1:8765/viewer/` (project doc viewer served by `viewer_server.py` on port 8765)
 

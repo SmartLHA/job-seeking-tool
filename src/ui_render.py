@@ -1218,13 +1218,22 @@ def render_job_page(vm: "JobPageViewModel") -> str:
     # ── job header ────────────────────────────────────────────────────────────
     salary_str = format_salary_range(vm.salary_min_gbp, vm.salary_max_gbp)
     source_tag = _tag(vm.source_type or "manual", mono=True)
+    source_ref = (vm.source_ref or "").strip()
+    source_ref_is_url = source_ref.lower().startswith(("http://", "https://"))
+    source_ref_html = (
+        f'<a href="{escape(source_ref)}" target="_blank" rel="noreferrer" '
+        f'style="font-size:12px;color:var(--accent);font-weight:600;text-decoration:none;">'
+        '↗ View original posting / Apply</a>'
+        if source_ref_is_url
+        else f'<span style="font-size:12px;color:var(--ink-faint);">{escape(source_ref)}</span>'
+    )
     job_header_html = (
         f'<div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;">'
         f'<div style="flex:1;min-width:280px;">'
         f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">'
         f'{source_tag}'
         + (f'<span style="font-size:12px;color:var(--ink-faint);">·</span>'
-           f'<span style="font-size:12px;color:var(--ink-faint);">{escape(vm.source_ref or "")}</span>' if vm.source_ref else "")
+           f'{source_ref_html}' if source_ref else "")
         + (f'<span style="font-size:12px;color:var(--ink-faint);">·</span>{quality_tag}' if quality_tag else "")
         + '</div>'
         f'<h1 style="margin:0 0 6px;font-size:27px;font-weight:800;letter-spacing:-0.025em;line-height:1.1;">'

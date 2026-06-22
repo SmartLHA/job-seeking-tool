@@ -366,7 +366,7 @@ def test_post_select_reed_prefills_evaluate_form_without_evaluating(tmp_path: Pa
         assert 'name="job_id" value="reed-123"' in select_body
         assert 'name="input_method" value="reed_search"' in select_body
         assert 'name="source_type" value="reed"' in select_body
-        assert 'name="source_ref" value="123"' in select_body
+        assert 'name="source_ref" value="https://reed.example/jobs/123?x=1&amp;y=2"' in select_body
         assert 'name="source_snapshot_json"' in select_body
         assert 'name="job_title" value="Senior &lt;Business&gt; Analyst"' in select_body
         assert 'name="company" value="Example &amp; Co"' in select_body
@@ -1419,3 +1419,17 @@ def test_job_page_renders_ats_keyword_match_panel(tmp_path: Path) -> None:
     assert status == 200
     assert "ATS keyword match" in body
     assert "Keyword match" in body  # the verdict-card metric label
+
+
+def test_job_page_links_saved_source_url(tmp_path: Path) -> None:
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        _http_post(f"{base_url}/evaluate", {
+            "job_id": "apply-link-1", "job_title": "Senior BA", "company": "Acme",
+            "description_raw": "Lead requirements and SQL.",
+            "source_type": "url", "source_ref": "https://example.test/jobs/1",
+            "location": "London",
+        })
+        status, body = _http_get(f"{base_url}/job/apply-link-1")
+    assert status == 200
+    assert 'href="https://example.test/jobs/1"' in body
+    assert "View original posting / Apply" in body
