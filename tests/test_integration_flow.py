@@ -170,7 +170,7 @@ def test_blocker_override_flow_keeps_storage_layers_separate(tmp_path: Path) -> 
     assert (tmp_path / "analyses" / "job-blocked.json").exists()
 
 
-def test_sparse_reviewed_job_flow_produces_low_confidence_skip_and_report_without_outcome() -> None:
+def test_sparse_reviewed_job_flow_produces_low_confidence_review_and_report_without_outcome() -> None:
     profile = build_profile()
     reviewed_job = reviewed_job_from_dict(
         build_reviewed_job_payload(
@@ -189,11 +189,13 @@ def test_sparse_reviewed_job_flow_produces_low_confidence_skip_and_report_withou
     row = build_evaluated_job_report_row(reviewed_job, analysis)
     summary = summarise_report_rows([row])
 
+    # MT-3: sparse job data scores neutral (high fit score) but low confidence,
+    # so the low-confidence gate sends it to manual review rather than auto-skip.
     assert analysis.confidence == "low"
-    assert analysis.decision == "skip"
-    assert analysis.match_score == 51.5
+    assert analysis.decision == "review"
+    assert analysis.match_score == 86.5
     assert row.outcome_status is None
-    assert summary.decision_counts == {"skip": 1}
+    assert summary.decision_counts == {"review": 1}
     assert summary.outcome_counts == {}
     assert any("required skills" in note for note in analysis.score_breakdown.notes)
 

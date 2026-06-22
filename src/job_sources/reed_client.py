@@ -6,30 +6,58 @@ from datetime import datetime
 from typing import List, Dict, Any
 from pathlib import Path
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def fetch_reed_jobs(keyword: str, location: str, max_results: int = 50, *, save_raw: bool = True) -> List[Dict[str, Any]]:
+def _ensure_env_loaded() -> None:
+    """Load .env from project root if REED_API_KEY is not already in environment."""
+    if os.getenv("REED_API_KEY"):
+        return
+    # Try python-dotenv first
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        if os.getenv("REED_API_KEY"):
+            return
+    except ImportError:
+        pass
+    # Inline fallback: parse .env manually (no dependencies)
+    import pathlib
+    for candidate in [
+        pathlib.Path(__file__).parent.parent.parent / ".env",  # <project_root>/.env
+        pathlib.Path.cwd() / ".env",
+    ]:
+        if candidate.exists():
+            for line in candidate.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip())
+            break
+
+
+def fetch_reed_jobs(keyword: str, location: str, max_results: int = 50, *, skip: int = 0, save_raw: bool = True) -> List[Dict[str, Any]]:
     """
     Fetch jobs from Reed API based on keyword and location.
+    Pass skip>0 to page through results (Reed API: resultsToSkip parameter).
     """
+    _ensure_env_loaded()
     api_key = os.getenv("REED_API_KEY")
     if not api_key:
         logger.error("REED_API_KEY not found in environment variables.")
         return []
 
     url = "https://www.reed.co.uk/api/1.0/search"
+    # Reed API uses HTTP Basic Auth: api_key as username, empty password
     params = {
-        "api_key": api_key,
         "keywords": keyword,
-        "location": location,
+        "locationName": location,
         "resultsToTake": max_results,
-        "distance": 25  # Default distance in miles
+        "resultsToSkip": skip,  # Reed API param is resultsToSkip (not resultsSkip); wrong name made paging return page 0 every time
+        "distanceFromLocation": 25,  # miles; Reed API param is distanceFromLocation (not distance)
     }
 
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, auth=(api_key, ""), timeout=10)
         
         # Store raw response when explicitly allowed. App-native search is read-only.
         if save_raw:
@@ -41,9 +69,14 @@ def fetch_reed_jobs(keyword: str, location: str, max_results: int = 50, *, save_
         
         response.raise_for_status()
         data = response.json()
-        
-        # Reed returns a list of jobs directly in the root of the JSON response
-        return data if isinstance(data, list) else []
+
+        # Reed API returns {"results": [...], "totalResults": N}
+        if isinstance(data, dict):
+            return data.get("results", [])
+        # Fallback: older callers that somehow got a plain list
+        if isinstance(data, list):
+            return data
+        return []
 
     except requests.exceptions.HTTPError as e:
         logger.error(f"HTTP error occurred while fetching from Reed: {e}")
@@ -54,6 +87,37 @@ def fetch_reed_jobs(keyword: str, location: str, max_results: int = 50, *, save_
     except json.JSONDecodeError:
         logger.error("Failed to decode JSON response from Reed.")
         return []
+
+def fetch_reed_job_detail(job_id: str) -> Dict[str, Any] | None:
+    """Fetch the full detail for a single Reed job by its numeric job ID.
+
+    Returns the raw API dict on success, or None on any failure.
+    The detail endpoint returns a richer ``jobDescription`` HTML field than
+    the search endpoint — use this to get the full description for skill extraction.
+    """
+    _ensure_env_loaded()
+    api_key = os.getenv("REED_API_KEY")
+    if not api_key:
+        logger.error("REED_API_KEY not found; cannot fetch job detail.")
+        return None
+    url = f"https://www.reed.co.uk/api/1.0/jobs/{job_id}"
+    try:
+        response = requests.get(url, auth=(api_key, ""), timeout=10)
+        if response.status_code == 404:
+            logger.warning("Reed job detail not found for id=%s", job_id)
+            return None
+        if response.status_code == 429:
+            logger.warning("Reed rate limit hit fetching job detail id=%s", job_id)
+            return None
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as exc:
+        logger.warning("Failed to fetch Reed job detail id=%s: %s", job_id, exc)
+        return None
+    except json.JSONDecodeError:
+        logger.warning("Bad JSON from Reed job detail id=%s", job_id)
+        return None
+
 
 def save_raw_response(content: str, source: str):
     """

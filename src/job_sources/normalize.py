@@ -1,7 +1,6 @@
 import re
 import html
-from typing import TypedDict, Optional, List, Dict, Any
-from datetime import datetime
+from typing import TypedDict, Optional, Dict, Any
 
 class SourceQuality(TypedDict):
     has_full_description: bool
@@ -164,8 +163,9 @@ def normalize_reed(job: Dict[str, Any]) -> NormalizedJob:
     title = job.get("jobTitle", "")
     location = job.get("locationName", "")
     
-    # Handle Reed contract mapping
-    raw_contract = job.get("contractType", "unknown").lower()
+    # Handle Reed contract mapping (contractType may be null in API response)
+    _contract_raw = job.get("contractType") or "unknown"
+    raw_contract = _contract_raw.lower()
     contract_map = {
         "permanent": "permanent",
         "contract": "contract",

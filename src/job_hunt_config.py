@@ -29,6 +29,15 @@ class ScoringWeights:
             + self.work_mode
         )
 
+    def __post_init__(self) -> None:
+        # LT-3: catch a misconfigured weight set at construction time. If the
+        # seven dimension weights don't sum to 100, most candidates would silently
+        # hit the global min(100) cap and the misconfiguration would go unnoticed.
+        if abs(self.total() - 100.0) > 0.01:
+            raise ValueError(
+                f"ScoringWeights dimensions must sum to 100.0, got {self.total():.2f}"
+            )
+
 
 @dataclass(frozen=True, slots=True)
 class ConfidencePolicy:
@@ -103,4 +112,3 @@ def get_enabled_sources() -> list[str]:
     return list(ENABLED_SOURCES)
 
 
-__all__ = ["ScoringWeights"]

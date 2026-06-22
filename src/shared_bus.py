@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
-import uuid
 from pathlib import Path
 from typing import Any
 
-DB_PATH = Path(__file__).resolve().parents[1] / "shared_memory.db"
+# QW-4: single source of truth for the DB path. Defaults to a project-relative
+# file; override with SHARED_BUS_DB. (Previously a second definition lower in the
+# file silently replaced this with a hardcoded ~/.openclaw/... path.)
+DB_PATH = Path(os.environ.get(
+    "SHARED_BUS_DB",
+    Path(__file__).resolve().parents[1] / "shared_memory.db",
+))
 VALID_STAGES = ("spec", "design", "build", "review", "qa", "ship")
 STAGE_ORDINAL = {stage: index for index, stage in enumerate(VALID_STAGES, start=1)}
 _ALLOWED_STAGE_TRANSITIONS = {
@@ -25,10 +31,12 @@ _STAGE_PRIORITY = {"build": 1, "review": 2, "qa": 3}
 
 
 def _conn(db_path: str | Path | None = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path or DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
+    path_str = str(db_path) if db_path else str(DB_PATH)
+    is_uri = "mode=memory" in path_str or path_str.startswith("file://")
+    conn = sqlite3.connect(path_str, uri=is_uri, timeout=5.0, isolation_level=None)
     conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA trusted_schema = OFF")
     return conn
 
 
@@ -253,17 +261,6 @@ def get_active_pipelines(db_path: str | None = None) -> list[dict[str, Any]]:
         conn.close()
 
 _lock = threading.Lock()
-
-def _conn(path: str | None = None) -> sqlite3.Connection:
-    path_str = str(path) if path else str(DB_PATH)
-    is_uri = 'mode=memory' in path_str or path_str.startswith('file://')
-    conn = sqlite3.connect(path_str, uri=is_uri, timeout=5.0, isolation_level=None)
-    conn.execute("PRAGMA busy_timeout = 5000")
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA trusted_schema = OFF")
-    return conn
-
-DB_PATH = Path.home() / ".openclaw" / "workspace" / "shared_memory.db"
 
 def get_agent_executions(
     pipeline_run_id: str,

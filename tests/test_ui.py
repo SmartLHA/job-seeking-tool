@@ -19,16 +19,18 @@ from src.job_hunt_storage import (
     load_reviewed_job,
     save_application_outcome,
 )
-from src.job_hunt_ui import (
-    UIServerConfig,
-    _build_handler,
+from src.ui_state import UIServerConfig
+from src.ui_routes import _build_handler
+from src.ui_utils import (
     default_form_values,
     format_salary_range,
     job_id_from_request_path,
-    load_recent_job_history,
-    raw_input_payload_from_form,
     reviewed_job_payload_from_form,
     split_lines_or_commas,
+)
+from src.ui_handlers import (
+    load_recent_job_history,
+    raw_input_payload_from_form,
 )
 from src.job_hunt_orchestrator import run_local_evaluation_flow_from_payload
 from src.job_hunt_outcomes import create_outcome_record, update_outcome
@@ -256,9 +258,8 @@ def test_get_home_page_defaults_to_search_jobs_shell(tmp_path: Path) -> None:
         status, body = _http_get(f"{base_url}/")
 
     assert status == 200
-    assert "Job Seeking Tool — minimal local UI" in body
     assert "Search Jobs" in body
-    assert "Reed-first job search" in body
+    assert "Search across connected job boards" in body
     assert 'id="reed-search-form"' in body
     assert 'name="keywords"' in body
     assert 'name="locationName"' in body
@@ -278,7 +279,7 @@ def test_get_home_page_defaults_to_search_jobs_shell(tmp_path: Path) -> None:
 def test_get_reed_search_endpoint_renders_stubbed_results(tmp_path: Path, monkeypatch) -> None:
     calls = []
 
-    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, save_raw: bool = True):
+    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, skip: int = 0, save_raw: bool = True):
         calls.append({
             "keyword": keyword,
             "location": location,
@@ -300,7 +301,7 @@ def test_get_reed_search_endpoint_renders_stubbed_results(tmp_path: Path, monkey
             }
         ]
 
-    monkeypatch.setattr("src.job_hunt_ui.fetch_reed_jobs", fake_fetch_reed_jobs)
+    monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
 
     query = urllib.parse.urlencode({
         "keywords": "  Business   Analyst  ",
@@ -335,7 +336,7 @@ def test_get_reed_search_endpoint_renders_stubbed_results(tmp_path: Path, monkey
 def test_post_select_reed_prefills_evaluate_form_without_evaluating(tmp_path: Path, monkeypatch) -> None:
     long_description = "Lead discovery & stakeholder mapping. " * 30
 
-    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, save_raw: bool = True):
+    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, skip: int = 0, save_raw: bool = True):
         return [
             {
                 "jobId": 123,
@@ -351,7 +352,7 @@ def test_post_select_reed_prefills_evaluate_form_without_evaluating(tmp_path: Pa
             }
         ]
 
-    monkeypatch.setattr("src.job_hunt_ui.fetch_reed_jobs", fake_fetch_reed_jobs)
+    monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
 
     with _running_ui_server(tmp_path) as (base_url, config):
         search_status, search_body = _http_get(f"{base_url}/search/reed?keywords=BA&locationName=London")
@@ -375,7 +376,7 @@ def test_post_select_reed_prefills_evaluate_form_without_evaluating(tmp_path: Pa
         assert 'name="salary_min_gbp" value="60000"' in select_body
         assert 'name="salary_max_gbp" value="70000"' in select_body
         assert "Lead discovery &amp; stakeholder mapping." in select_body
-        assert "Evaluate and save locally" in select_body
+        assert "Evaluate and save" in select_body
         assert load_recent_job_history(config.state_root) == []
         assert not (config.state_root / "analyses" / "reed-123.json").exists()
         assert not (config.state_root / "reviewed_jobs" / "reed-123.json").exists()
@@ -383,7 +384,7 @@ def test_post_select_reed_prefills_evaluate_form_without_evaluating(tmp_path: Pa
 
 
 def test_evaluate_after_reed_selection_persists_raw_source_snapshot_only_in_raw_input(tmp_path: Path, monkeypatch) -> None:
-    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, save_raw: bool = True):
+    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, skip: int = 0, save_raw: bool = True):
         return [
             {
                 "jobId": 456,
@@ -399,7 +400,7 @@ def test_evaluate_after_reed_selection_persists_raw_source_snapshot_only_in_raw_
             }
         ]
 
-    monkeypatch.setattr("src.job_hunt_ui.fetch_reed_jobs", fake_fetch_reed_jobs)
+    monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
 
     with _running_ui_server(tmp_path) as (base_url, config):
         _search_status, search_body = _http_get(f"{base_url}/search/reed?keywords=BA&locationName=London")
@@ -431,10 +432,10 @@ def test_evaluate_after_reed_selection_persists_raw_source_snapshot_only_in_raw_
 
 
 def test_post_select_reed_rejects_malformed_source_snapshot_json(tmp_path: Path, monkeypatch) -> None:
-    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, save_raw: bool = True):
+    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, skip: int = 0, save_raw: bool = True):
         return [{"jobId": 789, "jobTitle": "BA", "employerName": "Bad JSON Co", "jobDescription": "Description"}]
 
-    monkeypatch.setattr("src.job_hunt_ui.fetch_reed_jobs", fake_fetch_reed_jobs)
+    monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
 
     with _running_ui_server(tmp_path) as (base_url, _config):
         _search_status, search_body = _http_get(f"{base_url}/search/reed?keywords=BA")
@@ -474,7 +475,12 @@ def test_post_evaluate_rejects_oversized_reed_source_snapshot(tmp_path: Path) ->
     assert not (config.state_root / "raw_inputs" / "reed-oversized.json").exists()
 
 
-def test_post_select_reed_rejects_invalid_nonce(tmp_path: Path) -> None:
+def test_post_select_reed_nonce_not_enforced(tmp_path: Path) -> None:
+    # Nonce enforcement was removed: this is a local-only server and the in-memory nonce
+    # dict was wiped on every server restart (e.g. dev.py auto-reloader), causing spurious
+    # "Invalid or expired selection token" errors. A missing/bad nonce is now accepted —
+    # the request may still fail for other reasons (e.g. missing source_snapshot_json) but
+    # must not be rejected specifically due to the nonce.
     with _running_ui_server(tmp_path) as (base_url, _config):
         status, body = _http_post(
             f"{base_url}/select/reed",
@@ -487,12 +493,11 @@ def test_post_select_reed_rejects_invalid_nonce(tmp_path: Path) -> None:
             },
         )
 
-    assert status == 400
-    assert "Invalid or expired Reed selection token" in body
+    assert "Invalid or expired selection token" not in body
 
 
 def test_post_select_reed_missing_and_unsafe_fields_remain_safe(tmp_path: Path, monkeypatch) -> None:
-    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, save_raw: bool = True):
+    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, skip: int = 0, save_raw: bool = True):
         return [
             {
                 "jobId": None,
@@ -504,7 +509,7 @@ def test_post_select_reed_missing_and_unsafe_fields_remain_safe(tmp_path: Path, 
             }
         ]
 
-    monkeypatch.setattr("src.job_hunt_ui.fetch_reed_jobs", fake_fetch_reed_jobs)
+    monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
 
     with _running_ui_server(tmp_path) as (base_url, _config):
         _search_status, search_body = _http_get(f"{base_url}/search/reed?keywords=BA")
@@ -519,10 +524,10 @@ def test_post_select_reed_missing_and_unsafe_fields_remain_safe(tmp_path: Path, 
 
 
 def test_get_reed_search_endpoint_failure_keeps_manual_fallback(tmp_path: Path, monkeypatch) -> None:
-    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, save_raw: bool = True):
+    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, skip: int = 0, save_raw: bool = True):
         raise RuntimeError("Reed timeout")
 
-    monkeypatch.setattr("src.job_hunt_ui.fetch_reed_jobs", fake_fetch_reed_jobs)
+    monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
 
     with _running_ui_server(tmp_path) as (base_url, _config):
         status, body = _http_get(f"{base_url}/search/reed?keywords=BA&locationName=London")
@@ -530,15 +535,14 @@ def test_get_reed_search_endpoint_failure_keeps_manual_fallback(tmp_path: Path, 
     assert status == 200
     assert "Reed search unavailable" in body
     assert "Reed search failed: Reed timeout. Manual fallback is still available." in body
-    assert "Reed is the only wired search source in this phase" in body
     assert '<a href="/?tab=add_job">Use Manual Fallback</a>' in body
 
 
 def test_get_reed_search_endpoint_missing_fields_do_not_crash(tmp_path: Path, monkeypatch) -> None:
-    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, save_raw: bool = True):
+    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, skip: int = 0, save_raw: bool = True):
         return [{"jobId": None, "jobDescription": ""}]
 
-    monkeypatch.setattr("src.job_hunt_ui.fetch_reed_jobs", fake_fetch_reed_jobs)
+    monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
 
     with _running_ui_server(tmp_path) as (base_url, _config):
         status, body = _http_get(f"{base_url}/search/reed?workMode=invalid&employmentType=weird&resultsToTake=nope")
@@ -552,10 +556,10 @@ def test_get_reed_search_endpoint_missing_fields_do_not_crash(tmp_path: Path, mo
 
 
 def test_get_reed_search_endpoint_no_results_keeps_manual_fallback_link(tmp_path: Path, monkeypatch) -> None:
-    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, save_raw: bool = True):
+    def fake_fetch_reed_jobs(keyword: str, location: str, max_results: int, *, skip: int = 0, save_raw: bool = True):
         return []
 
-    monkeypatch.setattr("src.job_hunt_ui.fetch_reed_jobs", fake_fetch_reed_jobs)
+    monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
 
     with _running_ui_server(tmp_path) as (base_url, _config):
         status, body = _http_get(f"{base_url}/search/reed?keywords=Nonexistent&locationName=Nowhere")
@@ -571,13 +575,11 @@ def test_get_evaluate_tab_returns_existing_form_and_history_panel(tmp_path: Path
         status, body = _http_get(f"{base_url}/?tab=evaluate")
 
     assert status == 200
-    assert "Enter and review one job" in body
-    assert "Input method</strong> means how you brought the job in here first." in body
-    assert "Original pasted/context text</strong> is saved as reference only." in body
+    assert "Evaluate a job" in body
     assert "Input method used to enter this job" in body
     assert "Saved source type for this reviewed job" in body
     assert "Original pasted/context text (reference only)" in body
-    assert "Recent evaluated jobs" in body
+    assert "Evaluated jobs" in body
 
 
 def test_get_manual_fallback_tab_keeps_paste_and_url_flow(tmp_path: Path) -> None:
@@ -597,7 +599,7 @@ def test_get_unknown_home_tab_falls_back_to_search(tmp_path: Path) -> None:
         status, body = _http_get(f"{base_url}/?tab=unsupported")
 
     assert status == 200
-    assert "Reed-first job search" in body
+    assert "Search across connected job boards" in body
     assert 'id="tab-search" class="tab-content"' in body
     assert 'id="tab-evaluate" class="tab-content" hidden' in body
 
@@ -610,13 +612,11 @@ def test_post_evaluate_success_renders_saved_job_result(tmp_path: Path) -> None:
         assert "Job evaluated and saved locally." in body
         assert 'class="panel flash success"' in body
         assert "Business Analyst @ Example Co" in body
-        assert "Explainable result" in body
         assert "Reviewed job fields" in body
-        assert "Saved source type" in body
-        assert "Source reference" in body
+        assert "Source type" in body
         assert "Salary range" in body
         assert "£50,000 – £55,000" in body
-        assert "Last updated: <strong>Not tracked yet</strong>" in body
+        assert "Updated: <strong>Not tracked yet</strong>" in body
 
         history = load_recent_job_history(config.state_root)
         assert history[0]["job_id"] == "job-ui-001"
@@ -632,7 +632,7 @@ def test_post_evaluate_validation_failure_re_renders_home_with_error(tmp_path: P
 
         assert status == 200
         assert "job_title is required" in body
-        assert "Enter and review one job" in body
+        assert "Evaluate a job" in body
         assert load_recent_job_history(config.state_root) == []
 
 
@@ -761,8 +761,8 @@ def test_post_outcome_updates_saved_job_status(tmp_path: Path) -> None:
     assert status == 200
     assert "Outcome updated." in body
     assert 'class="panel flash success"' in body
-    assert "Current status: <strong>applied</strong>" in body
-    assert f"Last updated: <strong>{saved_outcome.updated_at}</strong>" in body
+    assert "Current: <strong>applied</strong>" in body
+    assert f"Updated: <strong>{saved_outcome.updated_at}</strong>" in body
     assert saved_outcome.status == "applied"
     assert saved_outcome.notes == "Submitted manually"
 
@@ -1243,3 +1243,179 @@ def test_post_cover_letter_returns_404_for_unknown_job_id(tmp_path: Path) -> Non
         )
 
     assert status == 404
+
+
+# ---------------------------------------------------------------------------
+# MT-6: previously-untested flows — batch cap, pagination, multipart boundary
+# ---------------------------------------------------------------------------
+def test_post_batch_evaluate_caps_at_20(tmp_path: Path) -> None:
+    # MT-6: the batch endpoint rejects more than 20 jobs in a single request.
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        status, data = _http_post_json(
+            f"{base_url}/jobs/batch-evaluate",
+            {"jobs": [{"source": "reed"} for _ in range(21)]},
+        )
+    assert status == 400
+    assert data["ok"] is False
+    assert "20" in data["error"]
+
+
+def test_get_search_reed_more_returns_offset_page(tmp_path: Path, monkeypatch) -> None:
+    # MT-6: the /search/reed/more AJAX endpoint returns the next page of cards with
+    # IDs offset by resultsSkip and a next_url that advances the skip cursor.
+    def fake_fetch_reed_jobs(keyword, location, max_results, *, skip=0, save_raw=True):
+        return [
+            {
+                "jobId": 1000 + i,
+                "jobTitle": f"Analyst {i}",
+                "employerName": "Acme",
+                "locationName": "London",
+                "minimumSalary": 50000,
+                "maximumSalary": 60000,
+                "contractType": "Permanent",
+                "jobUrl": f"https://reed.example/jobs/{1000 + i}",
+                "jobDescription": "<p>Work</p>",
+                "fullTime": True,
+            }
+            for i in range(max_results)
+        ]
+
+    monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
+    query = urllib.parse.urlencode(
+        {"keywords": "analyst", "locationName": "London", "resultsToTake": "10", "resultsSkip": "10"}
+    )
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        status, body = _http_get(f"{base_url}/search/reed/more?{query}")
+
+    assert status == 200
+    data = json.loads(body)
+    assert data["ok"] is True
+    assert data["count"] == 10
+    assert data["has_more"] is True
+    assert 'id="jrc-10"' in data["cards_html"]
+    assert "resultsSkip=20" in data["next_url"]
+
+
+def test_post_parse_cv_missing_boundary_returns_clean_error(tmp_path: Path) -> None:
+    # MT-4/MT-6: a multipart Content-Type with no boundary= must yield a clear 400,
+    # not an unhandled "not enough values to unpack" crash.
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        request = urllib.request.Request(
+            f"{base_url}/profile/parse-cv",
+            data=b"ignored",
+            method="POST",
+            headers={"Content-Type": "multipart/form-data"},
+        )
+        try:
+            with urllib.request.urlopen(request) as response:
+                status, raw = response.status, response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            status, raw = exc.code, exc.read().decode("utf-8")
+
+    assert status == 400
+    data = json.loads(raw)
+    assert data["ok"] is False
+    assert "boundary" in data["error"].lower()
+
+
+def _http_post_multipart(url, fields, files):
+    """POST a multipart/form-data body. files = {name: (filename, bytes)}."""
+    boundary = "----testboundary1234567890"
+    chunks: list[bytes] = []
+    for name, value in fields.items():
+        chunks.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode("utf-8")
+        )
+    for name, (filename, content) in files.items():
+        chunks.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; filename="{filename}"\r\n\r\n'.encode("utf-8")
+            + content + b"\r\n"
+        )
+    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+    body = b"".join(chunks)
+    request = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    try:
+        with urllib.request.urlopen(request) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        try:
+            return exc.code, json.loads(exc.read().decode("utf-8"))
+        except Exception:
+            return exc.code, {}
+
+
+def test_post_parse_cv_extracts_text_from_txt(tmp_path: Path, monkeypatch) -> None:
+    # MT-6: a valid .txt upload is parsed and its text returned (no profile_id → no auto-save).
+    monkeypatch.setattr("src.job_hunt_parsing.extract_skills_from_cv", lambda text: ([], None))
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        status, data = _http_post_multipart(
+            f"{base_url}/profile/parse-cv",
+            fields={},
+            files={"cv_file": ("cv.txt", b"Experienced Business Analyst skilled in SQL and Python.")},
+        )
+    assert status == 200
+    assert data["ok"] is True
+    assert "Business Analyst" in data["master_cv_text"]
+    assert data["filename"] == "cv.txt"
+    assert data["auto_saved"] is False
+
+
+def test_post_parse_cv_auto_saves_when_profile_id_present(tmp_path: Path, monkeypatch) -> None:
+    # MT-6: when profile_id is supplied, the CV is persisted to the profile without
+    # a separate "Save Profile" click.
+    monkeypatch.setattr("src.job_hunt_parsing.extract_skills_from_cv", lambda text: ([], None))
+    monkeypatch.setattr("src.ui_handlers._DATA_ROOT", tmp_path / "data")
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        status, data = _http_post_multipart(
+            f"{base_url}/profile/parse-cv",
+            fields={"profile_id": "testcand"},
+            files={"cv_file": ("cv.txt", b"My CV mentions SQL, Python and stakeholder management.")},
+        )
+    assert status == 200
+    assert data["ok"] is True
+    assert data["auto_saved"] is True
+    saved = tmp_path / "data" / "testcand" / "candidate_profile.json"
+    assert saved.exists()
+    obj = json.loads(saved.read_text(encoding="utf-8"))
+    assert "SQL" in obj["master_cv_text"]
+
+
+def test_post_save_profile_skills_json_takes_precedence_over_comma(tmp_path: Path, monkeypatch) -> None:
+    # MT-6: handle_save_profile prefers the structured skills_json over the
+    # comma-split skills fallback when both are present.
+    monkeypatch.setattr("src.ui_handlers._DATA_ROOT", tmp_path / "data")
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        _http_post(
+            f"{base_url}/profile/save",
+            {
+                "profile_id": "savecand",
+                "name": "Test Candidate",
+                "skills_json": json.dumps(["SQL", "Python"]),
+                "skills": "OldSkillA,OldSkillB",
+            },
+        )
+    saved = tmp_path / "data" / "savecand" / "candidate_profile.json"
+    assert saved.exists()
+    text = saved.read_text(encoding="utf-8")
+    assert "SQL" in text and "Python" in text
+    assert "OldSkillA" not in text and "OldSkillB" not in text
+
+
+def test_job_page_renders_ats_keyword_match_panel(tmp_path: Path) -> None:
+    # F1: after evaluating a job, the job page shows the ATS keyword-match panel
+    # and the "Keyword match" verdict metric.
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        _http_post(f"{base_url}/evaluate", {
+            "job_id": "kw-1", "job_title": "Senior BA", "company": "Acme",
+            "description_raw": "Lead requirements; SQL and Python.",
+            "source_type": "manual", "input_method": "manual",
+            "required_skills": "SQL, Python", "preferred_skills": "Tableau",
+            "location": "London",
+        })
+        status, body = _http_get(f"{base_url}/job/kw-1")
+    assert status == 200
+    assert "ATS keyword match" in body
+    assert "Keyword match" in body  # the verdict-card metric label
