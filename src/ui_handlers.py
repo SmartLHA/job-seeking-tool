@@ -8,10 +8,13 @@ domain modules; it is imported by ``ui_routes`` (dispatch) and ``job_hunt_ui``.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import re
+import threading
 import uuid
+from collections import defaultdict
 from datetime import datetime, timezone
 from http import HTTPStatus
 from pathlib import Path
@@ -39,6 +42,7 @@ from src.ui_render import (
     render_page,
     render_home_page,
     render_job_page,
+    render_keyword_match_panel,
     render_profile_page,
     render_review_queue_page,
     _render_sidebar,
@@ -58,8 +62,11 @@ from src.job_hunt_tailoring import (
     tailor_cv,
     validate_tailored_cv,
     save_tailored_cv,
+    load_latest_tailored_cv,
+    EmptyTailoredCVError,
     TailoringValidationError,
 )
+from src.job_hunt_keyword_match import compute_keyword_match
 from src.job_hunt_cover_letter import generate_cover_letter_text, save_cover_letter
 from src.job_hunt_storage import (
     ensure_storage_layout,
@@ -893,6 +900,76 @@ def handle_ai_review_cv(req, config, responder, job_id):
     })
 
 
+# F1 v2 — serialize the load→replace→save of each job's analysis so a double-click
+# or a recheck racing a re-evaluation can't interleave partial writes. Process-local
+# only: correct for the single-user local server, not multi-process.
+_ATS_RECHECK_LOCKS: "defaultdict[str, threading.Lock]" = defaultdict(threading.Lock)
+
+
+def handle_ats_recheck(req, config, responder, job_id):
+    """POST /job/{id}/ats-recheck — re-score keyword match against the latest tailored CV."""
+    with _ATS_RECHECK_LOCKS[job_id]:
+        # Tailored CV first (path-safety / empty-file gates) before any state read.
+        try:
+            tailored = load_latest_tailored_cv(job_id)
+        except EmptyTailoredCVError:
+            responder.send_json(
+                {"ok": False, "error": "Tailored CV is empty — re-tailor your CV first."},
+                status=HTTPStatus.UNPROCESSABLE_ENTITY,
+            )
+            return
+        except ValueError:
+            responder.send_json({"ok": False, "error": f"Invalid job id: {job_id}"}, status=HTTPStatus.NOT_FOUND)
+            return
+
+        try:
+            reviewed_job = load_reviewed_job(job_id, config.state_root)
+        except FileNotFoundError:
+            responder.send_json({"ok": False, "error": f"Reviewed job not found: {job_id}"}, status=HTTPStatus.NOT_FOUND)
+            return
+
+        try:
+            analysis = load_job_analysis(job_id, config.state_root)
+        except FileNotFoundError:
+            responder.send_json({"ok": False, "error": "Evaluate this job first."}, status=HTTPStatus.NOT_FOUND)
+            return
+
+        if tailored is None:
+            responder.send_json(
+                {"ok": False, "error": "No tailored CV saved yet — tailor your CV first."},
+                status=HTTPStatus.UNPROCESSABLE_ENTITY,
+            )
+            return
+
+        km = compute_keyword_match(tailored, list(reviewed_job.required_skills), list(reviewed_job.preferred_skills))
+
+        # Seed the baseline from the stored master rate on the first re-check; keep it
+        # thereafter so the delta always reads "was {master} → now {tailored}".
+        baseline = (
+            analysis.keyword_match_baseline_rate
+            if analysis.keyword_match_baseline_rate is not None
+            else analysis.keyword_match_rate
+        )
+
+        updated = dataclasses.replace(
+            analysis,
+            keyword_match_rate=km.match_rate,
+            keywords_required_missing=km.required_missing,
+            keywords_preferred_missing=km.preferred_missing,
+            keywords_overused=km.overused,
+            keyword_match_baseline_rate=baseline,
+            keyword_match_source="tailored",
+        )
+        save_job_analysis(updated, config.state_root)
+
+    # Render the panel through the SAME derived view-model path used on reload (H1),
+    # so the chips before and after a refresh are identical.
+    panel_html = render_keyword_match_panel(
+        job_id=job_id, **_keyword_match_vm_fields(reviewed_job, updated)
+    )
+    responder.send_json({"ok": True, "rate": km.match_rate, "baseline": baseline, "panel_html": panel_html})
+
+
 def handle_get_jobs(req, config, responder):
     from src.job_hunt_index import query_jobs_list
     jobs = query_jobs_list(_index_db_path(config))
@@ -1410,6 +1487,8 @@ def _keyword_match_vm_fields(reviewed_job, analysis) -> dict:
         keywords_preferred_matched=pref_matched,
         keywords_preferred_missing=list(analysis.keywords_preferred_missing),
         keywords_overused=list(analysis.keywords_overused),
+        keyword_match_baseline_rate=analysis.keyword_match_baseline_rate,
+        keyword_match_source=analysis.keyword_match_source,
     )
 
 
@@ -1446,10 +1525,12 @@ def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash, flash_kind="su
             missing_required_skills=[], missing_preferred_skills=[],
             keyword_match_rate=None, keywords_required_matched=[], keywords_required_missing=[],
             keywords_preferred_matched=[], keywords_preferred_missing=[], keywords_overused=[],
+            keyword_match_baseline_rate=None, keyword_match_source="master",
         )
     return JobPageViewModel(
         job_id=reviewed_job.job_id, source_type=reviewed_job.source_type,
-        source_ref=reviewed_job.source_ref, job_title=reviewed_job.job_title,
+        source_ref=reviewed_job.source_ref, url=getattr(reviewed_job, "url", None),
+        job_title=reviewed_job.job_title,
         company=reviewed_job.company, location=reviewed_job.location,
         work_mode=reviewed_job.work_mode, employment_type=reviewed_job.employment_type,
         required_years_experience=reviewed_job.required_years_experience, domain=reviewed_job.domain,

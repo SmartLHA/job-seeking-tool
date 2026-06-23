@@ -21,20 +21,20 @@ The dependency direction is `ui_routes → ui_handlers → ui_render → ui_util
 
 | Module | Responsibility |
 |---|---|
-| `job_hunt_models.py` | Typed models including structured `Skill`, `JobPosting`, `JobAnalysis`, `TailoredCVResult`, ATS and keyword-match fields, and `effective_decision()`. |
+| `job_hunt_models.py` | Typed models including structured `Skill`, `JobPosting`, `JobAnalysis` (incl. F1 v2 `keyword_match_baseline_rate` / `keyword_match_source`), `TailoredCVResult`, ATS and keyword-match fields, and `effective_decision()`. |
 | `job_hunt_scoring.py` | Seven weighted components: required skills 35, preferred skills 5, experience 20, location/salary/domain/work mode 10 each. |
 | `job_hunt_evaluation.py` | Composes scoring and decisions; applies source-quality gates; populates ATS readiness and advisory keyword matching. |
 | `job_hunt_keyword_match.py` | F1 per-job CV keyword coverage, required/preferred missing lists, edge-aware technical-keyword matching, and anti-stuffing signal. It never changes Apply/Review/Skip. |
 | `job_hunt_validation.py` | Shared validation helpers for profile, reviewed input, and storage boundaries. |
 | `job_hunt_llm.py` | Optional Gemini-backed skill extraction and structured job explanation. It cannot change deterministic scores or decisions. |
-| `job_hunt_tailoring.py` / `job_hunt_cover_letter.py` | Truth-bounded CV tailoring and grounded letter generation. |
+| `job_hunt_tailoring.py` / `job_hunt_cover_letter.py` | Truth-bounded CV tailoring and grounded letter generation. F1 v2 adds `load_latest_tailored_cv()` (hardened path-safe loader, prefers `{job_id}_ai_reviewed.md`) and `EmptyTailoredCVError`. |
 | `job_hunt_index.py` / `job_hunt_outcomes.py` | SQLite jobs/board read model and local outcome state machine. |
 
 ## Implemented HTTP surface
 
 - Discovery: `GET /search/{source}`, `POST /select/{source}`, `GET /search/reed/more`, `GET /sources`.
 - Review/evaluation: `POST /prefill`, `POST /job-submit`, `POST /evaluate`, `GET /job/<id>`, `GET /job/<id>/explain`, `POST /job/<id>/decision`.
-- Document and profile actions: `POST /tailor`, `POST /cover-letter`, `POST /job/<id>/add-gap-skills`, `POST /job/<id>/ai-review-cv`, `GET /profile`, `POST /profile/parse-cv`, `POST /profile/save`.
+- Document and profile actions: `POST /tailor`, `POST /cover-letter`, `POST /job/<id>/add-gap-skills`, `POST /job/<id>/ai-review-cv`, `POST /job/<id>/ats-recheck`, `GET /profile`, `POST /profile/parse-cv`, `POST /profile/save`.
 - Board and batch flow: `GET /jobs`, `GET /board`, `GET /board/view`, `POST /jobs/save`, `POST /jobs/batch-evaluate`, `GET /review-queue`.
 - Outcomes: `POST /outcome`.
 
@@ -44,4 +44,5 @@ The dependency direction is `ui_routes → ui_handlers → ui_render → ui_util
 - The visible score breakdown has six buckets; its skills bucket contains two separately weighted components, so scoring has seven weights in total.
 - `source_ref` retains an advert URL where available. Job pages render it as **View original posting / Apply**.
 - Tailoring and cover-letter generation are local, decision-gated actions. Neither submits an application.
+- F1 v2 re-check (`POST /job/<id>/ats-recheck`) re-scores the keyword match against the latest saved **tailored** CV and shows `was X% → now Y%`. It overwrites `keyword_match_rate` (the verdict card moves too — intended for MVP) while preserving the master baseline in `keyword_match_baseline_rate`; the AJAX panel is rendered through the same view-model path as a full reload. No tailored CV → 422; an empty tailored file → 422 (never overwrites a valid rate).
 - Gap Coach, daily digest, broader source coverage, and DOCX/PDF output remain backlog work.

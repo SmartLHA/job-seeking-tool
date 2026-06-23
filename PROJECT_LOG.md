@@ -1,5 +1,40 @@
 ## 2026-06-22
 
+### F1 v2 — ATS keyword-match "re-check against tailored CV"
+- **Status:** ✅ COMPLETE — built from `docs/tasks/F1_v2_recheck_design.md` (rev 3,
+  with a real Codex independent review folded in). Full suite **408 passed / 1
+  skipped** (excludes `tests/test_multi_llm_chat.py`, which fails only on a sandbox
+  file-unlink permission, unrelated to this change). +25 new tests.
+- **Motivation:** close the F1 loop — the keyword panel was computed once against the
+  master CV at eval and never moved. v2 adds a button that re-scores against the
+  latest saved tailored CV and shows `was X% → now Y% (tailored CV)`.
+- **Changes:**
+  - `src/job_hunt_models.py` — `JobAnalysis` gains `keyword_match_baseline_rate` and
+    `keyword_match_source` ("master"|"tailored"), validated in `__post_init__`.
+  - `src/job_hunt_storage.py` — `job_analysis_from_dict` reads both new fields
+    explicitly (it enumerates, not `asdict`); old records default to no-baseline/master.
+  - `src/job_hunt_evaluation.py` — a (re-)eval recaptures the baseline from the fresh
+    master rate and resets source to "master".
+  - `src/job_hunt_tailoring.py` — **NEW** `load_latest_tailored_cv()` (strict job-id
+    allow-list, rejects `.`/`..`, in-dir containment, strips one metadata line,
+    fail-closed `profile_id`) + `EmptyTailoredCVError`.
+  - `src/ui_render.py` — extracted `render_keyword_match_panel()` (single path for
+    first render + AJAX), `id="kw-panel-body"` wrapper, delta / no-baseline "now Y%"
+    states, re-check button, and `window.atsRecheck` (outerHTML swap).
+  - `src/ui_handlers.py` — `handle_ats_recheck()` (per-job lock, 404/422 contract,
+    empty-CV 422, panel rendered via `_keyword_match_vm_fields` so AJAX == reload);
+    `JobPageViewModel` + vm fields carry baseline/source.
+  - `src/ui_routes.py` / `src/ui_state.py` — `POST /job/{id}/ats-recheck` route +
+    `_PAGE_UPDATED["job"]` bump.
+  - `tests/test_f1_recheck.py` — **NEW** (25): loader path-safety/empty/profile-id,
+    storage roundtrip + old-record defaults, panel states, and the flow (improve,
+    422-no-CV, 404-unknown, 422-empty-no-mutation, AJAX↔reload parity).
+- **Key facts:** Codex's 3 high-severity catches drove the design — (H1) render the
+  AJAX panel through the same derived view-model as reload, (H2) read the new fields
+  in `from_dict` or they silently reset, (H3) an empty tailored file is a 422 and must
+  not overwrite a valid rate. The verdict card still shares `keyword_match_rate`
+  (overwrite moves both — intended for MVP, covered by tests).
+
 ### Recovery merge and documentation reconciliation
 - **Status:** ✅ COMPLETE — recovered implementation merged into `main` as
   `59ff270` (`codex/recovered-ui-f1`).

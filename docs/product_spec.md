@@ -22,7 +22,7 @@ A local-first UK job-search copilot that helps a candidate discover roles, revie
 | Sources | Generic registry; Reed adapter is enabled. Adzuna/LinkedIn are not enabled. |
 | Ingestion | Reed search/select/detail enrichment, manual paste/URL prefill, field-review provenance, safe canonical URL parsing. |
 | Evaluation | Seven weights: required skills 35, preferred skills 5, experience 20, location/salary/domain/work mode 10 each. Confidence is `low`/`medium`/`high`. |
-| Quality and ATS | Source-quality gate, ATS readiness score, and F1 per-job keyword match with missing-keyword and stuffing signals. F1 is advisory only. |
+| Quality and ATS | Source-quality gate, ATS readiness score, and F1 per-job keyword match with missing-keyword and stuffing signals. F1 v2 adds a re-check (`POST /job/<id>/ats-recheck`) that re-scores against the latest tailored CV and shows `was X% → now Y%`. F1 is advisory only. |
 | Decisions | Apply/Review/Skip with persisted user override and effective-decision handling. |
 | CV and letter | Truth-validated `POST /tailor` and grounded `POST /cover-letter`, exposed from the job-detail experience. |
 | Board and outcome | SQLite jobs index, JSON board, board HTML view, saved-job path, legal outcome transitions, and review queue. |
@@ -62,4 +62,4 @@ Search configured source or add a job
 - Saved searches and daily digest.
 - Adzuna/LinkedIn source adapters.
 - DOCX/PDF application-package export.
-- Keyword recheck against a tailored CV and controlled synonym support.
+- Controlled synonym/alias support for keyword matching.

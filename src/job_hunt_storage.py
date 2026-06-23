@@ -180,6 +180,12 @@ def job_analysis_from_dict(payload: dict[str, Any], *, job_id: str | None = None
                 payload.get("keywords_preferred_missing", []), "keywords_preferred_missing"
             ),
             keywords_overused=_string_list(payload.get("keywords_overused", []), "keywords_overused"),
+            # F1 v2 — explicit reads (this builder enumerates fields, it does not splat),
+            # so missing keys on old records fall back to no-baseline / "master".
+            keyword_match_baseline_rate=_optional_int(
+                payload.get("keyword_match_baseline_rate"), "keyword_match_baseline_rate"
+            ),
+            keyword_match_source=payload.get("keyword_match_source") or "master",
         )
     except (TypeError, ValueError) as exc:
         raise StorageError(f"invalid analysis payload: {exc}") from exc

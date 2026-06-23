@@ -113,7 +113,10 @@ earlier monolithic checkout or unimplemented planning notes.
   cover-letter generation, and optional manual Gemini analysis.
 - Evaluation uses seven weighted scoring components, categorical confidence, source
   quality gating, an ATS readiness score, and F1 per-job keyword matching. F1 is an
-  advisory CV-coverage signal only; it never changes Apply / Review / Skip.
+  advisory CV-coverage signal only; it never changes Apply / Review / Skip. F1 v2
+  adds a re-check (`POST /job/<id>/ats-recheck`) that re-scores the keyword match
+  against the latest saved tailored CV and shows `was X% → now Y%`, keeping the
+  master rate as the baseline.
 - Tracker statuses are `not_applied`, `applied`, `interview`, `offer`, `rejected`,
   and `withdrawn`.
 - Remaining product work is additive: saved searches/daily digest, Gap Coach,
@@ -221,6 +224,8 @@ Fields expected:
 - blockers
 - decision
 - confidence
+- keyword_match_rate, keywords_required_missing, keywords_preferred_missing, keywords_overused (F1)
+- keyword_match_baseline_rate, keyword_match_source (F1 v2 — master-CV "before" + which CV the current rate reflects)
 
 ### ApplicationOutcome
 Fields expected:

@@ -1,5 +1,5 @@
 # Job Seeking Tool — Project TODO
-**Last updated:** 2026-06-22 (recovered UI/F1 branch merged into `main`; documentation reconciled to source) | **Owner:** Mic
+**Last updated:** 2026-06-22 (F1 v2 ATS keyword re-check shipped — 408 passed/1 skipped) | **Owner:** Mic
 **Build order:** See `docs/build_order.md` for dependency map and rationale.
 **Rule:** Complete each phase fully (tests green) before starting the next.
 
@@ -188,6 +188,11 @@ one registration import in `src/ui_routes.py` (not the thin `job_hunt_ui.py` ent
 ### ✅ F1 · Per-job ATS Match Rate + keyword gap
 **Status:** ✅ Done (v1) 2026-06-19 — 337 tests green. **Design doc:** `docs/tasks/f1-ats-match-rate-design.md`
 **What:** deterministic 0–100 keyword match rate per job (CV vs the job's required/preferred skills) with a present/missing breakdown, surfaced on the job page; anti-stuffing warning. New `src/job_hunt_keyword_match.py`; hook in `evaluate_reviewed_job`; 3 new `JobAnalysis` fields (+ storage round-trip). No new routes/LLM in v1.
+**Effort:** M
+
+### ✅ F1 v2 · Re-check keyword match against the tailored CV
+**Status:** ✅ Done 2026-06-22 — 408 passed / 1 skipped (+25 tests). **Design doc:** `docs/tasks/F1_v2_recheck_design.md` (rev 3, Codex-reviewed).
+**What:** "Re-check against tailored CV" button on the keyword panel → `POST /job/{id}/ats-recheck` re-scores against the latest saved tailored CV (`{job_id}_ai_reviewed.md` → `{job_id}.md`) and shows `was X% → now Y%`. New `load_latest_tailored_cv()` loader + `EmptyTailoredCVError`; 2 new `JobAnalysis` fields (`keyword_match_baseline_rate`, `keyword_match_source`); `handle_ats_recheck` with per-job lock; AJAX panel rendered through the same view-model path as reload.
 **Effort:** M
 **Other researched candidates (not yet designed):** F2 interview-prep pack, F3 follow-up nudges, F4 application-package export, F5 Adzuna + salary benchmark.
 

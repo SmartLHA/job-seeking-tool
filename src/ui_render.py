@@ -503,6 +503,7 @@ class JobPageViewModel:
     job_id: str
     source_type: str | None
     source_ref: str | None
+    url: str | None
     job_title: str
     company: str
     location: str | None
@@ -525,6 +526,8 @@ class JobPageViewModel:
     keywords_preferred_matched: list[str]
     keywords_preferred_missing: list[str]
     keywords_overused: list[str]
+    keyword_match_baseline_rate: object | None
+    keyword_match_source: str
     confidence: object | None
     decision: str | None
     decision_reason: str | None
@@ -545,6 +548,131 @@ class JobPageViewModel:
     flash_kind: str
     embed: bool
     model_label: str
+
+
+# F1 v2 — keyword-match panel as a standalone, full-wrapper renderer. Used by BOTH
+# first render (render_job_page) and the AJAX re-check handler, so the matched/missing
+# lists are guaranteed identical before and after refresh (H1). The handler splats
+# `_keyword_match_vm_fields(reviewed_job, updated)` straight into this function.
+def render_keyword_match_panel(
+    *,
+    job_id: str,
+    keyword_match_rate: object | None,
+    keywords_required_matched: list[str],
+    keywords_required_missing: list[str],
+    keywords_preferred_matched: list[str],
+    keywords_preferred_missing: list[str],
+    keywords_overused: list[str],
+    keyword_match_baseline_rate: object | None,
+    keyword_match_source: str,
+) -> str:
+    """Return the ATS keyword-match card wrapped in ``<div id="kw-panel-body">``."""
+    rate = keyword_match_rate
+    baseline = keyword_match_baseline_rate
+    source = keyword_match_source
+
+    def _label(text: str) -> str:
+        return (
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
+            f'<div style="font-size:11.5px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-faint);">{text}</div>'
+            '</div>'
+        )
+
+    def _chips(items, present):
+        if not items:
+            return '<span style="font-size:12px;color:var(--ink-faint);">none</span>'
+        if present:
+            css = "background:var(--accent-soft);color:var(--accent);"
+        else:
+            css = "background:var(--skip-bg);color:var(--skip);border:1px solid var(--skip-line);"
+        return "".join(
+            '<span style="display:inline-block;padding:3px 10px;border-radius:100px;'
+            f'font-size:12px;font-weight:600;margin:2px 4px 2px 0;{css}">{escape(c)}</span>'
+            for c in items
+        )
+
+    kw_rate_str = f"{rate}%" if rate is not None else "N/A"
+
+    # Delta / no-baseline state (only meaningful once a tailored re-check has run).
+    delta_html = ""
+    if source == "tailored" and rate is not None:
+        if baseline is not None:
+            color = "var(--apply)" if rate > baseline else "var(--ink-soft)"
+            delta_html = (
+                f'<div style="margin:2px 0 12px;font-size:13px;font-weight:600;color:{color};">'
+                f'was {baseline}% &rarr; now {rate}% (tailored CV)</div>'
+            )
+        else:
+            delta_html = (
+                '<div style="margin:2px 0 12px;font-size:13px;font-weight:600;color:var(--ink-soft);">'
+                f'now {rate}% (tailored CV)</div>'
+            )
+
+    if rate is not None:
+        kw_warn = ""
+        if keywords_overused:
+            kw_warn = (
+                '<div style="margin-top:12px;font-size:12.5px;color:var(--skip);background:var(--skip-bg);'
+                'border:1px solid var(--skip-line);border-radius:var(--r-md);padding:10px 12px;">'
+                + escape("Some keywords repeat a lot (" + ", ".join(keywords_overused) + "). "
+                         "ATS flag stuffing (white text, keyword banks, repeating a phrase >3-4 times). "
+                         "Weave missing keywords into real achievements instead.")
+                + '</div>'
+            )
+        inner = (
+            _label("ATS keyword match — " + kw_rate_str)
+            + delta_html
+            + '<div style="font-size:11px;color:var(--ink-faint);margin:2px 0 4px;font-weight:600;">Required</div>'
+            + _chips(keywords_required_matched, True) + _chips(keywords_required_missing, False)
+            + '<div style="font-size:11px;color:var(--ink-faint);margin:12px 0 4px;font-weight:600;">Preferred</div>'
+            + _chips(keywords_preferred_matched, True) + _chips(keywords_preferred_missing, False)
+            + kw_warn
+        )
+    else:
+        inner = (
+            _label("ATS keyword match — N/A")
+            + delta_html
+            + '<div style="font-size:13px;color:var(--ink-faint);padding:6px 0;">'
+            + 'Add your master CV (My Profile) to see which of this job\'s keywords it covers.</div>'
+        )
+
+    button_html = (
+        '<div style="margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">'
+        f'<button type="button" onclick="atsRecheck(\'{escape(job_id)}\',this)" '
+        'style="padding:8px 16px;border-radius:var(--r-md);font-size:13px;font-weight:600;font-family:inherit;'
+        'cursor:pointer;background:var(--surface-2);color:var(--ink-soft);border:1px solid var(--line);white-space:nowrap;">'
+        'Re-check against tailored CV</button>'
+        '<span id="kw-recheck-error" style="font-size:12.5px;color:var(--skip);"></span>'
+        '</div>'
+    )
+
+    card = (
+        '<div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);'
+        f'padding:var(--pad);box-shadow:var(--shadow-sm);">{inner}{button_html}</div>'
+    )
+    return f'<div id="kw-panel-body">{card}</div>'
+
+
+# Defines window.atsRecheck once per page. The button uses an inline onclick so it
+# keeps working after the panel is replaced via outerHTML (swapped-in markup does not
+# re-run <script> tags, but inline handlers survive).
+_ATS_RECHECK_JS = (
+    '<script>'
+    'window.atsRecheck=function(jobId,btn){'
+    'var e=document.getElementById("kw-recheck-error");if(e)e.textContent="";'
+    'var orig=btn.textContent;btn.disabled=true;btn.textContent="Re-checking…";'
+    'fetch("/job/"+encodeURIComponent(jobId)+"/ats-recheck",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})'
+    '.then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});})'
+    '.then(function(res){'
+    'if(!res.ok){btn.disabled=false;btn.textContent=orig;var er=document.getElementById("kw-recheck-error");if(er)er.textContent=(res.data&&res.data.error)||"Re-check failed";return;}'
+    'var panel=document.getElementById("kw-panel-body");'
+    'if(panel&&res.data&&res.data.panel_html){panel.outerHTML=res.data.panel_html;}'
+    'else{btn.disabled=false;btn.textContent=orig;}'
+    '})'
+    '.catch(function(err){btn.disabled=false;btn.textContent=orig;var er=document.getElementById("kw-recheck-error");if(er)er.textContent="Request failed: "+err.message;});'
+    '};'
+    '</script>'
+)
 
 
 def render_job_page(vm: "JobPageViewModel") -> str:
@@ -684,44 +812,20 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             for label, reason, value in breakdown_items
         )
         ats_str = f"{vm.ats_score} / 100" if vm.ats_score is not None else "N/A"
+        # Verdict card's "Keyword match" metric shares this string with the panel.
         kw_rate_str = f"{vm.keyword_match_rate}%" if vm.keyword_match_rate is not None else "N/A"
-        if vm.keyword_match_rate is not None:
-            def _kwchips(items, present):
-                if not items:
-                    return '<span style="font-size:12px;color:var(--ink-faint);">none</span>'
-                if present:
-                    css = "background:var(--accent-soft);color:var(--accent);"
-                else:
-                    css = "background:var(--skip-bg);color:var(--skip);border:1px solid var(--skip-line);"
-                return "".join(
-                    f'<span style="display:inline-block;padding:3px 10px;border-radius:100px;'
-                    f'font-size:12px;font-weight:600;margin:2px 4px 2px 0;{css}">{escape(c)}</span>'
-                    for c in items
-                )
-            _kw_warn = ""
-            if vm.keywords_overused:
-                _kw_warn = (
-                    '<div style="margin-top:12px;font-size:12.5px;color:var(--skip);background:var(--skip-bg);'
-                    'border:1px solid var(--skip-line);border-radius:var(--r-md);padding:10px 12px;">'
-                    + escape("Some keywords repeat a lot (" + ", ".join(vm.keywords_overused) + "). "
-                             "ATS flag stuffing (white text, keyword banks, repeating a phrase >3-4 times). "
-                             "Weave missing keywords into real achievements instead.")
-                    + '</div>'
-                )
-            keyword_block_html = _card(
-                _section_label("ATS keyword match — " + kw_rate_str)
-                + '<div style="font-size:11px;color:var(--ink-faint);margin:2px 0 4px;font-weight:600;">Required</div>'
-                + _kwchips(vm.keywords_required_matched, True) + _kwchips(vm.keywords_required_missing, False)
-                + '<div style="font-size:11px;color:var(--ink-faint);margin:12px 0 4px;font-weight:600;">Preferred</div>'
-                + _kwchips(vm.keywords_preferred_matched, True) + _kwchips(vm.keywords_preferred_missing, False)
-                + _kw_warn
-            )
-        else:
-            keyword_block_html = _card(
-                _section_label("ATS keyword match — N/A")
-                + '<div style="font-size:13px;color:var(--ink-faint);padding:6px 0;">'
-                + 'Add your master CV (My Profile) to see which of this job\'s keywords it covers.</div>'
-            )
+        # F1 v2 — one rendering path for the panel (first render + AJAX re-check).
+        keyword_block_html = render_keyword_match_panel(
+            job_id=vm.job_id,
+            keyword_match_rate=vm.keyword_match_rate,
+            keywords_required_matched=vm.keywords_required_matched,
+            keywords_required_missing=vm.keywords_required_missing,
+            keywords_preferred_matched=vm.keywords_preferred_matched,
+            keywords_preferred_missing=vm.keywords_preferred_missing,
+            keywords_overused=vm.keywords_overused,
+            keyword_match_baseline_rate=vm.keyword_match_baseline_rate,
+            keyword_match_source=vm.keyword_match_source,
+        )
         overridden_badge = (
             '<span style="font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;'
             'padding:3px 8px;border-radius:100px;background:var(--review-bg);color:var(--review);'
@@ -1219,12 +1323,20 @@ def render_job_page(vm: "JobPageViewModel") -> str:
     salary_str = format_salary_range(vm.salary_min_gbp, vm.salary_max_gbp)
     source_tag = _tag(vm.source_type or "manual", mono=True)
     source_ref = (vm.source_ref or "").strip()
-    source_ref_is_url = source_ref.lower().startswith(("http://", "https://"))
+    url = (vm.url or "").strip()
+    # Apply link prefers the canonical advert URL (JobPosting.url); fall back to
+    # source_ref only when it is itself a URL. A bare Reed id renders no link.
+    if url.lower().startswith(("http://", "https://")):
+        apply_url = url
+    elif source_ref.lower().startswith(("http://", "https://")):
+        apply_url = source_ref
+    else:
+        apply_url = ""
     source_ref_html = (
-        f'<a href="{escape(source_ref)}" target="_blank" rel="noreferrer" '
+        f'<a href="{escape(apply_url)}" target="_blank" rel="noreferrer" '
         f'style="font-size:12px;color:var(--accent);font-weight:600;text-decoration:none;">'
         '↗ View original posting / Apply</a>'
-        if source_ref_is_url
+        if apply_url
         else f'<span style="font-size:12px;color:var(--ink-faint);">{escape(source_ref)}</span>'
     )
     job_header_html = (
@@ -1233,7 +1345,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">'
         f'{source_tag}'
         + (f'<span style="font-size:12px;color:var(--ink-faint);">·</span>'
-           f'{source_ref_html}' if source_ref else "")
+           f'{source_ref_html}' if (source_ref or apply_url) else "")
         + (f'<span style="font-size:12px;color:var(--ink-faint);">·</span>{quality_tag}' if quality_tag else "")
         + '</div>'
         f'<h1 style="margin:0 0 6px;font-size:27px;font-weight:800;letter-spacing:-0.025em;line-height:1.1;">'
@@ -1348,6 +1460,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             {fields_html}
             {override_js}
             {tailor_cover_js}
+            {_ATS_RECHECK_JS if keyword_block_html else ""}
           </div>
         </div>
         """
@@ -1377,6 +1490,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
           {fields_html}
           {override_js}
           {tailor_cover_js}
+          {_ATS_RECHECK_JS if keyword_block_html else ""}
         </div>
         <footer style="text-align:center;padding:12px 0 24px;font-size:11px;color:var(--muted);">
           Page updated {_PAGE_UPDATED.get("job", "—")}

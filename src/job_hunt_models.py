@@ -212,6 +212,12 @@ class JobAnalysis:
     keywords_required_missing: list[str] = field(default_factory=list)
     keywords_preferred_missing: list[str] = field(default_factory=list)
     keywords_overused: list[str] = field(default_factory=list)  # anti-stuffing signal
+    # F1 v2 — re-check provenance. baseline_rate captures the master-CV rate at
+    # eval time (the "before"); source flags whether keyword_match_rate currently
+    # reflects the master CV or the latest tailored CV. Defaults keep old records
+    # loading as master/no-baseline.
+    keyword_match_baseline_rate: int | None = None   # master-CV rate at eval (the "before")
+    keyword_match_source: str = "master"             # "master" | "tailored"
 
     def __post_init__(self) -> None:
         if not self.job_id.strip():
@@ -222,6 +228,10 @@ class JobAnalysis:
             raise ValueError("decision_reason must not be empty")
         if self.keyword_match_rate is not None and not 0 <= self.keyword_match_rate <= 100:
             raise ValueError("keyword_match_rate must be between 0 and 100")
+        if self.keyword_match_baseline_rate is not None and not 0 <= self.keyword_match_baseline_rate <= 100:
+            raise ValueError("keyword_match_baseline_rate must be between 0 and 100")
+        if self.keyword_match_source not in ("master", "tailored"):
+            raise ValueError("keyword_match_source must be 'master' or 'tailored'")
 
 
 @dataclass(slots=True)

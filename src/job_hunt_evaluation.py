@@ -100,6 +100,10 @@ def evaluate_reviewed_job(
         keywords_required_missing=keyword_match.required_missing,
         keywords_preferred_missing=keyword_match.preferred_missing,
         keywords_overused=keyword_match.overused,
+        # F1 v2 — a (re-)evaluation always resets provenance to the master CV and
+        # recaptures the baseline from the fresh master-CV rate.
+        keyword_match_baseline_rate=keyword_match.match_rate,
+        keyword_match_source="master",
     )
 
 

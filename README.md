@@ -33,7 +33,7 @@ Required source credentials are read from the environment. Reed needs `REED_API_
 |---|---|
 | Search | `GET /search/{source}`, `POST /select/{source}`, `GET /search/reed/more`, `GET /sources` |
 | Review/evaluate | `POST /prefill`, `POST /job-submit`, `POST /evaluate`, `GET /job/<id>`, `GET /review-queue`, `POST /jobs/batch-evaluate` |
-| Job actions | `POST /job/<id>/decision`, `POST /job/<id>/add-gap-skills`, `POST /job/<id>/ai-review-cv`, `POST /tailor`, `POST /cover-letter` |
+| Job actions | `POST /job/<id>/decision`, `POST /job/<id>/add-gap-skills`, `POST /job/<id>/ai-review-cv`, `POST /job/<id>/ats-recheck`, `POST /tailor`, `POST /cover-letter` |
 | Board/outcomes | `GET /jobs`, `GET /board`, `GET /board/view`, `POST /jobs/save`, `POST /outcome` |
 | Profile | `GET /profile`, `POST /profile/parse-cv`, `POST /profile/save` |
 

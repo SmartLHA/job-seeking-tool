@@ -24,7 +24,7 @@ _PAGE_UPDATED: dict[str, str] = {
     "board":    "2026-06-18 01:00 UTC",   # Board View page
     "profile":  "2026-06-18 01:00 UTC",   # My Profile page
     # standalone pages (no sidebar)
-    "job":      "2026-06-19 12:00 UTC",   # Job detail page (render_job_page) — F1 ATS keyword-match panel
+    "job":      "2026-06-22 18:00 UTC",   # Job detail page (render_job_page) — F1 v2 ATS keyword re-check panel
 }
 
 

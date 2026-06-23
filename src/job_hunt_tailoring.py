@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re as _re
 from pathlib import Path
 
 from src.job_hunt_config import DEFAULT_TAILORING_POLICY, TailoringPolicy
@@ -10,6 +11,77 @@ from src.job_hunt_cover_letter import generate_cover_letter
 
 class TailoringValidationError(ValueError):
     """Raised when a tailored CV contains invented or ungrounded claims."""
+
+
+class EmptyTailoredCVError(ValueError):
+    """Raised when a tailored CV file exists but has no body after the metadata line.
+
+    The caller should map this to a 422 (re-tailor) rather than silently scoring
+    an empty CV and overwriting a valid master rate with None (F1 v2, H3).
+    """
+
+
+# F1 v2 — strict allow-list for job ids used to build tailored-CV file paths.
+# No '/', no path separators; '.'/'..' are rejected explicitly below.
+_SAFE_JOB_ID = _re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _parse_profile_id(header_line: str) -> str | None:
+    """Extract the profile_id token from a `<!-- ... profile_id: X ... -->` line.
+
+    Stops at whitespace, a `|` separator, or `>`; hyphens/underscores stay part of
+    the id (candidate ids look like `cand-001`).
+    """
+    match = _re.search(r"profile_id:\s*([^\s|>]+)", header_line or "")
+    return match.group(1) if match else None
+
+
+def load_latest_tailored_cv(
+    job_id: str,
+    *,
+    expected_profile_id: str | None = None,
+    policy: TailoringPolicy = DEFAULT_TAILORING_POLICY,
+) -> str | None:
+    """Return the most-tailored saved CV text for a job, or None if none exists.
+
+    Prefers ``{job_id}_ai_reviewed.md`` over ``{job_id}.md``; strips only a single
+    leading HTML-comment metadata line. Returns the CV body (stripped).
+
+    Path safety: ``job_id`` must match a strict allow-list (no '/', no '.'/'..');
+    the resolved file must remain inside ``policy.output_dir``. Raises ``ValueError``
+    on a malformed job_id so the caller can 404 rather than touch the filesystem.
+
+    Raises ``EmptyTailoredCVError`` when a file exists but its body is empty after
+    header-stripping (distinct from "no file", which returns None).
+
+    When ``expected_profile_id`` is given, the loader fails closed: an absent,
+    unparsable, or mismatched ``profile_id`` header returns None.
+    """
+    if not isinstance(job_id, str) or not _SAFE_JOB_ID.match(job_id) or job_id in (".", ".."):
+        raise ValueError("invalid job_id")
+
+    base = policy.output_dir.resolve()
+    for name in (f"{job_id}_ai_reviewed.md", f"{job_id}.md"):
+        path = (base / name).resolve()
+        # Defence in depth: the resolved path must stay within base.
+        if base != path.parent:
+            continue
+        if not path.exists():
+            continue
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+        first = lines[0].strip() if lines else ""
+        if first.startswith("<!--") and first.endswith("-->"):
+            body = "".join(lines[1:])           # drop ONLY the first metadata line
+        else:
+            body = "".join(lines)               # no header → keep full text
+        if expected_profile_id is not None:
+            if _parse_profile_id(first) != expected_profile_id:   # fail-closed
+                return None
+        body = body.strip()
+        if not body:
+            raise EmptyTailoredCVError("tailored CV is empty")
+        return body
+    return None
 
 
 # Tailoring remains deterministic for MVP: we only reuse approved profile facts and

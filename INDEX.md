@@ -20,6 +20,7 @@ Used by SilverHand to brief Handy/Scout precisely, and by any agent to orient qu
 
 | File | Purpose |
 |------|---------|
+| `docs/Requirement_Design_v1.md` | **Full requirements/design reference** (15 sections: product direction, modules + JSON schemas, data architecture, UI flows, dev sequence/phases, risk register, test requirements, OpenClaw instruction). Lossless conversion of the retired `To-AI/Requirement_Design_v1.docx` (2026-06-22). Historical design reference — source code is authoritative for implemented behaviour; the in-doc "Implementation Status — 22 June 2026" block supersedes older claims. |
 | `docs/product_spec.md` | What the product is, MVP scope, goals/non-goals, user stories. |
 | `docs/function_list.md` | Source-verified current module map, including the recovered split UI and F1 keyword matcher. |
 | `docs/development_sequence.md` | Phased build order (Phase 0–8). |
@@ -150,6 +151,8 @@ Used by SilverHand to brief Handy/Scout precisely, and by any agent to orient qu
 | CV tailoring (GAP-F) | `cv-tailoring-brief.md` | `tailor_cv`, `TailoredCVResult`, `validate_tailored_cv`, `save_tailored_cv` | `POST /tailor` | Tailor CV workspace |
 | Cover letter (GAP-G) | `cover-letter-spec-draft.md` | `generate_cover_letter_text`, `save_cover_letter` | `POST /cover-letter` | Cover Letter workspace |
 | ATS score | `ats-score-deferred.md` | `ats_score` on `JobAnalysis`, called from `evaluate_reviewed_job` | — | Evaluate tab |
+| ATS keyword match (F1) | `f1-ats-match-rate-design.md` | `compute_keyword_match`, `_keyword_match_vm_fields`, `render_keyword_match_panel` | — | Job detail page |
+| ATS keyword re-check (F1 v2) | `F1_v2_recheck_design.md` | `load_latest_tailored_cv`, `handle_ats_recheck`, `render_keyword_match_panel` | `POST /job/{id}/ats-recheck` | Job detail page |
 | URL ingestion | `url-ingestion-design.md`, `job-007-url-ingestion-design-creation-brief.md` | `parse_job_from_url`, `parse_job_from_text` | `POST /prefill` | Add Job tab |
 | Source quality gating | `source-quality-gating-design.md` | `source_quality` on `NormalizedJob`; thresholds in `job_hunt_config.py` | — | Find Jobs / Evaluate |
 | Gap Coach (GAP-J) | `gap-j-gap-coach-design.md` | *(not yet implemented)* `aggregate_gaps`, `top_strengths`, `GET /coach` | `GET /coach` | Gap Coach tab |

@@ -44,6 +44,7 @@ from src.ui_handlers import (
     handle_decision_override,
     handle_add_gap_skills,
     handle_ai_review_cv,
+    handle_ats_recheck,
     handle_get_jobs,
     handle_get_board,
     handle_get_board_view,
@@ -215,6 +216,10 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             ai_cv_match = re.match(r"^/job/([^/]+)/ai-review-cv$", parsed.path)
             if ai_cv_match:
                 handle_ai_review_cv(req, config, responder, ai_cv_match.group(1))
+                return
+            ats_recheck_match = re.match(r"^/job/([^/]+)/ats-recheck$", parsed.path)
+            if ats_recheck_match:
+                handle_ats_recheck(req, config, responder, ats_recheck_match.group(1))
                 return
             if parsed.path == "/jobs/batch-evaluate":
                 handle_batch_evaluate(req, config, responder)
