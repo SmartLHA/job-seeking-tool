@@ -104,7 +104,7 @@ DEFAULT_TAILORING_POLICY = TailoringPolicy()
 
 # Sources that are fully wired end-to-end (fetch + normalise + orchestrator)
 # Add a source here only when its client and orchestrator path are complete and tested.
-ENABLED_SOURCES: list[str] = ["Reed"]
+ENABLED_SOURCES: list[str] = ["Reed", "Adzuna", "LinkedIn"]
 
 
 def get_enabled_sources() -> list[str]:

@@ -1,6 +1,6 @@
 # PL-02 — Reed Search Form and API Adapter Wiring Design
 
-**Status:** Design draft — review pending
+**Status:** ✅ Implemented — Reed search-first (PL-01..05) shipped; search form/API wiring live (`GET /search/{source}`).
 **Story:** PL-02 from `docs/tasks/reed-search-first-story-breakdown.md`
 **Date:** 2026-05-13
 **Owner:** SilverHand

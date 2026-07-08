@@ -38,7 +38,7 @@ evidence    truthfulness
 
 ### `select_relevant_evidence(profile, cv_text, job, analysis) -> list[str]`
 - Required skills → preferred skills → years_experience → achievements
-- Evidence sourced from `CandidateProfile.skills`, `years_experience`, and `achievements` (updated 2026-06-16: achievements added per cv-tailoring-brief.md decision)
+- Evidence sourced from `CandidateProfile.skills`, `years_experience`, and `achievements` (decision 2026-06-16 per cv-tailoring-brief.md; ✅ implemented in code 2026-06-30 — appended as `Achievement: <text>` after experience, blank/non-str entries skipped)
 - **Never** from certifications or any other field not in CandidateProfile
 
 ### `tailor_cv(cv_text, evidence_points, job) -> str`
@@ -54,7 +54,7 @@ evidence    truthfulness
 
 ### `save_tailored_cv(job_id, cv_text, profile_id) -> Path`
 - Writes to `output/tailored_cvs/<job_id>.md`
-- Creates `output/tailured_cvs/` directory if needed
+- Creates `output/tailored_cvs/` directory if needed
 
 ---
 

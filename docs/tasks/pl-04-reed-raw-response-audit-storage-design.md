@@ -1,6 +1,6 @@
 # PL-04 — Reed Raw Response Audit Storage Design
 
-**Status:** Design draft — review pending
+**Status:** ✅ Implemented — Reed raw-response audit snapshot storage shipped (PL-04).
 **Story:** PL-04 from `docs/tasks/reed-search-first-story-breakdown.md`
 **Date:** 2026-05-13
 **Owner:** SilverHand

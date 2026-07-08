@@ -90,18 +90,32 @@ def test_select_relevant_evidence_prioritises_required_then_preferred_then_exper
         "Required skill: SQL",
         "Preferred skill: Power BI",
         "Experience: 5 years",
+        "Achievement: Improved reporting workflow by 20%",
     ]
 
 
-def test_select_relevant_evidence_never_uses_achievements_or_certifications() -> None:
+def test_select_relevant_evidence_adds_achievements_after_skills_and_experience() -> None:
+    profile = build_profile()
+    profile.achievements = ["Cut deploy time 40%", "  ", "Led 5-person team", 123]  # type: ignore[list-item]
+    profile.certifications = ["AWS Certified"]
+
     evidence = select_relevant_evidence(
-        build_profile(),
-        "Improved reporting workflow\nBCS Foundation",
-        build_job(required_skills=["BCS Foundation"], preferred_skills=["Improved reporting workflow"]),
+        profile,
+        "Cut deploy time 40%\nLed 5-person team\nAWS Certified",
+        build_job(),
         build_analysis(),
     )
 
-    assert evidence == ["Experience: 5 years"]
+    assert evidence == [
+        "Required skill: Stakeholder Management",
+        "Required skill: SQL",
+        "Preferred skill: Power BI",
+        "Experience: 5 years",
+        "Achievement: Cut deploy time 40%",
+        "Achievement: Led 5-person team",
+    ]
+    assert "Achievement:   " not in evidence
+    assert "AWS Certified" not in "\n".join(evidence)
 
 
 def test_tailor_cv_builds_ats_friendly_output_without_inventing_sections() -> None:
@@ -277,6 +291,36 @@ def test_validate_tailored_cv_accepts_valid_result() -> None:
         ["Required skill: SQL", "Preferred skill: Power BI", "Experience: 5 years"],
         build_job(),
         profile=profile,
+    )
+
+    assert validate_tailored_cv(original_cv, result, profile) is True
+
+
+def test_validate_tailored_cv_uses_normalized_grounding_for_promoted_bullets() -> None:
+    profile = build_profile()
+    original_cv = "# Master CV\n\nBusiness analysis delivery."
+    result = TailoredCVResult(
+        summary="Business Analyst at Example Co.",
+        promoted=["Required skill:\u00a0SQL"],
+        matched=["SQL"],
+        missing=[],
+        markdown="""# Tailored CV - Business Analyst
+
+## Role Target
+- Job title: Business Analyst
+- Company: Example Co
+
+## Matching Evidence
+- Required skill: SQL
+
+## ATS Keywords
+Keywords: SQL
+
+## Base CV
+# Master CV
+
+Business analysis delivery.
+""",
     )
 
     assert validate_tailored_cv(original_cv, result, profile) is True

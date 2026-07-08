@@ -1,5 +1,12 @@
 # Developer Handoff Prompt
 
+> ⚠️ **SUPERSEDED (2026-06-30):** This prompt describes an early pre-split codebase
+> (monolithic `job_hunt_ui.py`, no `reed_source.py`, Daily Digest unbuilt) and is no
+> longer accurate. For current handoff context use `SESSION_HANDOFF.md`, `INDEX.md`,
+> and `docs/function_list.md`. Current state: UI is split (`ui_routes`/`ui_handlers`/
+> `ui_render`/`ui_state`/`ui_utils`, thin `job_hunt_ui.py`); Reed + Adzuna + LinkedIn
+> sources live; Daily Digest (D1–D6) complete.
+
 Copy this into a new chat session to hand off development context.
 
 ---

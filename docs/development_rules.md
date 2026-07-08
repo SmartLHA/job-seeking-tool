@@ -11,6 +11,7 @@
   - `job_hunt_score_scoring.py` (not `scoring.py`)
   - `job_hunt_job_models.py` (not `models.py`)
 - Feature prefixes used so far: `paste_` (URL/text input), `track_` (outcomes/tracking), `score_` (scoring engine)
+- **Exception (LT-01 UI split, 2026):** the UI-layer modules use a `ui_` prefix without `job_hunt_` — `ui_routes.py`, `ui_handlers.py`, `ui_render.py`, `ui_state.py`, `ui_utils.py` — and `src/job_sources/` adapters use `<source>_source.py` / `<source>_client.py`. These are the accepted current conventions; the `job_hunt_` rule still applies to top-level domain modules.
 
 ## Technical Rules
 

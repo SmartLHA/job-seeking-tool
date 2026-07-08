@@ -111,6 +111,13 @@ def select_relevant_evidence(
         years_value = int(profile.years_experience) if float(profile.years_experience).is_integer() else profile.years_experience
         evidence.append(f"Experience: {years_value} years")
 
+    for achievement in profile.achievements:
+        if not isinstance(achievement, str):
+            continue
+        text = achievement.strip()
+        if text:
+            evidence.append(f"Achievement: {text}")
+
     return evidence
 
 

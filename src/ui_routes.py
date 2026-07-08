@@ -35,6 +35,7 @@ from src.ui_handlers import (
     handle_parse_cv,
     handle_save_profile,
     handle_job_explain,
+    handle_evaluate_form,
     handle_source_search,
     handle_source_select,
     handle_evaluate,
@@ -50,14 +51,32 @@ from src.ui_handlers import (
     handle_get_board_view,
     handle_batch_evaluate,
     handle_search_reed_more,
+    handle_source_search_more,
     handle_get_review_queue,
     handle_jobs_save,
     handle_tailor,
     handle_cover_letter,
+    handle_saved_searches_list,
+    handle_saved_searches_create,
+    handle_saved_search_delete,
+    handle_saved_search_toggle,
+    handle_digest_count,
+    handle_digest,
+    handle_digest_mark_seen,
+    handle_run_now,
+    handle_scheduler_status,
+    handle_run_llm_batch,
+    handle_digest_reevaluate,
+    handle_llm_queue,
+    handle_jobs_hide,
+    handle_jobs_unhide,
+    handle_jobs_hidden_list,
 )
 
 # Source registration (startup side effect). Adding a source = one import line.
 from src.job_sources import reed_source as _reed_source  # noqa: F401  (registration side effect)
+from src.job_sources import adzuna_source as _adzuna_src  # noqa: F401  (registration side effect)
+from src.job_sources import linkedin_source as _linkedin_src  # noqa: F401  (registration side effect)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -114,6 +133,26 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     server = ThreadingHTTPServer((config.host, config.port), _build_handler(config))
     url = f"http://{config.host}:{config.port}"
+
+    # D5/D6 daemons: auto-start, each no-ops while its profile toggle is off (and the
+    # LLM worker also no-ops without a Gemini key). get_profile re-reads fresh each cycle.
+    scheduler = worker = None
+    try:
+        from src.job_hunt_scheduler import DigestScheduler, LLMQueueWorker
+        from src.ui_handlers import set_daemons
+
+        def _get_profile():
+            return load_candidate_profile(config.profile_path)
+
+        scheduler = DigestScheduler(config, get_profile=_get_profile)
+        worker = LLMQueueWorker(config, get_profile=_get_profile)
+        scheduler.start()
+        worker.start()
+        set_daemons(scheduler=scheduler, worker=worker)
+        print("Digest scheduler + LLM worker started (gated by your My Profile toggles).")
+    except Exception as exc:  # pragma: no cover - never block the server on daemon startup
+        logger.warning("Could not start digest daemons: %s", exc)
+
     print(f"Minimal local UI running at {url}")
     print("Press Ctrl+C to stop.")
     try:
@@ -121,7 +160,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:  # pragma: no cover
         print("\nUI stopped.")
     finally:
+        # serve_forever() has already returned here; close the socket, then stop the
+        # daemon threads (best-effort, bounded join).
         server.server_close()
+        for d in (worker, scheduler):
+            if d is not None:
+                try:
+                    d.stop()
+                except Exception:  # pragma: no cover
+                    pass
     return 0
 
 
@@ -155,8 +202,9 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             if parsed.path == "/":
                 render_home(req, config, responder, tab=req.query.get("tab", "search"))
                 return
-            if parsed.path == "/search/reed/more":
-                handle_search_reed_more(req, config, responder)
+            source_more_match = re.match(r"^/search/([a-z0-9_-]+)/more$", parsed.path)
+            if source_more_match:
+                handle_source_search_more(req, config, responder, source_more_match.group(1))
                 return
             source_search_match = re.match(r"^/search/([a-z0-9_-]+)$", parsed.path)
             if source_search_match:
@@ -167,6 +215,24 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/jobs":
                 handle_get_jobs(req, config, responder)
+                return
+            if parsed.path == "/jobs/not-interested":
+                handle_jobs_hidden_list(req, config, responder)
+                return
+            if parsed.path == "/saved-searches":
+                handle_saved_searches_list(req, config, responder)
+                return
+            if parsed.path == "/digest/count":
+                handle_digest_count(req, config, responder)
+                return
+            if parsed.path == "/digest":
+                handle_digest(req, config, responder)
+                return
+            if parsed.path == "/digest/llm-queue":
+                handle_llm_queue(req, config, responder)
+                return
+            if parsed.path == "/scheduler/status":
+                handle_scheduler_status(req, config, responder)
                 return
             if parsed.path == "/board":
                 handle_get_board(req, config, responder)
@@ -181,6 +247,10 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             explain_match = re.match(r"^/job/([^/]+)/explain$", parsed.path)
             if explain_match:
                 handle_job_explain(req, config, responder, explain_match.group(1))
+                return
+            evaluate_form_match = re.match(r"^/job/([^/]+)/evaluate-form$", parsed.path)
+            if evaluate_form_match:
+                handle_evaluate_form(req, config, responder, evaluate_form_match.group(1))
                 return
             job_id = job_id_from_request_path(self.path)
             if job_id is not None:
@@ -226,6 +296,36 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/jobs/save":
                 handle_jobs_save(req, config, responder)
+                return
+            if parsed.path == "/jobs/not-interested":
+                handle_jobs_hide(req, config, responder)
+                return
+            if parsed.path == "/jobs/not-interested/undo":
+                handle_jobs_unhide(req, config, responder)
+                return
+            if parsed.path == "/saved-searches":
+                handle_saved_searches_create(req, config, responder)
+                return
+            if parsed.path == "/digest/mark-seen":
+                handle_digest_mark_seen(req, config, responder)
+                return
+            if parsed.path == "/digest/run-llm-batch":
+                handle_run_llm_batch(req, config, responder)
+                return
+            if parsed.path == "/digest/reevaluate":
+                handle_digest_reevaluate(req, config, responder)
+                return
+            ss_delete_match = re.match(r"^/saved-searches/([^/]+)/delete$", parsed.path)
+            if ss_delete_match:
+                handle_saved_search_delete(req, config, responder, ss_delete_match.group(1))
+                return
+            ss_toggle_match = re.match(r"^/saved-searches/([^/]+)/toggle$", parsed.path)
+            if ss_toggle_match:
+                handle_saved_search_toggle(req, config, responder, ss_toggle_match.group(1))
+                return
+            ss_run_match = re.match(r"^/saved-searches/([^/]+)/run-now$", parsed.path)
+            if ss_run_match:
+                handle_run_now(req, config, responder, ss_run_match.group(1))
                 return
             if parsed.path == "/tailor":
                 handle_tailor(req, config, responder)

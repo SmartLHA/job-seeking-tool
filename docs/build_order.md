@@ -5,10 +5,13 @@
 **Rule:** Items within a phase can be built in parallel. Items in a later phase must not start
 until all items in the prior phase are complete and tests are green.
 
-> **Current status (verified 2026-06-22):** This plan's foundation, enrichment,
+> **Current status (updated 2026-06-30):** This plan's foundation, enrichment,
 > board, tailoring, cover-letter, source-registry, LT-1 split, and F1 work are
-> implemented. Treat the phase detail below as implementation history. The active
-> backlog is Saved Searches/Daily Digest, Gap Coach, and additional source adapters.
+> implemented. Saved Searches + Daily Digest (D1–D6) and the Adzuna & LinkedIn
+> source adapters are also complete and enabled. Treat the phase detail below as
+> implementation history. The remaining backlog is Gap Coach (GAP-J, deferred) and
+> researched-but-undesigned features (interview-prep, follow-up nudges, DOCX/PDF
+> export, salary benchmark).
 
 ---
 
@@ -250,14 +253,14 @@ stable `Skill` model from GAP-B to ensure evidence selection works correctly.
 | Item | Status | Trigger to revisit |
 |------|--------|--------------------|
 | GAP-J — Gap Coach | ⏸ Deferred | 10+ jobs evaluated in the tool |
-| Adzuna source wiring | 🔲 Ready | Source registry in place (P5-0 done 2026-06-17) — just needs `adzuna_source.py` |
-| LinkedIn source | ⏸ Not started | After LinkedIn fetch client is designed and built |
+| Adzuna source wiring | ✅ Done | Shipped — `adzuna_source.py` registered & enabled |
+| LinkedIn source | ✅ Done | Shipped — `linkedin_source.py` registered & enabled |
 
 ---
 
 ## Phase 5 — Multi-Source Expansion *(unlocked 2026-06-17)*
 
-The source registry (`src/job_sources/source_registry.py`) was introduced on 2026-06-17 to decouple the UI from Reed-specific routing and rendering. Adding any new source now requires only a single `*_source.py` file and one import line in `src/job_hunt_ui.py` — no routing or dispatch changes needed.
+The source registry (`src/job_sources/source_registry.py`) was introduced on 2026-06-17 to decouple the UI from Reed-specific routing and rendering. Adding any new source now requires only a single `*_source.py` file and one import line in `src/ui_routes.py` (the source-registration imports; historically this was `src/job_hunt_ui.py`, before the LT-01 UI split made it a thin entry point) — no routing or dispatch changes needed.
 
 ### P5-0 · Source Registry + Reed Decoupling ✅ (2026-06-17)
 - New file: `src/job_sources/source_registry.py` — `JobSource` dataclass + registry
@@ -268,7 +271,7 @@ The source registry (`src/job_sources/source_registry.py`) was introduced on 202
 - `GET /board` restored to JSON; HTML board view moved to `GET /board/view`
 - 291/291 tests green
 
-### P5-1 · Adzuna Source Wiring 🔲
+### P5-1 · Adzuna Source Wiring ✅
 - Create `src/job_sources/adzuna_source.py` with self-contained adapter
 - One import line in `src/job_hunt_ui.py`
 - Enable `"adzuna"` in `ENABLED_SOURCES`
@@ -291,8 +294,8 @@ The source registry (`src/job_sources/source_registry.py`) was introduced on 202
 | 9 | ✅ GAP-F Tailor CV | P4 | Large | P2-3 | `docs/tasks/cv-tailoring-brief.md` |
 | 10 | ✅ GAP-G Cover letter | P4 | Medium | P2-3 | `docs/tasks/cover-letter-spec-draft.md` |
 | 11 | ✅ Source registry + Reed decoupling | P5-0 | Medium | P4 complete | `src/job_sources/source_registry.py` |
-| 12 | 🔲 Adzuna source wiring | P5-1 | Medium | P5-0 | `docs/tasks/gap-c-source-feature-flag-design.md` |
-| 13 | 🔲 LinkedIn source | P5-2 | Large | fetch client | — |
+| 12 | ✅ Adzuna source wiring | P5-1 | Medium | P5-0 | `docs/tasks/gap-c-source-feature-flag-design.md` |
+| 13 | ✅ LinkedIn source | P5-2 | Large | fetch client | — |
 | — | GAP-J Gap Coach | Deferred | — | 10+ jobs | `docs/tasks/gap-j-gap-coach-design.md` |
 
 ---
@@ -305,7 +308,7 @@ These files are not changed by any single item but must be consulted throughout:
 |------|------------|
 | `src/job_hunt_models.py` | P1-1, P2-1, P2-2, P2-3, P4-1 — all model changes land here |
 | `src/job_hunt_config.py` | P1-2, P2-1 — thresholds and policy |
-| `src/job_hunt_ui.py` | Every item adds or changes a route |
+| `src/ui_routes.py` | Routing + source registration — every route lives here post LT-01 split (`src/job_hunt_ui.py` is now a thin entry point) |
 | `docs/architecture_guardrails.md` | P4-1, P4-2 — truth boundaries for tailoring/cover letter |
 | `docs/data_contract.md` | P1-1 — update profile skills section after GAP-B |
 | `Claude deliverable/docs/ui_structure_v4.md` | All items — authoritative screen → route binding |

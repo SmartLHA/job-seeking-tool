@@ -67,6 +67,10 @@ class JobSource:
     Receives ``(form, config)``. Should raise ``ValueError`` on invalid input."""
     render_search_form: Callable[[dict[str, str], bool], str]
     render_results: Callable[[list[dict[str, Any]] | None, str | None, str | None, str | None], str]
+    render_cards_fragment: Callable[..., str] | None = None
+    """Render just the result *cards* (no surrounding chrome) for an AJAX "More
+    jobs" page. Signature ``(results, *, skip: int, nonce: str | None) -> str``.
+    ``None`` means the source does not support pagination."""
 
 
 _REGISTRY: dict[str, JobSource] = {}

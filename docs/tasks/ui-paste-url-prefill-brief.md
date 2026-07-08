@@ -1,7 +1,7 @@
 # UI Flow Change — Paste Text + URL Input with Pre-Fill
 
 **For: Handy**
-**Status: Ready to hand off**
+**Status: ✅ Implemented** — paste/URL prefill shipped (`POST /prefill`; `parse_job_from_url` in `job_hunt_parsing.py`).
 **Depends on: Mic approval, current UI scope in `docs/ui_scope.md` (updated)**
 
 ---

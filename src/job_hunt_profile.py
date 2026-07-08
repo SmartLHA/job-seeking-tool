@@ -1,12 +1,51 @@
 from __future__ import annotations
 
 import json
+import re
 from functools import partial
 from pathlib import Path
 from typing import Any
 
 from src.job_hunt_models import CandidateProfile, Skill
 from src import job_hunt_validation as _v
+
+
+# --- Daily Digest (D3) preference validators ------------------------------- #
+_TRUE = {"true", "1", "yes", "on", "t", "y"}
+_FALSE = {"false", "0", "no", "off", "f", "n"}
+
+
+def parse_bool(value: Any, field: str, *, default: bool) -> bool:
+    """Strict boolean parse. `bool("false")` is True, so never use bool() here."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    s = str(value).strip().lower()
+    if s in _TRUE:
+        return True
+    if s in _FALSE:
+        return False
+    raise ProfileValidationError(f"{field} must be a boolean (got {value!r})")
+
+
+def _int_in(value: Any, field: str, *, default: int, lo: int, hi: int) -> int:
+    if value is None or value == "":
+        return default
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        raise ProfileValidationError(f"{field} must be an integer (got {value!r})")
+    if not (lo <= n <= hi):
+        raise ProfileValidationError(f"{field} must be {lo}–{hi} (got {n})")
+    return n
+
+
+def _parse_hhmm(value: Any, field: str, *, default: str) -> str:
+    s = str(value if value not in (None, "") else default).strip()
+    if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", s):
+        raise ProfileValidationError(f"{field} must be HH:MM 24-hour (got {value!r})")
+    return s
 
 
 def parse_cv_file(path: Path) -> str:
@@ -57,6 +96,17 @@ OPTIONAL_PROFILE_FIELDS = {
     "certifications",
     "master_cv_ref",
     "master_cv_text",
+    # Daily Digest (D3) preferences
+    "digest_enabled",
+    "digest_threshold",
+    "digest_run_time",
+    "digest_max_per_source",
+    "digest_llm_enabled",
+    "digest_max_llm_per_run",
+    "digest_llm_rpm",
+    "digest_llm_rpd",
+    "digest_llm_batch_size",
+    "digest_llm_batch_interval_min",
 }
 
 
@@ -114,6 +164,18 @@ def candidate_profile_from_dict(
         payload.get("years_experience"), "years_experience"
     )
 
+    # Daily Digest (D3) prefs — strict bool + ranged ints + HH:MM (Item 14 ranges)
+    digest_enabled = parse_bool(payload.get("digest_enabled"), "digest_enabled", default=True)
+    digest_threshold = _int_in(payload.get("digest_threshold"), "digest_threshold", default=70, lo=0, hi=100)
+    digest_run_time = _parse_hhmm(payload.get("digest_run_time"), "digest_run_time", default="07:00")
+    digest_max_per_source = _int_in(payload.get("digest_max_per_source"), "digest_max_per_source", default=50, lo=1, hi=200)
+    digest_llm_enabled = parse_bool(payload.get("digest_llm_enabled"), "digest_llm_enabled", default=True)
+    digest_max_llm_per_run = _int_in(payload.get("digest_max_llm_per_run"), "digest_max_llm_per_run", default=10, lo=0, hi=100)
+    digest_llm_rpm = _int_in(payload.get("digest_llm_rpm"), "digest_llm_rpm", default=4, lo=1, hi=60)
+    digest_llm_rpd = _int_in(payload.get("digest_llm_rpd"), "digest_llm_rpd", default=200, lo=1, hi=1000)
+    digest_llm_batch_size = _int_in(payload.get("digest_llm_batch_size"), "digest_llm_batch_size", default=4, lo=1, hi=50)
+    digest_llm_batch_interval_min = _int_in(payload.get("digest_llm_batch_interval_min"), "digest_llm_batch_interval_min", default=15, lo=1, hi=1440)
+
     profile = CandidateProfile(
         candidate_id=resolved_candidate_id.strip(),
         name=name,
@@ -129,6 +191,16 @@ def candidate_profile_from_dict(
         certifications=normalised_lists["certifications"],
         master_cv_ref=master_cv_ref,
         master_cv_text=master_cv_text,
+        digest_enabled=digest_enabled,
+        digest_threshold=digest_threshold,
+        digest_run_time=digest_run_time,
+        digest_max_per_source=digest_max_per_source,
+        digest_llm_enabled=digest_llm_enabled,
+        digest_max_llm_per_run=digest_max_llm_per_run,
+        digest_llm_rpm=digest_llm_rpm,
+        digest_llm_rpd=digest_llm_rpd,
+        digest_llm_batch_size=digest_llm_batch_size,
+        digest_llm_batch_interval_min=digest_llm_batch_interval_min,
     )
 
     if source_path is not None and profile.master_cv_ref:
@@ -153,6 +225,16 @@ def candidate_profile_to_dict(profile: CandidateProfile) -> dict[str, Any]:
         "certifications": profile.certifications,
         "master_cv_ref": profile.master_cv_ref,
         "master_cv_text": profile.master_cv_text,
+        "digest_enabled": profile.digest_enabled,
+        "digest_threshold": profile.digest_threshold,
+        "digest_run_time": profile.digest_run_time,
+        "digest_max_per_source": profile.digest_max_per_source,
+        "digest_llm_enabled": profile.digest_llm_enabled,
+        "digest_max_llm_per_run": profile.digest_max_llm_per_run,
+        "digest_llm_rpm": profile.digest_llm_rpm,
+        "digest_llm_rpd": profile.digest_llm_rpd,
+        "digest_llm_batch_size": profile.digest_llm_batch_size,
+        "digest_llm_batch_interval_min": profile.digest_llm_batch_interval_min,
     }
 
 

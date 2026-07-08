@@ -9,12 +9,85 @@ from src.job_hunt_models import Skill
 from src.job_hunt_profile import (
     ProfileValidationError,
     candidate_profile_from_dict,
+    candidate_profile_to_dict,
     load_candidate_profile,
     load_master_cv,
     resolve_master_cv_path,
     save_candidate_profile,
     save_master_cv,
 )
+
+
+def _base_profile_payload(**extra):
+    return {"candidate_id": "cand-001", **extra}
+
+
+# --- Daily Digest (D3) preference fields ----------------------------------- #
+
+def test_digest_prefs_default_when_absent():
+    p = candidate_profile_from_dict(_base_profile_payload())
+    assert p.digest_enabled is True
+    assert p.digest_threshold == 70
+    assert p.digest_run_time == "07:00"
+    assert p.digest_max_per_source == 50
+    assert p.digest_llm_enabled is True
+    assert p.digest_max_llm_per_run == 10
+    assert (p.digest_llm_rpm, p.digest_llm_rpd, p.digest_llm_batch_size, p.digest_llm_batch_interval_min) == (4, 200, 4, 15)
+
+
+def test_digest_prefs_round_trip():
+    payload = _base_profile_payload(
+        digest_enabled=False, digest_threshold=85, digest_run_time="06:30",
+        digest_max_per_source=25, digest_llm_enabled=False, digest_max_llm_per_run=0,
+        digest_llm_rpm=12, digest_llm_rpd=500, digest_llm_batch_size=8,
+        digest_llm_batch_interval_min=30,
+    )
+    p = candidate_profile_from_dict(payload)
+    again = candidate_profile_from_dict(candidate_profile_to_dict(p))
+    assert again.digest_enabled is False
+    assert again.digest_threshold == 85
+    assert again.digest_run_time == "06:30"
+    assert again.digest_max_llm_per_run == 0
+
+
+def test_parse_bool_handles_stringy_false():
+    # bool("false") == True regression guard
+    assert candidate_profile_from_dict(_base_profile_payload(digest_enabled="false")).digest_enabled is False
+    assert candidate_profile_from_dict(_base_profile_payload(digest_enabled="0")).digest_enabled is False
+    assert candidate_profile_from_dict(_base_profile_payload(digest_enabled="on")).digest_enabled is True
+
+
+@pytest.mark.parametrize("field,value", [
+    ("digest_threshold", 101), ("digest_threshold", -1),
+    ("digest_max_per_source", 0), ("digest_max_per_source", 201),
+    ("digest_llm_rpm", 0), ("digest_llm_rpm", 61),
+    ("digest_llm_rpd", 0), ("digest_llm_rpd", 1001),
+    ("digest_llm_batch_size", 0), ("digest_llm_batch_size", 51),
+    ("digest_llm_batch_interval_min", 0), ("digest_llm_batch_interval_min", 1441),
+])
+def test_digest_int_ranges_rejected(field, value):
+    with pytest.raises(ProfileValidationError):
+        candidate_profile_from_dict(_base_profile_payload(**{field: value}))
+
+
+def test_digest_max_llm_per_run_zero_allowed():
+    assert candidate_profile_from_dict(_base_profile_payload(digest_max_llm_per_run=0)).digest_max_llm_per_run == 0
+
+
+@pytest.mark.parametrize("bad", ["7:00", "24:00", "07:60", "abc", "0700"])
+def test_digest_run_time_rejects_bad(bad):
+    with pytest.raises(ProfileValidationError):
+        candidate_profile_from_dict(_base_profile_payload(digest_run_time=bad))
+
+
+@pytest.mark.parametrize("good", ["07:00", "23:59", "00:00"])
+def test_digest_run_time_accepts_good(good):
+    assert candidate_profile_from_dict(_base_profile_payload(digest_run_time=good)).digest_run_time == good
+
+
+def test_digest_bool_rejects_garbage():
+    with pytest.raises(ProfileValidationError):
+        candidate_profile_from_dict(_base_profile_payload(digest_enabled="maybe"))
 
 
 def test_load_candidate_profile_reads_local_json_file(tmp_path: Path) -> None:

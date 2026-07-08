@@ -49,6 +49,18 @@ class CandidateProfile:
     certifications: list[str] = field(default_factory=list)
     master_cv_ref: str | None = None
     master_cv_text: str | None = None
+    # Daily Digest (D3) preferences. All defaulted so existing profiles load
+    # unchanged. Validated/ranged in candidate_profile_from_dict (job_hunt_profile).
+    digest_enabled: bool = True
+    digest_threshold: int = 70               # surface jobs scoring >= this (0–100)
+    digest_run_time: str = "07:00"           # HH:MM 24-hour, local time
+    digest_max_per_source: int = 50          # cap results fetched per saved search
+    digest_llm_enabled: bool = True
+    digest_max_llm_per_run: int = 10         # max NEW jobs queued for LLM per run (0 allowed)
+    digest_llm_rpm: int = 4                  # LLM calls/min ceiling (D6 worker)
+    digest_llm_rpd: int = 200                # LLM calls/day ceiling (D6 worker)
+    digest_llm_batch_size: int = 4           # jobs drained per worker cycle (D6)
+    digest_llm_batch_interval_min: int = 15  # minutes between worker cycles (D6)
 
     def __post_init__(self) -> None:
         if not self.candidate_id.strip():
@@ -83,6 +95,10 @@ class JobPosting:
     salary_max_gbp: int | None = None
     source_quality_score: int | None = None  # 0–100; None = quality unknown, no gate applied
     url: str | None = None  # canonical link to the original posting (apply here)
+    # Daily Digest C1: stable provider job id (Reed jobId / Adzuna id), normalised to
+    # a stripped string. The dedup key (with lower(source)); URL/source_ref are
+    # display metadata only. Optional + default None so existing records load unchanged.
+    source_job_id: str | None = None
 
     def __post_init__(self) -> None:
         required_text_fields = {
@@ -218,6 +234,14 @@ class JobAnalysis:
     # loading as master/no-baseline.
     keyword_match_baseline_rate: int | None = None   # master-CV rate at eval (the "before")
     keyword_match_source: str = "master"             # "master" | "tailored"
+    # Daily Digest D6 — paced Gemini enrichment for high-match digest jobs. All
+    # optional with defaults so existing analyses load unchanged. Set by the LLM
+    # worker via save_analysis_llm_fields(); the jobs table holds only queue metadata.
+    llm_fit_summary: str | None = None
+    llm_risk_summary: str | None = None
+    llm_recommended_action: str | None = None
+    llm_model: str | None = None          # model that produced it (chain may fall back)
+    llm_generated_at: str | None = None   # ISO datetime
 
     def __post_init__(self) -> None:
         if not self.job_id.strip():

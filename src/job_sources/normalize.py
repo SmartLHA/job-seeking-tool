@@ -222,9 +222,11 @@ def normalize_adzuna(job: Dict[str, Any]) -> NormalizedJob:
     Maps Adzuna API response to NormalizedJob schema (Section 4.2).
     """
     title = job.get("title", "")
-    # Adzuna nested location/company
-    loc_data = job.get("location", {})
-    comp_data = job.get("company", {})
+    # Adzuna nested location/company. The API can return an explicit JSON null
+    # for these keys, so `.get(key, {})` would yield None — use `or {}` so a
+    # null-field listing does not crash the whole result set.
+    loc_data = job.get("location") or {}
+    comp_data = job.get("company") or {}
     location = loc_data.get("display_name", "")
     company = comp_data.get("display_name", "")
     
@@ -233,7 +235,7 @@ def normalize_adzuna(job: Dict[str, Any]) -> NormalizedJob:
     s_max = job.get("salary_max")
     
     # salary_is_annual logic
-    contract_time = job.get("contract_time", "").lower()
+    contract_time = (job.get("contract_time") or "").lower()
     if contract_time in ["daily", "hourly", "part_time"]:
         salary_is_annual = False
     elif contract_time in ["permanent", "contract"]:
@@ -248,7 +250,7 @@ def normalize_adzuna(job: Dict[str, Any]) -> NormalizedJob:
     # Note: In a real API we'd extract the display string if available
     
     # Contract mapping
-    raw_contract = job.get("contract_type", "unknown").lower()
+    raw_contract = (job.get("contract_type") or "unknown").lower()
     contract_map = {
         "permanent": "permanent",
         "contract": "contract",

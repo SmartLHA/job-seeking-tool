@@ -1,7 +1,14 @@
 # GAP-C/I — Source Feature Flag (Adzuna / LinkedIn)
 
-**Status:** ✅ Complete (2026-06-17)
-**Date:** 2026-06-16 (designed) · 2026-06-17 (implemented)
+<!-- STATUS -->
+> **Implementation status:** ✅ Implemented — flag/registry 2026-06-17; **Adzuna wired live 2026-06-24 (P5-1)**; **LinkedIn wired live 2026-06-28 (P5-2)**.
+> **Divergences from spec:** Wiring Adzuna also required fixing `adzuna_client.py`'s wrong endpoint, making `handle_batch_evaluate` dispatch generically by source, and adding null-guards to `normalize_adzuna`. Adzuna carries no source_snapshot (snapshot validation is reed-only). `ENABLED_SOURCES` now `["Reed", "Adzuna", "LinkedIn"]`.
+> **Key functions:** `get_enabled_sources`, `source_registry.{register,get_source,all_sources}`, `adzuna_source._register`, `search_adzuna_jobs_for_ui`, `adzuna_select_form_to_evaluate_values`
+> **Routes:** `GET /sources`, `GET /search/adzuna`, `POST /select/adzuna`
+<!-- /STATUS -->
+
+**Status:** ✅ Complete (flag 2026-06-17 · Adzuna wired 2026-06-24)
+**Date:** 2026-06-16 (designed) · 2026-06-17 (flag implemented) · 2026-06-24 (Adzuna wired — P5-1)
 **Decision:** `get_enabled_sources()` in config + `JobSource` registry pattern; routes are generic
 
 ---

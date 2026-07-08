@@ -1,6 +1,6 @@
 # Reed Search First — Development Story Breakdown
 
-**Status:** PL-01 through PL-04 QA PASS; PL-05 build implemented 2026-05-14, QA pending
+**Status:** ✅ PL-01 through PL-05 shipped (all QA complete).
 **Owner:** SilverHand
 **Project:** Job Seeking Tool
 

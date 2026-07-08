@@ -1,6 +1,6 @@
 # JOB-007 — URL Ingestion Design
 
-**Status:** Canonical design document — documentation only, no implementation in this task  
+**Status:** Canonical design document. **✅ Since implemented** — `parse_job_from_url()` in `src/job_hunt_parsing.py` (host allowlist, SSRF prevention, redirect/scheme revalidation, size/content-type guards) per JOB-009 hardening.  
 **Date:** 2026-05-13  
 **Scope:** User-initiated single job URL paste/fetch ingestion for pre-filling `JobPosting`, followed by user review/edit before evaluation.
 

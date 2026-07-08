@@ -1,6 +1,6 @@
 # GAP-D — Per-Field Found Provenance from Parsing
 
-**Status:** Ready to build
+**Status:** ✅ Implemented 2026-06 — per-field found/not-found provenance + null-contract parsing shipped
 **Date:** 2026-06-16
 **Decision:** Parsing returns `null` as the "not found" signal; UI derives "auto-filled vs not found" from nulls
 

@@ -20,6 +20,14 @@ from typing import Any
 from src.job_hunt_parsing import extract_skills_from_text
 from src.job_sources.normalize import normalize_reed
 from src.job_sources.reed_client import fetch_reed_jobs
+from src.job_sources._multiselect import (
+    ACTION_BAR,
+    STAGING_OVERLAY,
+    hide_attrs,
+    more_button_html,
+    multiselect_script,
+    select_shell,
+)
 from src.job_sources.source_registry import JobSource, register
 from src.ui_state import (
     _SELECT_FORM_FIELD_LIMITS,
@@ -121,8 +129,7 @@ def reed_select_form_to_evaluate_values(form: dict[str, str], config: "object | 
     values = default_form_values()
     source_job_id = cleaned["source_job_id"]
     # Prefer the advert URL so saved jobs retain a working application link.
-    # The Reed id remains in job_id and the source snapshot.
-    source_ref = cleaned["url"] or source_job_id
+    advert_url = cleaned["url"] or ""
 
     # Fetch the full job description from Reed's detail API.
     # The search results page only carries a 500-char preview; the detail API
@@ -144,6 +151,15 @@ def reed_select_form_to_evaluate_values(form: dict[str, str], config: "object | 
                 "Reed detail unavailable for %s — using truncated preview (%d chars)",
                 source_job_id, len(full_description),
             )
+        # When the search result carried no advert URL, fall back to the
+        # detail API's canonical jobUrl so the saved job keeps an apply link.
+        if not advert_url and detail and detail.get("jobUrl"):
+            advert_url = str(detail["jobUrl"]).strip()
+
+    # source_ref keeps the advert URL when known, else the bare Reed id (still
+    # identifying via job_id and the source snapshot). The advert URL itself is
+    # stored separately as job_url -> JobPosting.url for the apply link.
+    source_ref = advert_url or source_job_id
 
     _req_skills, _pref_skills, _skill_warn = extract_skills_from_text(full_description)
     if _skill_warn:
@@ -152,9 +168,10 @@ def reed_select_form_to_evaluate_values(form: dict[str, str], config: "object | 
         {
             "job_id": reed_selected_job_id(cleaned),
             "input_method": "reed_search",
-            "job_url": cleaned["url"],
+            "job_url": advert_url,
             "source_type": "reed",
             "source_ref": source_ref,
+            "source_job_id": source_job_id or "",   # dedup key (C1) — survives to JobPosting
             "job_title": cleaned["title"] or "Unknown",
             "company": cleaned["company"] or "Unknown",
             "location": cleaned["location"],
@@ -446,26 +463,32 @@ def _render_reed_cards_fragment(
 
         form_html = render_reed_select_form(result, nonce, form_id=form_id)
 
+        # A card can only be evaluated if it carries a source snapshot (built at
+        # search time from the job's id/url + description). Without it the Reed
+        # audit guard rejects evaluation, so the card must NOT be selectable —
+        # otherwise ticking it produces a cryptic "source_snapshot_json is
+        # required" error at evaluate time.
+        selectable = bool(result.get("source_snapshot_json"))
+        root_class, root_extra, checkbox_html, disabled_note_html = select_shell(
+            card_id, selectable=selectable, url=result.get("url")
+        )
+
         html.append(
-            f'<div class="jst-rc" id="{card_id}" data-jst-id="{card_id}" data-jst-form="{form_id}"'
+            f'<div class="{root_class}" id="{card_id}" data-jst-id="{card_id}" data-jst-form="{form_id}"'
             f' data-jst-title="{title_esc}" data-jst-company="{company_esc}"'
             f' data-jst-salary="{salary_esc}" data-jst-location="{location_esc}"'
-            f' onclick="jstToggle(\'{card_id}\')"'
-            f' style="background:var(--surface);border:1.5px solid var(--line);border-radius:var(--r-lg);'
-            f'padding:16px;margin-bottom:10px;cursor:pointer;'
-            f'transition:border-color .15s,box-shadow .15s;box-shadow:var(--shadow-sm);">'
+            f'{hide_attrs(result)}'
+            f'{root_extra}>'
             f'{form_html}'
             f'<div style="display:flex;gap:13px;align-items:flex-start;">'
-            f'<span id="jst-cb-{card_id}" style="flex-shrink:0;margin-top:2px;width:20px;height:20px;'
-            f'border-radius:6px;display:inline-flex;align-items:center;justify-content:center;'
-            f'font-size:13px;font-weight:900;background:var(--surface-2);'
-            f'border:1.5px solid var(--line);transition:all .14s;pointer-events:none;"></span>'
+            f'{checkbox_html}'
             f'<div style="flex:1;min-width:0;">'
             f'<div style="font-size:15px;font-weight:700;letter-spacing:-0.015em;">{title_esc}</div>'
             f'<div style="font-size:13px;color:var(--ink-soft);margin-top:2px;">{company_esc}</div>'
             f'<div style="font-size:13px;color:var(--ink-faint);line-height:1.55;margin-top:8px;">{snippet_esc}</div>'
             f'{tags_html}'
             f'{notes_html}'
+            f'{disabled_note_html}'
             f'</div>'
             f'</div>'
             f'</div>'
@@ -508,224 +531,6 @@ def render_reed_search_results(
     # ── build job cards (delegate to shared helper) ───────────────────────────
     cards_html = _render_reed_cards_fragment(results, skip=0, nonce=reed_select_nonce)
 
-    # ── staging overlay ───────────────────────────────────────────────────────
-    staging_overlay = (
-        '<div id="jst-overlay" style="display:none;position:fixed;inset:0;z-index:200;'
-        'align-items:center;justify-content:center;">'
-        '<div style="position:absolute;inset:0;background:rgba(20,18,12,0.45);'
-        'backdrop-filter:blur(3px);" onclick="jstCloseStaging()"></div>'
-        '<div style="position:relative;width:540px;max-width:95vw;max-height:85vh;'
-        'overflow:hidden;background:var(--surface);border:1px solid var(--line);'
-        'border-radius:var(--r-xl);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;">'
-        '<div style="padding:20px 20px 16px;border-bottom:1px solid var(--line-soft);'
-        'display:flex;align-items:center;justify-content:space-between;">'
-        '<div style="font-size:16px;font-weight:800;letter-spacing:-0.02em;">Review queue</div>'
-        '<button onclick="jstCloseStaging()" style="width:30px;height:30px;border-radius:var(--r-md);'
-        'border:1px solid var(--line);background:var(--surface);cursor:pointer;'
-        'font-size:17px;color:var(--ink-faint);font-family:inherit;">\xd7</button>'
-        '</div>'
-        '<div id="jst-staging-list" style="overflow-y:auto;padding:4px 20px 8px;flex:1;"></div>'
-        '<div style="padding:16px 20px;border-top:1px solid var(--line-soft);'
-        'display:flex;gap:10px;justify-content:flex-end;align-items:center;">'
-        '<button onclick="jstCloseStaging()" style="padding:9px 18px;border-radius:var(--r-md);'
-        'font-size:13.5px;font-weight:600;border:1px solid var(--line);background:var(--surface);'
-        'color:var(--ink-soft);cursor:pointer;font-family:inherit;">&#8592; Back</button>'
-        '<button id="jst-eval-all-btn" onclick="jstEvaluateAll()" style="padding:10px 20px;'
-        'border-radius:var(--r-md);font-size:13.5px;font-weight:700;border:none;'
-        'background:var(--accent);color:var(--accent-contrast);cursor:pointer;font-family:inherit;">'
-        'Evaluate all jobs</button>'
-        '</div>'
-        '</div>'
-        '</div>'
-    )
-
-    # ── sticky action bar ─────────────────────────────────────────────────────
-    action_bar = (
-        '<div id="jst-bar" style="display:none;position:sticky;bottom:0;left:0;right:0;'
-        'padding:14px 0;background:linear-gradient(to top,var(--bg) 60%,transparent);pointer-events:none;">'
-        '<div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);'
-        'padding:14px 16px;box-shadow:var(--shadow-md);display:flex;align-items:center;gap:16px;pointer-events:auto;">'
-        '<div style="display:flex;align-items:center;gap:10px;">'
-        '<span id="jst-bc" style="font-family:var(--font-mono);font-size:22px;font-weight:700;color:var(--accent);">0</span>'
-        '<div style="font-size:13px;font-weight:600;color:var(--ink-soft);">'
-        '<div id="jst-bl">jobs selected</div>'
-        '<div style="font-size:11.5px;color:var(--ink-faint);font-weight:400;">Review selected jobs, then evaluate all at once</div>'
-        '</div></div>'
-        '<div style="flex:1;"></div>'
-        '<button onclick="jstClearAll()" style="padding:9px 16px;border-radius:var(--r-md);'
-        'font-size:13px;font-weight:600;border:1px solid var(--line);background:var(--surface);'
-        'color:var(--ink-soft);cursor:pointer;font-family:inherit;">Clear all</button>'
-        '<button id="jst-bb" onclick="jstShowStaging()" style="padding:10px 18px;'
-        'border-radius:var(--r-md);font-size:13.5px;font-weight:700;border:none;'
-        'background:var(--accent);color:var(--accent-contrast);cursor:pointer;font-family:inherit;">'
-        'Review selected &#8594;</button>'
-        '</div></div>'
-    )
-
-    # ── JavaScript ────────────────────────────────────────────────────────────
-    # Plain string (no f-string) keeps backslash escaping simple.
-    # JS uses double quotes for strings; Python uses single quotes for this string.
-    _js = (
-        '(function(){'
-        'window._jst_sel=window._jst_sel||new Set();'
-        'window._jst_jobs=window._jst_jobs||{};'
-        'var _sel=window._jst_sel,_jobs=window._jst_jobs;'
-        'document.querySelectorAll(".jst-rc").forEach(function(c){'
-        'var id=c.dataset.jstId;if(!id)return;'
-        '_jobs[id]={title:c.dataset.jstTitle,company:c.dataset.jstCompany,'
-        'salary:c.dataset.jstSalary,location:c.dataset.jstLocation,formId:c.dataset.jstForm};'
-        '_sel.add(id);'
-        '});'
-        'function _upd(){'
-        'document.querySelectorAll(".jst-rc").forEach(function(c){'
-        'var id=c.dataset.jstId,on=_sel.has(id);'
-        'c.style.borderColor=on?"var(--accent)":"var(--line)";'
-        'c.style.boxShadow=on?"0 0 0 3px var(--accent-soft),var(--shadow-sm)":"var(--shadow-sm)";'
-        'var cb=document.getElementById("jst-cb-"+id);if(!cb)return;'
-        'cb.style.background=on?"var(--accent)":"var(--surface-2)";'
-        'cb.style.borderColor=on?"var(--accent)":"var(--line)";'
-        'cb.style.color=on?"white":"transparent";'
-        'cb.textContent=on?"✓":"";'
-        '});'
-        'var n=_sel.size,bar=document.getElementById("jst-bar");'
-        'if(!bar)return;'
-        'bar.style.display=n>0?"flex":"none";'
-        'var el=document.getElementById("jst-bc");if(el)el.textContent=n;'
-        'var bl=document.getElementById("jst-bl");if(bl)bl.textContent=n===1?"job selected":"jobs selected";'
-        'var bb=document.getElementById("jst-bb");if(bb)bb.textContent="Review "+n+" selected →";'
-        '}'
-        'window.jstToggle=function(id){'
-        '_sel.has(id)?_sel.delete(id):_sel.add(id);_upd();'
-        '};'
-        'window.jstSelectAll=function(){'
-        'Object.keys(_jobs).forEach(function(id){_sel.add(id);});_upd();'
-        '};'
-        'window.jstClearAll=function(){_sel.clear();_upd();};'
-        'window.jstShowStaging=function(){'
-        'var list=document.getElementById("jst-staging-list");if(!list)return;'
-        'while(list.firstChild)list.removeChild(list.firstChild);'
-        'if(_sel.size===0)return;'
-        '_sel.forEach(function(id){'
-        'var j=_jobs[id];if(!j)return;'
-        'var row=document.createElement("div");'
-        'row.style.cssText="padding:14px 0;border-bottom:1px solid var(--line-soft);display:flex;align-items:flex-start;gap:12px;";'
-        'var info=document.createElement("div");info.style.cssText="flex:1;min-width:0;";'
-        'var tEl=document.createElement("div");'
-        'tEl.style.cssText="font-size:14.5px;font-weight:700;letter-spacing:-0.015em;";'
-        'tEl.textContent=j.title;info.appendChild(tEl);'
-        'var cEl=document.createElement("div");'
-        'cEl.style.cssText="font-size:12.5px;color:var(--ink-soft);margin-top:2px;";'
-        'cEl.textContent=j.company+(j.location?" \xb7 "+j.location:"");info.appendChild(cEl);'
-        'if(j.salary){'
-        'var sw=document.createElement("div");sw.style.marginTop="7px";'
-        'var st=document.createElement("span");'
-        'st.style.cssText="font-family:var(--font-mono);font-size:11px;padding:2px 8px;'
-        'border-radius:100px;background:var(--surface-sunk);color:var(--ink-soft);border:1px solid var(--line);";'
-        'st.textContent=j.salary;sw.appendChild(st);info.appendChild(sw);'
-        '}'
-        'row.appendChild(info);'
-        'var rb=document.createElement("button");'
-        'rb.style.cssText="width:30px;height:30px;border-radius:var(--r-md);border:1px solid var(--line);'
-        'background:var(--surface);color:var(--ink-faint);cursor:pointer;font-size:18px;'
-        'display:inline-flex;align-items:center;justify-content:center;font-family:inherit;";'
-        'rb.textContent="\xd7";'
-        '(function(cid){rb.onclick=function(e){e.stopPropagation();jstRemoveStaging(cid);};})(id);'
-        'row.appendChild(rb);list.appendChild(row);'
-        '});'
-        'var evalBtn=document.getElementById("jst-eval-all-btn");'
-        'if(evalBtn){var n2=_sel.size;evalBtn.textContent="Evaluate all "+n2+" job"+(n2===1?"":"s");}'
-        'var ov=document.getElementById("jst-overlay");if(ov)ov.style.display="flex";'
-        '};'
-        'window.jstCloseStaging=function(){'
-        'var ov=document.getElementById("jst-overlay");if(ov)ov.style.display="none";'
-        '};'
-        'window.jstRemoveStaging=function(id){'
-        '_sel.delete(id);_upd();jstShowStaging();if(_sel.size===0)jstCloseStaging();'
-        '};'
-        'window.jstEvaluate=function(id){'
-        'var j=_jobs[id];if(!j||!j.formId)return;'
-        'var f=document.getElementById(j.formId);if(f)f.submit();'
-        '};'
-        'window.jstRegisterCards=function(container){'
-        '(container||document).querySelectorAll(".jst-rc").forEach(function(c){'
-        'var id=c.dataset.jstId;if(!id||_jobs[id])return;'
-        '_jobs[id]={title:c.dataset.jstTitle,company:c.dataset.jstCompany,'
-        'salary:c.dataset.jstSalary,location:c.dataset.jstLocation,formId:c.dataset.jstForm};'
-        '_sel.add(id);'
-        '});_upd();'
-        '};'
-        'window.jstLoadMore=function(btn){'
-        'var url=btn.getAttribute("data-next-url");if(!url)return;'
-        'btn.disabled=true;btn.textContent="Loading…";'
-        'fetch(url).then(function(r){return r.json();})'
-        '.then(function(d){'
-        'if(!d.ok){btn.disabled=false;btn.textContent="More jobs";alert("Failed: "+(d.error||"Unknown"));return;}'
-        'var container=document.getElementById("jst-cards-container");'
-        'var moreWrap=document.getElementById("jst-more-wrap");'
-        'if(container&&d.cards_html){'
-        'var tmp=document.createElement("div");'
-        'tmp.innerHTML=d.cards_html;'
-        'while(tmp.firstChild)container.insertBefore(tmp.firstChild,moreWrap);'
-        'jstRegisterCards(container);'
-        '}'
-        'if(!d.has_more){'
-        'if(moreWrap)moreWrap.style.display="none";'
-        '}else{'
-        'btn.setAttribute("data-next-url",d.next_url);'
-        'btn.disabled=false;btn.textContent="More jobs";'
-        '}'
-        '})'
-        '.catch(function(err){btn.disabled=false;btn.textContent="More jobs";alert("Request failed: "+err.message);});'
-        '};'
-        'window.jstEvaluateAll=function(){'
-        'if(_sel.size===0)return;'
-        'var jobs=[];'
-        '_sel.forEach(function(id){'
-        'var j=_jobs[id];if(!j||!j.formId)return;'
-        'var f=document.getElementById(j.formId);if(!f)return;'
-        'var fd=new FormData(f),obj={};'
-        'fd.forEach(function(v,k){obj[k]=v;});'
-        'jobs.push(obj);'
-        '});'
-        'if(!jobs.length){alert("No evaluable jobs found.");return;}'
-        'var btn=document.getElementById("jst-eval-all-btn");'
-        'var list=document.getElementById("jst-staging-list");'
-        'if(btn){btn.disabled=true;btn.textContent="Scoring…";}'
-        'if(list){list.innerHTML="<div style=\'text-align:center;padding:36px 20px;\'>'
-        '<div style=\'font-size:14px;font-weight:600;color:var(--ink-soft);\'>Evaluating "+jobs.length+" job"+(jobs.length===1?"":"s")+"...<\\/div>'
-        '<div style=\'font-size:12.5px;color:var(--ink-faint);margin-top:6px;\'>Fetching descriptions \xb7 scoring against your profile<\\/div>'
-        '<\\/div>";}'
-        'fetch("/jobs/batch-evaluate",{'
-        'method:"POST",'
-        'headers:{"Content-Type":"application/json"},'
-        'body:JSON.stringify({jobs:jobs})'
-        '}).then(function(r){return r.json();})'
-        '.then(function(d){'
-        'if(!d.ok){alert("Evaluation failed: "+(d.error||"Unknown error"));'
-        'if(btn){btn.disabled=false;btn.textContent="Evaluate all";}return;}'
-        'var ids=d.jobs.map(function(j){return j.job_id;}).join(",");'
-        'if(!ids){alert("No jobs were successfully evaluated.");'
-        'if(btn){btn.disabled=false;btn.textContent="Evaluate all";}return;}'
-        'window.location="/review-queue?ids="+encodeURIComponent(ids);'
-        '})'
-        '.catch(function(err){alert("Request failed: "+err.message);'
-        'if(btn){btn.disabled=false;btn.textContent="Evaluate all";}});'
-        '};'
-        '_upd();'
-        '})();'
-    )
-
-    more_btn_html = ""
-    if more_url:
-        more_btn_html = (
-            f'<div id="jst-more-wrap" style="text-align:center;padding:18px 0 6px;">'
-            f'<button data-next-url="{escape(more_url)}" onclick="jstLoadMore(this)"'
-            f' style="padding:10px 28px;border-radius:var(--r-md);font-size:13.5px;font-weight:700;'
-            f'border:1px solid var(--line);background:var(--surface);color:var(--ink);'
-            f'cursor:pointer;font-family:inherit;">More jobs</button>'
-            f'</div>'
-        )
-
     return (
         f'<div style="margin-top:22px;position:relative;">'
         f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px;">'
@@ -736,11 +541,11 @@ def render_reed_search_results(
         f'</div>'
         f'<div id="jst-cards-container">'
         f'{cards_html}'
-        f'{more_btn_html}'
+        f'{more_button_html(more_url)}'
         f'</div>'
-        f'{action_bar}'
-        f'{staging_overlay}'
-        f'<script>/* jst multi-select */{_js}</script>'
+        f'{ACTION_BAR}'
+        f'{STAGING_OVERLAY}'
+        f'{multiselect_script()}'
         f'</div>'
     )
 
@@ -775,6 +580,9 @@ def _register() -> None:
         render_search_form=_render_reed_search_form,
         render_results=lambda results, error, nonce, more_url=None: render_reed_search_results(
             results, reed_error=error, reed_select_nonce=nonce, more_url=more_url
+        ),
+        render_cards_fragment=lambda results, *, skip=0, nonce=None: _render_reed_cards_fragment(
+            results, skip=skip, nonce=nonce
         ),
     ))
 

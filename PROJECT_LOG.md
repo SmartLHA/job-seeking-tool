@@ -1,4 +1,230 @@
-## 2026-06-22
+## 2026-07-08
+
+### Test-coverage audit + 10 new test files (257 tests) — zero-coverage functions 60 → 3
+- **Status:** ✅ COMPLETE — all 257 new tests green (`test_track_store.py` 22, `test_llm_queue_worker.py` 14, `test_shared_bus_getters.py` 13, `test_misc_uncovered.py` 34, `test_reed_adzuna_clients.py` 24, `test_source_forms.py` 59, `test_ui_handlers_uncovered.py` 28, `test_ui_render_uncovered.py` 26, `test_ui_routes_uncovered.py` 17, `test_llm_wrappers_uncovered.py` 20). Regression batches clean (`test_linkedin_source`, `test_reviewed_input`, `test_storage`, `test_index`, `test_parsing`, `test_outcomes`).
+- **Motivation:** Full-suite coverage audit (79% lines: 6953 stmts / 1453 miss) found 60 functions in `src/` with ZERO executed body lines — including the whole `job_hunt_track_store.py` module, both API clients, 9 UI handlers, and `LLMQueueWorker`.
+- **Changes:**
+  - `tests/` — 10 NEW test files listed above; no existing test file edited; no `src/` changes in this item.
+- **Key facts:** Built by cheap-model (Haiku) subagents, each batch independently verified by a fresh-context verifier agent per dispatch.md §6 (per-function body-line coverage re-derived from coverage JSON + AST; network-safety audit confirmed all `requests.get` patched, `.env` untouched, missing-cred tests assert no HTTP call). Remaining untested by design: `ui_routes.main` (HTTPServer/serve_forever coupling — needs src refactor), `job_sources/test_fetch.py` (manual scratch script). Known debt logged in PROJECT_TODO (TEST-F1..F3): 6 vacuous no-assert tests, one reed env test reads the real `.env` via unpatched `load_dotenv` (no leak; env restored), 14 functions still <50% covered (`handle_batch_evaluate` 22%, `parse_cv_file` 25%, `do_GET`/`do_POST` 25%…).
+
+### track_store.delete() persistence bug — found by new tests, fixed
+- **Status:** ✅ COMPLETE — `test_track_store.py` + `test_outcomes.py` 28/28 green; the 2 delete-persistence tests (skipped at discovery) unskipped and pass.
+- **Motivation:** New tests exposed that `delete()` in `src/job_hunt_track_store.py` returned True without persisting: the list comprehension rebound the local `jobs`, so `_save_data(data)` saved the ORIGINAL list — deletions silently lost. Independently confirmed by a verifier with a /tmp repro before fixing.
+- **Changes:**
+  - `src/job_hunt_track_store.py` — `delete()`: added `data["jobs"] = jobs` before `_save_data(data)` (one line).
+  - `tests/test_track_store.py` — removed the 2 `@pytest.mark.skip` markers documenting the bug.
+- **Key facts:** `job_hunt_track_store.py` had no test coverage, no `docs/function_list.md` entry, and no Feature Map row before today — module documented in function_list.md as part of this session.
+
+## 2026-07-07
+
+### Outcome tracking UX fix — "Save outcome" felt dead: filtered status dropdown, inline card feedback, embed preserved on POST
+- **Status:** ✅ COMPLETE — `tests/test_outcomes.py` 6/6, `tests/test_ui.py` 57/58 green (the 1 failure is the pre-existing `test_post_tailor_returns_tailored_cv_result_for_apply_job`, fails on unmodified code too). Verified end-to-end in sandbox: filtered options rendered per status, valid save shows inline ✓, invalid direct POST shows inline ✕, `embed=1` survives the POST.
+- **Motivation:** User reported "Save outcome" on the job detail page appeared to do nothing. Investigation: backend (`POST /outcome`) worked fine; the *feel* of breakage came from (a) the Status dropdown listing all 6 statuses while the state machine rejects most jumps, failing with only a small top banner easy to miss below the fold, and (b) in the Review Queue iframe the POST response dropped `embed=1` and re-rendered the full page (with sidebar) inside the panel.
+- **Changes:**
+  - `src/job_hunt_outcomes.py` — new public `allowed_next_statuses(current_status)` returning valid next statuses in state-machine order (`None` → treated as `not_applied`; current status always included since same-status re-save updates notes). Added to `__all__`.
+  - `src/ui_handlers.py` — job page view model now sets `outcome_status_options=allowed_next_statuses(...)` instead of all `ALLOWED_OUTCOME_STATUSES`; `render_job` gained keyword `embed=None` override (POST paths have no query string); `handle_outcome` reads hidden `embed` form field and passes it to both success and error `render_job` calls.
+  - `src/ui_render.py` — Outcome tracking card: options pre-selected on *current* status; hint line "Allowed next: …" or "**X** is a final status — only notes can be updated"; outcome-related flash duplicated *inside* the card as a bold green ✓ / red ✕ box; card has `id="outcome-card"` and a small script scrolls it into view when an outcome flash is present; form gains hidden `embed=1` input in embed mode.
+- **Key facts:** State machine unchanged — `not_applied→{applied,withdrawn}`, `applied→{interview,rejected,offer,withdrawn}`, `interview→{rejected,offer,withdrawn}`, `rejected`/`withdrawn` terminal. Known trade-off (user informed): with the filtered dropdown there is no UI way to undo a wrongly-saved terminal status — only hand-editing `data/state/outcomes/<job_id>.json`; an undo/reset affordance is a possible follow-up. Server restart required.
+
+## 2026-07-02
+
+### Search-flow triage UX — untick default, per-card ✕ hide (persistent), "Next page" replaces list, Hidden jobs overlay (design-council + Codex)
+- **Status:** ✅ COMPLETE — planned via design-council with independent read-only Codex review (18 findings; highs folded in); 13 new tests (`tests/test_not_interested.py`) + 139 existing tests in the affected batches green (`test_multiselect_shared`, `test_saved_searches`, `test_linkedin_source`, `test_ui` 57/58, `test_digest_ui`, `test_integration_flow`, `test_bookmark_evaluate`, `test_index`); shared JS syntax-checked with node.
+- **Motivation:** Search results appended forever and every card was auto-ticked; uninteresting jobs could not be dismissed and reappeared on every search. User asked for "next page" batching and a way to remove jobs. Codex review rejected the initial bulk "Remove selected" (one tick driving two opposite intents + acting on off-page selections); revised model user-approved: tick = shortlist ONLY, hiding is its own affordance.
+- **Changes:**
+  - `src/job_hunt_not_interested.py` — **NEW.** Persistent not-interested store in the shared `job_hunt_index.db` (SQLite WAL, mirrors saved-searches plumbing; NOT a JSON file — Codex concurrency finding). Table `not_interested_jobs`: key `source:source_job_id` (PK) + fingerprint `sha1(source|title|company)` so unstable LinkedIn ids still match; 180-day prune on write; idempotent `hide_jobs`, `unhide_jobs`, `list_hidden` (newest first), `count_hidden`, `hidden_lookup`, `filter_results`.
+  - `src/ui_handlers.py` — `handle_source_search` + `handle_source_search_more` filter results through the store BEFORE rendering; paging math (`has_more`, next skip) intentionally stays on the RAW count (filter is display-only). `/more` JSON gains `visible_count` + `hidden_count`. New endpoints: `handle_jobs_hide` (POST `/jobs/not-interested`, idempotent, returns per-entry `keys` for undo), `handle_jobs_unhide` (POST `/jobs/not-interested/undo` — shared by undo toast and overlay Unhide), `handle_jobs_hidden_list` (GET `/jobs/not-interested`). `_render_search_jobs_tab` renders a "N job(s) on this page are hidden" note, incl. the all-hidden empty page (Codex: never a blank page with a live Next button).
+  - `src/ui_routes.py` — routes for the three endpoints (GET dispatched before POST paths).
+  - `src/job_sources/_multiselect.py` — cards start UNTICKED (auto-`_sel.add` removed from registration); per-card ✕ injected by JS (`jstHide`) with a 10s undo toast (`jstUndoHide` reinserts the removed DOM nodes); `jstHideUnticked` bulk-hides only VISIBLE unticked cards; `jstShowHidden` overlay lists the store with per-row Unhide; `jstLoadMore` now REPLACES the list (forward-only "Next page", page indicator, scroll-to-top) — form fields of ticked cards are captured into `_jobs[id].fields` before removal so `jstEvaluateAll` still evaluates shortlists across pages; action bar wording "shortlisted" + "· N from earlier pages". `STAGING_OVERLAY` constant now also carries the hidden-jobs overlay + toast markup (zero-touch for the 3 source renderers); `more_button_html()` kept its name but renders the full footer and always renders (Next button only when `more_url`). New helper `hide_attrs(result)`.
+  - `src/job_sources/reed_source.py`, `adzuna_source.py`, `linkedin_source.py` — cards gain `data-jst-source` + `data-jst-sjid` via `hide_attrs` (identity fields the hide endpoint needs). One-line change each + import.
+  - `src/ui_state.py` — `_PAGE_UPDATED["search"]` → `2026-07-01 23:33 UTC`.
+  - `docs/tasks/search-triage-not-interested-design.md` — **NEW.** Retrospective design spec (problem, Codex findings that reshaped the ask, decisions, store/HTTP/client design, residual risks, test map); Feature Map + INDEX planning-docs table point to it.
+  - `tests/test_not_interested.py` — **NEW.** 13 tests: hide/list round-trip, idempotent re-hide, unhide + unknown keys, fingerprint fallback key, invalid source, filter by key / by fingerprint (unstable id) / noop / source-scoped keys (reed:101 ≠ adzuna:101), retention prune, live-server endpoint flow + bad bodies, browser contract (no auto-select, ✕/hidden/Next wiring, footer without next page).
+- **Key facts:** Unhidden jobs reappear in FUTURE searches, not the current page (stated in the overlay). Hidden-jobs count in the footer is fetched client-side on script init. A fully-hidden page still counts toward `has_more` (bounded look-ahead refill deferred). **Pre-existing failure, NOT from this work:** `test_ui.py::test_post_tailor_returns_tailored_cv_result_for_apply_job` (422 "Tailored CV failed validation") — tailoring path untouched by this session; tree already carried ~158 uncommitted files. Server restart required to see the new flow.
+
+## 2026-06-30
+
+### D2 deferred-review items closed: source registered/enabled check + digest NULL-score semantics (via codex-builder)
+- **Status:** ✅ COMPLETE — `tests/test_saved_searches.py` green (+2 source-rejection tests); `tests/test_digest.py` green (+1 NULL-score test, 31 in the digest batch). Built via the write-enabled `codex-builder` MCP; each edit independently verified by reading the file + running the targeted suite (codex's own report-back was unreliable — one call mis-reported "no edits" because the files are git-untracked, another hit the `-32001` timeout on report while the edits had already landed).
+- **Motivation:** Two low-severity items deferred from the D2 design-council review (`PROJECT_TODO.md` line ~235): saved-search `source_id` was only charset-validated, not checked against real sources; and `query_digest`'s treatment of NULL `match_score` under `min_score` was undocumented/implicit.
+- **Changes:**
+  - `src/job_hunt_saved_searches.py` — `_validate_source_id` now, after the charset/length checks, rejects any `source_id` not in `{s.lower() for s in get_enabled_sources()}` (raises `SavedSearchError`). New import `from src.job_hunt_config import get_enabled_sources` (no cycle — config is low-level). Enforced in the **core** validator, so all callers (`create_saved_search`, `save_saved_search`, programmatic) get it, not just the HTTP route. The existing inline check in `ui_handlers.handle_saved_searches_create` is left as defense-in-depth.
+  - `src/job_hunt_digest.py` — `_digest_filter_clauses` score clause changed to `COALESCE(match_score, 0) >= ?` (under the existing `if min_score:` guard). Docstrings on `_digest_filter_clauses` and `query_digest` now state: NULL match_score is treated as 0; `min_score=0` returns all digest rows incl. unscored, `min_score>=1` excludes unscored.
+  - `tests/test_saved_searches.py` — `test_create_saved_search_rejects_unregistered_source_id`, `test_save_saved_search_rejects_hand_built_unregistered_source_id`.
+  - `tests/test_digest.py` — `test_query_digest_min_score_treats_null_as_zero` (mixed scored/NULL rows; `min_score=0` returns all, `min_score=50` excludes NULL).
+- **Key facts:** Product decisions were confirmed with the owner before building — source check enforces **registered AND enabled** (accepted risk: disabling a source then blocks create/edit for it); NULL score is **treated as 0** for filtering. Server does not hot-reload — restart required to pick these up.
+
+### Doc cleanup: stale Adzuna/LinkedIn completion marks
+- **Status:** ✅ COMPLETE
+- **Motivation:** Summary/build-order tables still showed shipped sources as not-started.
+- **Changes:**
+  - `PROJECT_TODO.md` — summary table row 14 LinkedIn `🔲` → `✅`.
+  - `docs/build_order.md` — Deferred table (Adzuna, LinkedIn), `P5-1` heading, and summary-table rows 12/13 all flipped `🔲`/`⏸` → `✅`.
+
+### Multi-select JS consolidated onto shared module — fixes broken Adzuna "More jobs" button (design-council + Codex)
+- **Status:** ✅ COMPLETE — planned via the design-council skill with an independent read-only Codex review; `test_ui.py` (58) + `test_linkedin_source.py` + new `test_multiselect_shared.py` (4) + digest/bookmark suites all green (135 in the affected batch).
+- **Motivation:** Reed and Adzuna still embedded their own inline copies of the multi-select JS (only LinkedIn used `_multiselect.py`). A byte-comparison found Adzuna's inline JS was missing the `window.jstLoadMore` definition entirely — so the "More jobs" button added to Adzuna the same day called an **undefined function (ReferenceError) and was non-functional in the browser**; the endpoint test only exercised the server JSON, so it went undetected. Consolidation removes the duplication *and* fixes the button.
+- **Changes:**
+  - `src/job_sources/reed_source.py` — `render_reed_search_results` now imports `STAGING_OVERLAY`, `ACTION_BAR`, `multiselect_script()`, `more_button_html()` from `_multiselect`; deleted the inline overlay/action-bar/JS/more-button blocks (~12.7 KB). Reed's rendered output is **byte-identical** before/after (verified across more-url / no-more / empty / error states).
+  - `src/job_sources/adzuna_source.py` — same swap (~10.8 KB inline removed). Net output change = Adzuna now ships the shared JS **including `jstLoadMore`**, so its button works.
+  - `tests/test_multiselect_shared.py` — **NEW.** Contract-level guard (per Codex: don't diff the 6 KB blob): every source's results HTML must contain `onclick="jstLoadMore(this)"` + `window.jstLoadMore=function(btn)` + `data-next-url=`, all three must embed the shared `MULTISELECT_JS`/`STAGING_OVERLAY`/`ACTION_BAR`, and the button (only) disappears when `more_url=None`.
+- **Key facts:** Card rendering stays source-local; only the four shared chrome/JS helpers are centralised. **Codex med-severity note (deferred, out of scope):** the multi-select relies on `window._jst_*` globals + hardcoded `jst-cards-container`/`jst-more-wrap` ids, so it assumes a single result grid per page — safe today (only the active source renders) but would collide if two source grids ever rendered simultaneously.
+
+### "More jobs" pagination generalised to all sources (Reed + Adzuna + LinkedIn)
+- **Status:** ✅ COMPLETE — targeted suites green (`test_ui.py`, `test_linkedin_source.py`, digest + saved-search suites: 186 passed in one batch; source batch +33). One stale assertion updated (see below).
+- **Motivation:** The "More jobs" load-more button existed only on Reed; the more-URL builder and the `/more` AJAX endpoint were Reed-hardcoded. Adzuna and LinkedIn had no pagination, and LinkedIn's results never loaded the multi-select JS on a fresh search. User wanted the button on every source. (The reported Reed "page 2 = page 1" duplication is already prevented in current code by the `resultsToSkip` fix in `reed_client.py`; a stale running server would still show it — restart required.)
+- **Changes:**
+  - `src/job_sources/_multiselect.py` — **NEW.** Shared `MULTISELECT_JS`, `STAGING_OVERLAY`, `ACTION_BAR` (extracted verbatim from `reed_source`) + `multiselect_script()` and `more_button_html(more_url)`. Loader targets `jst-cards-container` / `jst-more-wrap`.
+  - `src/job_sources/source_registry.py` — `JobSource` gained optional `render_cards_fragment` (`(results, *, skip, nonce) -> str`), default `None` = source has no pagination.
+  - `src/ui_handlers.py` — `handle_source_search` builds `_more_url` for ANY source (`/search/{source_id}/more`), advancing the skip cursor one page; new `_take_skip_param_keys` handles camelCase (Reed/Adzuna `resultsToTake`/`resultsSkip`) vs snake_case (LinkedIn `results_to_take`/`results_skip`). New generic `handle_source_search_more`; old `handle_search_reed_more` kept as a back-compat shim.
+  - `src/ui_routes.py` — replaced `/search/reed/more` with generic `GET /search/{source}/more` (regex, matched before `/search/{source}`); imports `handle_source_search_more`.
+  - `src/job_sources/adzuna_source.py` + `adzuna_client.py` — `resultsSkip` in normalize; `search_adzuna_jobs_for_ui` threads skip; `fetch_adzuna_jobs(..., skip=)` converts offset→Adzuna page (`skip//take+1`); render adds the shared More button.
+  - `src/job_sources/linkedin_source.py` — `results_skip` in normalize; `_fetch_search(..., start=)` + `_cache_key(..., start)` page the scraper; `_render_cards(..., skip=)` offsets ids; `render_results` now uses `jst-cards-container` and includes the shared multi-select JS + staging + action bar + More button (also fixes LinkedIn's previously-missing select JS on a fresh search).
+  - `tests/test_linkedin_source.py` — `test_xss_title_escaped_in_render` now asserts the full payload `<script>alert(1)</script>` is escaped (was a blanket `'<script>' not in html`, valid only while LinkedIn had no static JS).
+  - `tests/test_ui.py` — +3 endpoint tests mirroring the Reed `/more` test: `test_get_search_adzuna_more_returns_offset_page` (skip→page, `jrc-10`, `resultsSkip=20`), `test_get_search_linkedin_more_returns_offset_page` (snake_case params, `start` offset, `li-rc-10`, `results_skip=20`), `test_get_search_unknown_source_more_reports_no_pagination` (clean JSON error, not a 500). `test_ui.py` 58 passed.
+- **Key facts:** Card ids are offset by `skip` on every source (`jrc-{skip+i}` / `li-rc-{skip+i}`) so appended pages never collide. Adzuna pages by URL page number; LinkedIn pages by `start` offset (start is in the cache key so each page caches separately). **Deferred tech-debt:** `reed_source` and `adzuna_source` still embed their own inline copies of the multi-select JS — only LinkedIn uses `_multiselect.py`; consolidating Reed/Adzuna onto the shared module is a follow-up.
+
+### Saved Searches — defense-in-depth field revalidation + source_id charset hardening (tech-debt item 1)
+- **Status:** ✅ COMPLETE — `tests/test_saved_searches.py` 64 passed (+13); `tests/test_ui.py` 55 passed (regression). Built via the write-enabled `codex-builder` MCP; independent read-only `codex` review (council Step 12) caught a charset gap, fixed and re-verified.
+- **Motivation:** `save_saved_search` only validated `search_id` — an internal caller hand-building a `SavedSearch` and calling `save` directly could persist unvalidated `name`/`source_id`/`params` (the D2 review's deferred "save_saved_search revalidation" item).
+- **Changes:**
+  - `src/job_hunt_saved_searches.py` — new shared helper `validate_saved_search_fields(name, source_id, params)` (runs `_validate_name`/`_validate_source_id`/`_validate_params`, returns cleaned tuple). `create_saved_search` and `save_saved_search` both call it (parity — no validator drift). `save_saved_search` now validates AND binds the cleaned values before the `INSERT … ON CONFLICT`. `_validate_source_id` gained a charset allowlist `_SOURCE_ID_PATTERN = ^[a-z0-9_-]+$` (checked after strip/lower), rejecting `bad/source`, `with space`, `../x`, `id;drop`, etc.
+  - `tests/test_saved_searches.py` — +13 tests: direct `save_saved_search` rejects invalid name / source_id (format) / params before any DB write; charset-invalid source_id rejected on both create + save paths; extra `params` failure modes (too-many-keys, blank/non-string key, overlong key); valid hand-built search still saves + loads back.
+- **Key facts:** `source_id` is FORMAT-validated only (charset/length) — job-source registry/enabled-source membership is a **separate still-open item** (registered-vs-enabled check). The prior gap was low-risk (source_id is parameter-bound in SQL and never used to build a filesystem path) but hardened anyway. No page render touched → no `_PAGE_UPDATED` bump. CSRF remains deferred (logged gap).
+
+### LinkedIn Source adapter + tests (P5-2)
+- **Status:** ✅ COMPLETE
+- **Motivation:** P5-2 was deferred pending a fetch client design. The public (guest) LinkedIn job-search page is now scraped best-effort using `requests` + BeautifulSoup — no API key required.
+- **Changes:**
+  - `src/job_sources/linkedin_source.py` — **NEW.** Full `JobSource` adapter: `LinkedInBlockedError`; `is_available` (always True); SQLite cache layer (`set_cache_db_path`, `_cache_key`, `_cache_get`, `_cache_set`, `_open_cache_conn`, TTL=300s); `normalize_search_params`; `_is_blocked` (HTTP 999/429/403/401, login-redirect URL, page < 5000 chars); `_extract_job_id_from_url`, `_parse_search_html` (BeautifulSoup, `.base-card` selector, job-id dedup); `_fetch_search` (lazy `requests` import, connect 5s/read 10s, raises `LinkedInBlockedError` or `TimeoutError`); `search_handler` (cache-first); `_fetch_description` (lazy full description on select); `select_handler` (form validation, lazy desc fetch, skill extraction, returns `default_form_values` dict); `_linkedin_job_id`; `render_search_form`; `_render_select_form`, `_render_cards`, `render_results` (mirrors Adzuna `.jst-rc` card pattern); `_register()` (import-time side effect).
+  - `tests/test_linkedin_source.py` — **NEW.** 16 tests: 25-card parse, login-wall block, short-page block, empty results, HTTP 429, HTTP 403, timeout, XSS escaping, duplicate dedup, `normalize_search_params` defaults/clamp/invalid-work-mode, cache hit skips HTTP, `render_results` edge cases (None/error/empty).
+- **Key facts:** Salary data is unavailable from LinkedIn public search (all `salary_display=""`, `salary_min/max_gbp=None`). Absence of job cards is NOT treated as a block (valid zero-result page). SQLite cache DB path is synced from `config.state_root` in `select_handler` so searches and selects share the same DB. v2 cookie-based auth (li_at/JSESSIONID) is deferred. No new `ENABLED_SOURCES` entry yet — requires `src/ui_routes.py` import for registration.
+
+## 2026-06-26
+
+### Bookmark → Evaluate bridge (+ Re-evaluate link on scored jobs)
+- **Status:** ✅ COMPLETE — 7 new tests (`tests/test_bookmark_evaluate.py`) green; `test_ui.py` regression 55 passed. Design-council planning + Codex design review (read-only) before build.
+- **Motivation:** A job bookmarked via `POST /jobs/save` stored a minimal `JobPosting` + `not_applied` outcome + index row but had **no path to be evaluated later** — `handle_evaluate`/`handle_job_submit` only build from an HTTP form, never load a saved job by id. Bookmarked jobs dead-ended.
+- **Changes:**
+  - `src/ui_utils.py` — new pure helper `form_values_from_reviewed_job(job)`: maps a saved `JobPosting` back to Evaluate-form values, joins skill lists with `\n`, **preserves `job_id`** so re-submit updates the same record; missing values stay blank.
+  - `src/ui_handlers.py` — new `handle_evaluate_form(req, config, responder, job_id)`: loads the saved job (404 if missing), renders the home Evaluate tab prefilled with a review notice. Read-only.
+  - `src/ui_routes.py` — `GET /job/<id>/evaluate-form`, registered **before** the generic `/job/` catch-all (which would otherwise swallow it).
+  - `src/ui_render.py` — unevaluated job page (`has_analysis=False`): replaced the "not evaluated yet" dead-end with a **"Review & evaluate this job →"** CTA. Already-scored job page (action bar): added an optional **"↻ Re-evaluate"** link to the same prefill route.
+  - `src/ui_state.py` — bumped `_PAGE_UPDATED["job"]`.
+  - `docs/tasks/bookmark-evaluate-bridge-design.md` — **NEW** design spec (implemented + reviewed).
+- **Key facts:** No new submit route was needed — the Evaluate form already renders and round-trips a `job_id` field, so reusing the id updates in place (verified). Headless one-click evaluate was **deliberately rejected** to honour the review-before-evaluate + truthful-missing-data principle (bookmarks carry `description_raw="No description provided."` + empty skills). Codex's "high" audit-overwrite concern does **not** apply to the bookmark path: bookmarks write no `raw_inputs/` or analysis, so there is nothing to overwrite; re-evaluating an already-scored job overwrites its analysis in place (pre-existing same-id behaviour, surfaced by the new Re-evaluate link — no eval history kept).
+
+### Daily Job Digest — OQ-2 (re-evaluate seen digest jobs on profile/threshold change)
+- **Status:** ✅ COMPLETE — 14 new tests (`tests/test_digest_reeval.py`) green; digest suites 88 passed; full fast batch 509 passed/1 skipped (1 unrelated flaky `test_saved_searches` WAL-lock under sandbox FS, passes isolated). Design-first → Codex design review → implement → Codex code review (no critical findings).
+- **Motivation:** The daily digest is new-only by design (§7a) — changing your profile or `digest_threshold` never re-scored already-seen jobs. OQ-2 is the explicit, manual action that re-scores the indexed digest jobs against the current profile and resurfaces the ones that now qualify.
+- **Changes:**
+  - `src/job_hunt_index.py` — 4 new helpers: `list_digest_jobs_for_reeval` (digest rows + old score + llm_status snapshot, score DESC/job_id ASC), `resurface_digest_job` (digest_seen→0, preserves digest_date), `requeue_llm_if_eligible` (**CAS**: NULL/failed/skipped/done→pending, resets attempts; blocks pending/processing), `clear_llm_queue` (**CAS**: pending→NULL only). Every llm_* write is compare-and-swap (guard in WHERE, returns rowcount).
+  - `src/job_hunt_scheduler.py` — `ReevalResult` dataclass + `reevaluate_digest_jobs` (under `_PIPELINE_LOCK`): per-job reload→`evaluate_reviewed_job`→`save_job_analysis`→`upsert_job`; crossed-up→resurface + re-queue (cap `digest_max_llm_per_run`); dropped-below→dequeue. `row_status` helper preserves the user's board status on re-score. Imports `StorageError` + the 4 index helpers.
+  - `src/ui_handlers.py` / `src/ui_routes.py` — `handle_digest_reevaluate` + `POST /digest/reevaluate` (sync, returns ReevalResult JSON; no Gemini call — crossed-up jobs only queued).
+  - `src/ui_render.py` — "Re-evaluate all" button + confirm + result toast on the digest page.
+  - `src/ui_state.py` — added `_PAGE_UPDATED["digest"]`.
+  - `docs/tasks/oq-2-reevaluate-seen-design.md` — **NEW** design doc (rev 3: implemented + reviewed).
+- **Key facts:** "crossed up" = `new_score ≥ threshold AND (old_score < threshold OR llm_status IS NULL)`. The `llm_status IS NULL` ("never queued as a match") signal is what makes a **threshold-only** change actually do something — a pure threshold edit can't move the score, so a score-vs-threshold test alone would never fire. Trade-off: the first re-evaluate after enabling AI (or lowering the threshold) can resurface every qualifying NULL-status job at once (AI re-queue capped by `digest_max_llm_per_run`; the unread resurface is not capped). Re-queueing `done`→`pending` refreshes stale AI (OQ-2-B); the worker overwrites the summary on its next run. CAS guards make every llm_* write safe against the concurrent LLM worker (which `_PIPELINE_LOCK` does not serialise). Server has no hot-reload — restart before testing.
+
+## 2026-06-24
+
+### Daily Job Digest — D5 (scheduler daemon) + D6 (paced LLM worker) — feature COMPLETE
+- **Status:** ✅ COMPLETE — full suite 552 passed / 1 skipped (13 deselected = pre-existing environmental `test_multi_llm_chat`). 16 new tests (`test_digest_worker.py`, `test_digest_scheduler.py`). Design-council reviewed pre-build (caught the stranded-claim, double-pace, and once-per-day criticals).
+- **Motivation:** D5 makes the digest run automatically each day; D6 layers paced Gemini enrichment on high-match jobs without tripping rate limits — completing the D1–D6 Daily Digest.
+- **Changes (D6):**
+  - `src/job_hunt_models.py` — `JobAnalysis` +5 optional `llm_*` fields (fit/risk/action/model/generated_at); `job_hunt_storage.job_analysis_from_dict` reads them explicitly (old records → None).
+  - `src/job_hunt_llm.py` — `class RateLimited`; `_call_gemini_model` now returns a 4th `reason` ("rate_limited"/"not_found"/"server_error"/"fatal"); `_call_gemini_reasoning` returns `all_rate_limited`; `explain_job_match_with_llm(..., raise_on_rate_limit=True)` raises `RateLimited` only when **every** attempted model 429'd (not 404/503).
+  - `src/job_hunt_scheduler.py` — `drain_llm_batch` (worker-lock serialised; claim→paced Gemini→`save_analysis_llm_fields`→`incr_rpd`; on 429/RPD requeue all UNSTARTED claimed rows immediately; detail-fetch inside try; missing local data → terminal `skipped`; single max-attempt transition); `LLMQueueWorker` daemon (no-ops while disabled/no key; startup stale-reset; exception-isolated cycles); `save_analysis_llm_fields`, `_fetch_full_description` (source-aware), `rpd_date_key` (Pacific, falls back to local), `llm_queue_stats`.
+  - `src/ui_handlers.py` / `src/ui_routes.py` — `POST /digest/run-llm-batch`, `GET /digest/llm-queue`.
+- **Changes (D5):**
+  - `src/job_hunt_scheduler.py` — `DigestScheduler` daemon: **poll loop** (~30s) running `run_digest_pipeline` once per local day at `digest_run_time`; in-memory `last_run_date` once-per-day guard (slot reserved before run); lock-guarded `status()` snapshot; exception-isolated; `_PIPELINE_LOCK` serialises scheduler vs manual "Run now".
+  - `src/ui_routes.py` (`main`) — auto-starts both daemons at server launch (gated by `digest_enabled`/`digest_llm_enabled` toggles, worker also needs `GOOGLE_API_KEY`); ordered shutdown (`server_close` then `stop()` with bounded join). `src/ui_handlers.py` — `set_daemons` + live `GET /scheduler/status`.
+- **Council fixes applied:** two process-wide locks (`_LLM_WORKER_LOCK`, `_PIPELINE_LOCK`) eliminate the 2×RPM breach, RPD check/incr race, and concurrent-pipeline writes; requeue-unstarted-on-throttle (no 30-min stranding); terminal skip on missing data; single status transition on max attempts; `RateLimited` only on all-429. Deferred (single-process makes moot): token-conditional completion, claim heartbeats.
+- **Key facts:** daemons are **on by default but gated** — nothing runs until the user's profile toggles are on (and the worker needs a Gemini key). Pacing defaults (rpm 4 / batch 4 / 15-min interval) keep a 50-job backlog well under 200 RPD. RPD counter keyed by Pacific date to match Gemini's reset.
+
+### Daily Job Digest — D3 (pipeline) + D4 (feed UI) + design-council code review
+- **Status:** ✅ COMPLETE — full suite 536 passed / 1 skipped (13 deselected = pre-existing environmental `test_multi_llm_chat`). ~40 new tests (`test_profile.py`, `test_digest_pipeline.py`, `test_digest_ui.py`).
+- **Motivation:** D3 turns saved searches into a scored, deduped, queued feed; D4 makes that feed visible/filterable. Reviewed by Codex both pre-build (caught 2 critical D3 bugs + a D4 API gap) and post-build.
+- **Changes (D3):**
+  - `src/job_hunt_models.py` — `CandidateProfile` +10 `digest_*` fields (all defaulted).
+  - `src/job_hunt_profile.py` — `parse_bool` / `_int_in` / `_parse_hhmm` validators; from_dict/to_dict + OPTIONAL_PROFILE_FIELDS for the 10 fields (ranged, HH:MM, strict bool).
+  - `src/ui_utils.py` — `reviewed_job_payload_from_ui_result(result, *, source_id=None)` mapper (authoritative source_id, "Unknown"-cleaning, £/comma salary coercion).
+  - `src/job_hunt_scheduler.py` — **NEW.** `DigestRunResult` (+`jobs_already_seen`) + `run_digest_pipeline` (fetch→guard/dedup→convert→deterministic eval→index-last→queue `pending`). Per-result + per-search isolation; staged counters; one global `newly_queued` cap; `run_date` once; skipped-job JSONL log. No Gemini calls (D6).
+  - `src/ui_handlers.py` / `src/ui_routes.py` — `handle_run_now` (`POST /saved-searches/{id}/run-now`, sync, one search, 404), `handle_scheduler_status` (`GET /scheduler/status`, static); digest settings persisted in `handle_save_profile` (preserve-on-omit).
+  - `src/ui_render.py` — Digest settings panel in the profile form; "Run now" button per saved-search row; `ProfilePageViewModel` +10 digest fields.
+  - `scripts/verify_digest.py` — **NEW** live-check (runs one saved search against the real API on the user's machine).
+- **Changes (D4):**
+  - `src/job_hunt_digest.py` — `query_digest` extended with SQL-level `source_id`/`saved_search_id`/`seen` (tri-state) filters + `_digest_filter_clauses` helper; `DigestEntry.llm_status`; stable sort tie-breaker; `mark_all_seen` scoped to filters.
+  - `src/ui_render.py` — `render_digest_page` (pure, XSS-escaped; `[View]`→internal `/job/{id}` only, external apply URL NOT rendered); sidebar **Digest** nav + unseen badge (AJAX `/digest/count`).
+  - `src/ui_handlers.py` / `src/ui_routes.py` — `handle_digest` (`GET /digest`, strict filter parse), `handle_digest_mark_seen` (`POST /digest/mark-seen`, exactly-one-mode body, calendar-valid dates, ≤500, 400 on malformed).
+  - `src/ui_state.py` — bumped `_PAGE_UPDATED["profile"]`, `["evaluate"]`, `["add_job"]`.
+- **Code-review fixes:** staged counters (scored-after-eval, new-after-upsert; persist/queue failures → errors not skips); non-dict adapter items isolated; `islice` cap; mark-seen strictness (`{all:false}`/both-modes/non-string ids/invalid all-mode filters → 400, no scope-widening). Codex cleared: no SQL injection, `seen` tri-state correct, global cap correct, connections closed.
+- **Key facts:** "no LLM in D3" = no rate-limited **Gemini**; local Ollama skill extraction via `extract_skills_from_text` (Mic-chosen) is allowed, bounded by `digest_max_per_source`. Manual add/select keeps its own job_id (OQ-1). **Deferred (low):** `digest_job_id` lossy sanitisation (numeric ids safe + fail-loud upsert guards); pagination (limit+count); CSRF (loopback, app-wide).
+
+### Daily Job Digest — D1 + D2 design-council code review (post-implementation fixes)
+- **Status:** ✅ COMPLETE — full suite 483 passed / 1 skipped (the 13 deselected = pre-existing environmental `test_multi_llm_chat` sandbox file-unlink failures). +5 review tests.
+- **Motivation:** Independent Codex read-only review of the shipped D1/D2 code (not the design) to catch correctness/concurrency bugs before D3 builds on top.
+- **Changes:**
+  - `src/job_hunt_saved_searches.py` — **HIGH** fix: `toggle_saved_search` now reads inside the open transaction + guards a `None` row → `SavedSearchNotFound` (was: commit-then-SELECT race → 500). `_connect` sets `busy_timeout`+WAL and closes on setup failure (no leak). `save_saved_search` → `INSERT … ON CONFLICT(search_id) DO UPDATE` (not delete-then-insert). Table gained `CHECK (enabled IN (0,1))`; toggle uses `CASE WHEN`.
+  - `src/ui_handlers.py` — `handle_saved_searches_create`: invalid falsy `params` (`[]`/`""`) now rejected (400) via `payload.get("params", {})`; non-UTF-8 body caught → 400 (was 500).
+  - `src/job_hunt_index.py` — `_migrate_schema` tolerates the duplicate-column race between two first-run threads; `claim_batch` validates `limit` (negative → `[]`, not unbounded) and rolls back on error; `upsert_job` IntegrityError log no longer over-asserts which constraint fired.
+  - `src/job_hunt_digest.py` — `query_digest` clamps negative `limit`; `mark_seen` de-dups + chunks the `IN(...)` list (no `too many SQL variables`).
+  - `tests/test_saved_searches.py`, `tests/test_digest.py` — +5 tests (invalid-params 400, negative-limit, mark_seen dedup).
+- **Key facts:** Codex cleared two things — no SQL injection in the dynamic WHERE/IN-clause (all values parameter-bound) and `BEGIN IMMEDIATE` in `claim_batch` is correct for this connection path. **Deferred (low value, noted):** `save_saved_search` only validates `search_id` (internal callers could persist unvalidated data); source validated against *enabled* names not the *registered* registry; `query_digest(min_score=0)` includes NULL-score rows as 0.
+
+### Daily Job Digest — D2 Schema migration + dedup + digest query layer
+- **Status:** ✅ COMPLETE — 28 tests in `tests/test_digest.py`; full suite green. Schema, dedup, and badge endpoint live. D3–D6 still backlog.
+- **Motivation:** The load-bearing phase — every later digest phase depends on the index schema + dedup being correct.
+- **Changes:**
+  - `src/job_hunt_models.py` — `JobPosting.source_job_id` (optional, default None).
+  - `src/job_hunt_reviewed_input.py` — `source_job_id` in `OPTIONAL_REVIEWED_JOB_FIELDS` + `reviewed_job_from_dict`/`_to_dict` round-trip (missing → None).
+  - `src/job_sources/reed_source.py`, `adzuna_source.py` — carry normalized `source_job_id` (already `str().strip()`, no int-parse) through the select→evaluate values.
+  - `src/ui_utils.py` — `digest_job_id(source, source_job_id)` canonical id; `reviewed_job_payload_from_form` + `default_form_values` carry `source_job_id`.
+  - `src/ui_render.py` — `render_input_form` renders a hidden `source_job_id` field.
+  - `src/job_hunt_index.py` — `_migrate_schema` (10 digest/LLM columns, idempotent); `open_db` sets WAL + `busy_timeout`; partial `UNIQUE(source, source_job_id)` + 3 perf indexes; `llm_rpd` table. `upsert_job` → `ON CONFLICT(job_id) DO UPDATE` preserving digest+LLM columns, source lower-cased, **no IntegrityError fallback (fail-loud)**. `rebuild_index` persists `source_job_id`+`apply_url`. New: `is_already_indexed`, `set_digest_meta`, `set_llm_status`, `claim_batch`, `reset_stale_llm_processing`, `rpd_used_today`/`incr_rpd_counter`, `source_job_id_from_ui_result`, `apply_url_from_ui_result`.
+  - `src/job_hunt_digest.py` — **NEW.** `DigestEntry` + `query_digest`, `mark_seen`, `mark_all_seen`, `unseen_count`, `digest_stats`. `DigestEntry.url` reads `jobs.apply_url`.
+  - `src/ui_handlers.py` / `src/ui_routes.py` — `GET /digest/count` (badge; `{unseen: N}`).
+  - `src/ui_state.py` — bumped `_PAGE_UPDATED["evaluate"]` / `["add_job"]` (hidden field added to the shared input form).
+- **Key facts:** Manual add/select still mints its own `job_id` (not canonical `digest_job_id`) — accepted per OQ-1 (two rows tolerated; partial unique index excludes NULL ids). `claim_batch`/`set_llm_status`/RPD are schema-level primitives here; the paced LLM worker that uses them is D6.
+
+### Daily Job Digest — D1 Saved Searches (storage + JSON API + My Profile UI)
+- **Status:** ✅ COMPLETE — 44 new tests green (`tests/test_saved_searches.py`: 37 unit + 6 route + 1 profile render); full UI/index/lint suites pass. No auto-run yet (D1 scope).
+- **Motivation:** First slice of the Daily Job Digest backlog — let the user save, list, enable/disable, and delete reusable named searches that later phases (D3+) will run on a schedule.
+- **Design-council re-review (Codex):** D1/D2 re-reviewed before coding. Four decisions locked & applied — (1) SQLite table over per-file JSON; (2) opaque `uuid4().hex` PK over slug (kills the silent-overwrite collision); (3) WAL retained but documented local-disk-only; (4) IntegrityError fallback dropped from D2 `upsert_job` in favour of fail-loud logging. Decisions 3–4 are D2-scoped and were folded into the spec, not yet coded.
+- **Changes:**
+  - `src/job_hunt_saved_searches.py` — **NEW.** SQLite-backed CRUD over a `saved_searches` table in `job_hunt_index.db` (owns its own `CREATE TABLE IF NOT EXISTS`, so D1 ships independently of the D2 migration). `SavedSearch` dataclass; `validate_search_id` (strict `^[A-Za-z0-9_-]{1,64}$`, applied on every op); `create/load/list/save/delete/toggle_saved_search`, `update_last_run`. Atomic toggle via `UPDATE … SET enabled = 1 - enabled`; params validated + defensively copied; corrupt params blob degrades one row, never crashes the list.
+  - `src/ui_handlers.py` — 4 handlers: `handle_saved_searches_list/_create/_delete/_toggle` (+ `_saved_search_to_json`). Source validated against `get_enabled_sources()`. `render_profile` now passes `enabled_sources` to the page.
+  - `src/ui_routes.py` — routes `GET/POST /saved-searches`, `POST /saved-searches/{id}/delete`, `POST /saved-searches/{id}/toggle`.
+  - `src/ui_render.py` — `render_profile_page` gains a Saved Searches section (add form + live list with Enable/Disable/Delete) and an `enabled_sources` param.
+  - `src/ui_state.py` — bumped `_PAGE_UPDATED["profile"]`.
+  - `docs/tasks/backlog-01-daily-digest-design.md` — v6 council decisions folded in (and an earlier v5.1 consistency cleanup of stale `source_ref` wording).
+  - `tests/test_saved_searches.py` — **NEW** (44 tests).
+- **Key facts:** No filesystem path is built from `search_id` (SQLite), so the per-file path-traversal vector is gone; `validate_search_id` stays as input hygiene. The "Save this search" shortcut button on Find Jobs results was deliberately deferred — full create/list/toggle/delete is delivered via the My Profile section instead. D2 not started.
+
+### Find Jobs — shared search form (one criteria set, per-source buttons)
+- **Status:** ✅ COMPLETE — UI suite 55/55 green.
+- **Motivation:** With Reed and Adzuna both enabled, the Find Jobs tab rendered two separate search forms, forcing the user to type the same keywords/location/filters twice.
+- **Changes:**
+  - `src/ui_handlers.py` — `_render_search_jobs_tab` rewritten: renders **one** shared criteria form (`id="job-search-form"`) plus one submit button per registered source. Each enabled button posts the shared fields to its own `/search/{source_id}` via `formaction`; disabled sources show a greyed, non-clickable button. New helper `_render_shared_search_form(values, buttons_html)`. Added `render_select_options` to the `ui_utils` import.
+  - `tests/test_ui.py` — home-page assertion updated `id="reed-search-form"` → `id="job-search-form"`.
+- **Key facts:** Results still render one source at a time (whichever button was clicked) — `handle_source_search` and each source's `render_results` are unchanged, so selection / "Evaluate all" / Reed pagination keep working. Criteria persist across a search (form prefilled from `search_values`), so the other board's button can be clicked without re-typing. Pressing Enter defaults to Search Reed (first button / form `action`). The per-source `render_search_form` callables in `reed_source`/`adzuna_source` are now unused but left in place (still valid registry fields).
+
+### P5-1 — Adzuna source wiring (live end-to-end)
+- **Status:** ✅ COMPLETE — Adzuna is registered, enabled, and returning live jobs (verified against the real API with the user's keys). UI suite 55/55 green; full suite 374 passed (only the unrelated `test_multi_llm_chat.py` sandbox file-unlink failures remain).
+- **Motivation:** Reed was the only wired source. The registry/feature-flag scaffolding (GAP-C/P5-0) was in place but Adzuna had only a normaliser — no adapter connecting it to the generic UI.
+- **Changes:**
+  - `src/job_sources/adzuna_source.py` — **NEW** `JobSource` adapter mirroring `reed_source`: `_is_adzuna_available` (checks `ADZUNA_APP_ID`/`ADZUNA_APP_KEY` + `.env` load), `normalize_adzuna_search_params`, `search_adzuna_jobs_for_ui`, `adzuna_job_to_ui_result`, `adzuna_select_form_to_evaluate_values`, `_render_adzuna_search_form`, `render_adzuna_search_results`, `render_adzuna_select_form`, `_register()`. Deliberately **no source_snapshot** and **no detail-fetch** (snapshot is only required for `source_type=="reed"`; Adzuna has no per-job detail endpoint).
+  - `src/job_sources/adzuna_client.py` — **bug fix:** endpoint was `/1/data/gb/jobs` with `max_results` (not a valid Adzuna API) → corrected to documented `/v1/api/jobs/gb/search/1` with `results_per_page`. This was the actual blocker; it always returned 0 jobs before.
+  - `src/job_sources/normalize.py` — `normalize_adzuna` null-guards: `job.get("location") or {}`, `company or {}`, `(contract_time or "")`, `(contract_type or "unknown")`. Adzuna returns explicit nulls on some listings; previously a single null-field job crashed the whole result set.
+  - `src/ui_handlers.py` — `handle_batch_evaluate` now dispatches the select handler by the card's `source` field via `get_source(...)` instead of hardcoding the Reed handler (Reed behaviour unchanged; falls back to `reed` for source-less payloads).
+  - `src/ui_routes.py` — `from src.job_sources import adzuna_source as _adzuna_src` (import-time registration).
+  - `src/job_hunt_config.py` — `ENABLED_SOURCES = ["Reed", "Adzuna"]`.
+  - `src/ui_utils.py` — `format_salary_range` collapses `min == max` to a single `£X` (was `£X – £X`); shared by Reed + job detail too.
+  - `requirements-dev.txt` — declared `requests>=2,<3` (used by both clients, previously undeclared).
+  - `scripts/verify_adzuna.py` — **NEW** standalone live check (parses `.env` without python-dotenv) for verifying keys + endpoint on the user's machine.
+  - `tests/test_ui.py` — `/sources` assertion updated to `["Reed", "Adzuna"]`.
+  - `.env` — Adzuna keys added; duplicate placeholder `GOOGLE_API_KEY` line removed (kept the real `AIza…` key).
+- **Key facts:** Reviewed via design-council/Codex — it flagged a false-positive "501-char description" (limit is deliberately 501 for 500+ellipsis) and two real null-crash bugs (fixed). The sandbox is firewalled from `api.adzuna.com`, so live verification was done on the user's machine via `scripts/verify_adzuna.py` (5 BA jobs in London returned and normalised correctly). The app runs on **system python3** (per `restart.sh`), which must have `requests` installed — a clean machine would have failed Reed too.
 
 ### F1 v2 — ATS keyword-match "re-check against tailored CV"
 - **Status:** ✅ COMPLETE — built from `docs/tasks/F1_v2_recheck_design.md` (rev 3,

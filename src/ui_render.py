@@ -430,8 +430,12 @@ def render_input_form(values: dict[str, str]) -> str:
         return f'<label><span>{escape(label)}</span><input name="{escape(name)}" value="{value}" placeholder="{escape(placeholder)}"></label>'
 
     source_snapshot_hidden = f'<input type="hidden" name="source_snapshot_json" value="{escape(values.get("source_snapshot_json", ""))}">' if values.get("source_snapshot_json") else ""
+    # Daily Digest D2: carry the stable provider id so the manual flow persists it
+    # (dedup key on rebuild). Display-only source_ref/url are separate fields above.
+    source_job_id_hidden = f'<input type="hidden" name="source_job_id" value="{escape(values.get("source_job_id", ""))}">' if values.get("source_job_id") else ""
     return f"""
       {source_snapshot_hidden}
+      {source_job_id_hidden}
       <section class="panel subtle" id="prefill-panel">
         <h3>Quick prefill</h3>
         <div class="tab-row" role="tablist" aria-label="Prefill method tabs">
@@ -488,13 +492,14 @@ def render_history_table(history: list[dict[str, Any]]) -> str:
             f"<td><a href=\"/job?job_id={escape(item['job_id'])}\">{escape(item['job_id'])}</a></td>"
             f"<td>{escape(item['job_title'])}</td>"
             f"<td>{escape(item['company'])}</td>"
+            f"<td>{escape(item.get('evaluated_at') or '—')}</td>"
             f"<td>{escape(item['decision'])}</td>"
             f"<td>{item['match_score']:.1f}</td>"
             f"<td>{escape(item['confidence'])}</td>"
             f"<td>{escape(item['outcome_status'] or '—')}</td>"
             "</tr>"
         )
-    return "<table><thead><tr><th>Job id</th><th>Title</th><th>Company</th><th>Decision</th><th>Score</th><th>Confidence</th><th>Outcome</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    return "<table><thead><tr><th>Job id</th><th>Title</th><th>Company</th><th>Evaluated</th><th>Decision</th><th>Score</th><th>Confidence</th><th>Outcome</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
 
 
 @dataclass(frozen=True)
@@ -1131,6 +1136,12 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer;'
             f'border:1px solid var(--line);background:var(--surface);color:var(--ink);">'
             f'&#128196; Cover letter</button>'
+            f'<a href="/job/{job_id_esc}/evaluate-form" '
+            f'title="Reload this job into the Evaluate form and score it again against your current profile" '
+            f'style="display:inline-flex;align-items:center;gap:7px;padding:10px 15px;border-radius:var(--r-md);'
+            f'font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer;text-decoration:none;'
+            f'border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);">'
+            f'&#8635; Re-evaluate</a>'
             f'</div>'
             f'<div id="tailor-result" style="margin-top:12px;"></div>'
             f'</div>'
@@ -1296,10 +1307,16 @@ def render_job_page(vm: "JobPageViewModel") -> str:
 
     else:
         eff_decision = "skip"
+        _job_id_esc = escape(vm.job_id)
         verdict_card_html = (
             f'<div style="margin-top:22px;background:var(--surface);border:1px solid var(--line);'
             f'border-radius:var(--r-lg);padding:var(--pad);box-shadow:var(--shadow-sm);">'
-            f'<p style="color:var(--ink-faint);font-size:13.5px;"><em>Evaluation has not been run for this job yet.</em></p>'
+            f'<p style="color:var(--ink-faint);font-size:13.5px;margin:0 0 14px;">'
+            f'<em>This job has not been evaluated yet.</em></p>'
+            f'<a href="/job/{_job_id_esc}/evaluate-form" '
+            f'style="display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border-radius:var(--r-md);'
+            f'background:var(--accent);color:var(--surface-2);font-size:13px;font-weight:700;text-decoration:none;">'
+            f'Review &amp; evaluate this job →</a>'
             f'</div>'
         )
         reasons_grid_html = ""
@@ -1358,25 +1375,72 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         + (_tag(vm.employment_type) if vm.employment_type else "")
         + '</div>'
         '</div>'
-        '</div>'
+        + (
+            f'<a href="{escape(apply_url)}" target="_blank" rel="noreferrer" '
+            f'style="flex:0 0 auto;align-self:flex-start;display:inline-flex;align-items:center;gap:6px;'
+            f'background:var(--accent);color:var(--accent-contrast);padding:11px 20px;border-radius:var(--r-md);'
+            f'font-size:14px;font-weight:700;text-decoration:none;white-space:nowrap;box-shadow:var(--shadow-sm);">'
+            f'↗ Apply on original posting</a>'
+            if apply_url else
+            '<span style="flex:0 0 auto;align-self:flex-start;font-size:12.5px;color:var(--ink-faint);'
+            'background:var(--surface-sunk);border:1px solid var(--line);padding:8px 12px;border-radius:var(--r-md);">'
+            'No application link saved for this job</span>'
+        )
+        + '</div>'
     )
 
     # ── outcome tracking ──────────────────────────────────────────────────────
+    # Options are pre-filtered to valid state-machine transitions (allowed_next_statuses).
+    outcome_current = vm.outcome_status if vm.has_outcome else "not_applied"
     outcome_options = "".join(
-        f'<option value="{status}"{" selected" if vm.has_outcome and vm.outcome_status == status else ""}>{status}</option>'
+        f'<option value="{status}"{" selected" if outcome_current == status else ""}>{status}</option>'
         for status in vm.outcome_status_options
     )
+    _next_statuses = [s for s in vm.outcome_status_options if s != outcome_current]
+    if _next_statuses:
+        outcome_hint_html = (
+            f'<p style="font-size:12px;color:var(--ink-faint);margin:0 0 12px;">'
+            f'Allowed next: {escape(", ".join(_next_statuses))} '
+            f'(re-saving the current status just updates the notes)</p>'
+        )
+    else:
+        outcome_hint_html = (
+            f'<p style="font-size:12px;color:var(--ink-faint);margin:0 0 12px;">'
+            f'<strong>{escape(outcome_current)}</strong> is a final status — only notes can be updated.</p>'
+        )
+    # Inline feedback: surface outcome-related flash inside the card (the top
+    # banner is easy to miss when the card is below the fold).
+    _is_outcome_flash = bool(flash) and str(flash).lower().startswith("outcome")
+    if _is_outcome_flash and flash_kind == "error":
+        outcome_flash_html = (
+            f'<div style="margin:0 0 12px;padding:10px 14px;border-radius:var(--r-md);font-size:13px;font-weight:600;'
+            f'background:var(--skip-bg);color:var(--skip);border:1px solid var(--skip-line);">✕ {escape(flash)}</div>'
+        )
+    elif _is_outcome_flash:
+        outcome_flash_html = (
+            f'<div style="margin:0 0 12px;padding:10px 14px;border-radius:var(--r-md);font-size:13px;font-weight:600;'
+            f'background:var(--apply-bg);color:var(--apply);border:1px solid var(--apply-line);">✓ {escape(flash)}</div>'
+        )
+    else:
+        outcome_flash_html = ""
+    outcome_scroll_js = (
+        '<script>(function(){var c=document.getElementById("outcome-card");if(c)c.scrollIntoView({block:"center"});})();</script>'
+        if _is_outcome_flash else ""
+    )
     outcome_section_html = (
-        f'<div style="margin-top:16px;background:var(--surface);border:1px solid var(--line);'
+        f'<div id="outcome-card" style="margin-top:16px;background:var(--surface);border:1px solid var(--line);'
         f'border-radius:var(--r-lg);padding:var(--pad);box-shadow:var(--shadow-sm);">'
         f'{_section_label("Outcome tracking")}'
-        f'<p style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">'
-        f'Current: <strong>{escape(vm.outcome_status if vm.has_outcome else "not_applied")}</strong>'
+        f'{outcome_flash_html}'
+        f'<p style="font-size:13px;color:var(--ink-soft);margin-bottom:6px;">'
+        f'Current: <strong>{escape(outcome_current)}</strong>'
         f' &nbsp;·&nbsp; Updated: <strong>{escape(str(vm.outcome_updated_at) if vm.has_outcome else "Not tracked yet")}</strong>'
         f'</p>'
+        f'{outcome_hint_html}'
         f'<form method="post" action="/outcome">'
         f'<input type="hidden" name="job_id" value="{escape(vm.job_id)}">'
-        f'<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">'
+        + ('<input type="hidden" name="embed" value="1">' if embed else "")
+        + f'<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">'
         f'<label style="display:grid;gap:4px;font-size:13.5px;">'
         f'<span style="font-weight:600;">Status</span>'
         f'<select name="status" style="font:inherit;padding:9px 12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);color:var(--ink);">{outcome_options}</select>'
@@ -1390,6 +1454,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         f'</div>'
         f'</form>'
         f'</div>'
+        f'{outcome_scroll_js}'
     )
 
     # ── job fields detail (collapsible) ───────────────────────────────────────
@@ -1535,6 +1600,17 @@ class ProfilePageViewModel:
     achievements: list[str]
     master_cv_ref: str | None
     master_cv_text: str | None
+    # Daily Digest (D3) settings
+    digest_enabled: bool = True
+    digest_threshold: int = 70
+    digest_run_time: str = "07:00"
+    digest_max_per_source: int = 50
+    digest_llm_enabled: bool = True
+    digest_max_llm_per_run: int = 10
+    digest_llm_rpm: int = 4
+    digest_llm_rpd: int = 200
+    digest_llm_batch_size: int = 4
+    digest_llm_batch_interval_min: int = 15
 
 
 def render_profile_page(
@@ -1547,8 +1623,34 @@ def render_profile_page(
     form_values: dict[str, str] | None,
     flash: str | None = None,
     model_label: str = "",
+    enabled_sources: list[str] | None = None,
 ) -> str:
     """Render the My Profile tab page."""
+    # Saved Searches (Daily Job Digest — D1). Source options come from the
+    # handler (which owns the source registry); the render layer stays domain-free.
+    _ss_source_options = "".join(
+        f'<option value="{escape(s.lower())}">{escape(s)}</option>'
+        for s in (enabled_sources or [])
+    )
+    saved_searches_section = (
+        '<section class="panel" id="saved-searches-panel">'
+        + '<h2>Saved Searches</h2>'
+        + '<p>Reusable searches the daily digest will run on a schedule (auto-run lands in a later phase). '
+        + 'Save, enable/disable, or delete them here.</p>'
+        + '<div class="grid two-col">'
+        + '<label><span>Name</span><input id="ss-name" placeholder="e.g. BA roles, London"></label>'
+        + '<label><span>Source</span><select id="ss-source">' + _ss_source_options + '</select></label>'
+        + '<label><span>Keywords</span><input id="ss-keywords" placeholder="e.g. business analyst"></label>'
+        + '<label><span>Location</span><input id="ss-location" placeholder="e.g. London"></label>'
+        + '<label><span>Min salary (GBP)</span><input id="ss-minsalary" type="number" min="0"></label>'
+        + '</div>'
+        + '<div style="margin-top:10px;">'
+        + '<button type="button" id="ss-add-btn">+ Save search</button>'
+        + '<span id="ss-status" style="margin-left:12px;color:#475569;font-size:0.85rem;"></span>'
+        + '</div>'
+        + '<div id="saved-searches-list" style="margin-top:14px;">Loading…</div>'
+        + '</section>'
+    )
 
     # Summary
     if vm.has_profile:
@@ -1759,12 +1861,36 @@ def render_profile_page(
         + '<label><span>Master CV text</span><textarea name="master_cv_text" rows="8" placeholder="Extracted CV text will appear here after upload, or paste manually...">'
         + cv_text
         + '</textarea></label>'
+        # --- Daily Digest settings (D3) — saved with the profile ---
+        + '<fieldset style="margin-top:18px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;">'
+        + '<legend style="font-weight:600;padding:0 6px;">Daily Digest</legend>'
+        + '<div class="grid two-col">'
+        + '<label><span>Enabled</span><select name="digest_enabled">'
+        + ('<option value="true"' + (' selected' if vm.digest_enabled else '') + '>Yes</option>')
+        + ('<option value="false"' + ('' if vm.digest_enabled else ' selected') + '>No</option>')
+        + '</select></label>'
+        + '<label><span>Show jobs scoring ≥ (0–100)</span><input name="digest_threshold" type="number" min="0" max="100" value="' + escape(str(vm.digest_threshold)) + '"></label>'
+        + '<label><span>Run time (HH:MM, local)</span><input name="digest_run_time" value="' + escape(vm.digest_run_time) + '" placeholder="07:00"></label>'
+        + '<label><span>Max jobs per saved search (1–200)</span><input name="digest_max_per_source" type="number" min="1" max="200" value="' + escape(str(vm.digest_max_per_source)) + '"></label>'
+        + '<label><span>AI analysis on top matches</span><select name="digest_llm_enabled">'
+        + ('<option value="true"' + (' selected' if vm.digest_llm_enabled else '') + '>Yes</option>')
+        + ('<option value="false"' + ('' if vm.digest_llm_enabled else ' selected') + '>No</option>')
+        + '</select></label>'
+        + '<label><span>Max AI calls queued per run (0–100)</span><input name="digest_max_llm_per_run" type="number" min="0" max="100" value="' + escape(str(vm.digest_max_llm_per_run)) + '"></label>'
+        + '<label><span>AI calls/min (1–60)</span><input name="digest_llm_rpm" type="number" min="1" max="60" value="' + escape(str(vm.digest_llm_rpm)) + '"></label>'
+        + '<label><span>AI calls/day (1–1000)</span><input name="digest_llm_rpd" type="number" min="1" max="1000" value="' + escape(str(vm.digest_llm_rpd)) + '"></label>'
+        + '<label><span>AI batch size (1–50)</span><input name="digest_llm_batch_size" type="number" min="1" max="50" value="' + escape(str(vm.digest_llm_batch_size)) + '"></label>'
+        + '<label><span>AI batch interval min (1–1440)</span><input name="digest_llm_batch_interval_min" type="number" min="1" max="1440" value="' + escape(str(vm.digest_llm_batch_interval_min)) + '"></label>'
+        + '</div>'
+        + '<p style="font-size:0.8rem;color:var(--ink-faint);margin-top:6px;">AI rate limits apply to the paced LLM worker (Daily Digest D6). Keep calls/min under your Gemini model\'s RPM and calls/day under the free-tier cap.</p>'
+        + '</fieldset>'
         + '<div style="margin-top:16px;">'
         + '<button type="submit" id="profile-save-btn">Save Profile</button>'
         + '<span id="profile-save-status" style="margin-left:16px;"></span>'
         + '</div>'
         + '</form>'
         + '</section>'
+        + saved_searches_section
         + '</div>'
         + '<script>'
         + '(function () {'
@@ -1900,9 +2026,257 @@ def render_profile_page(
         + '  }'
         + '})();'
         + '</script>'
+        + '<script>'
+        + '(function () {'
+        + '  var listEl = document.getElementById("saved-searches-list");'
+        + '  var statusEl = document.getElementById("ss-status");'
+        + '  var addBtn = document.getElementById("ss-add-btn");'
+        + '  if (!listEl) return;'
+        + '  function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }'
+        + '  function setStatus(msg, isErr) { if (statusEl) { statusEl.textContent = msg || ""; statusEl.style.color = isErr ? "#b91c1c" : "#475569"; } }'
+        + '  function paramsSummary(p) {'
+        + '    p = p || {}; var bits = [];'
+        + '    if (p.keywords) bits.push(esc(p.keywords));'
+        + '    if (p.locationName) bits.push(esc(p.locationName));'
+        + '    if (p.minimumSalary) bits.push("\\u00a3" + esc(p.minimumSalary) + "+");'
+        + '    return bits.join(" \\u00b7 ");'
+        + '  }'
+        + '  function render(searches) {'
+        + '    if (!searches.length) { listEl.innerHTML = "<p style=\'color:#64748b;\'><em>No saved searches yet.</em></p>"; return; }'
+        + '    var html = searches.map(function(s) {'
+        + '      var badge = s.enabled'
+        + '        ? "<span style=\'color:#16a34a;font-weight:600;\'>\\u25cf Enabled</span>"'
+        + '        : "<span style=\'color:#94a3b8;font-weight:600;\'>\\u25cb Disabled</span>";'
+        + '      var lastRun = s.last_run_at ? (" \\u00b7 last run " + esc(s.last_run_at) + " (" + s.last_run_count + ")") : "";'
+        + '      return "<div class=\'panel\' style=\'padding:10px 14px;margin-bottom:8px;\' data-id=\'" + esc(s.search_id) + "\'>"'
+        + '        + "<div style=\'display:flex;justify-content:space-between;align-items:center;gap:8px;\'>"'
+        + '        + "<div><strong>" + esc(s.name) + "</strong> &nbsp;<small style=\'color:#64748b;\'>" + esc(s.source_id) + "</small><br>"'
+        + '        + "<small style=\'color:#475569;\'>" + paramsSummary(s.params) + lastRun + "</small></div>"'
+        + '        + "<div style=\'white-space:nowrap;\'>" + badge'
+        + '        + " <button type=\'button\' class=\'ss-run\' style=\'font-size:0.8rem;padding:3px 8px;\'>Run now</button>"'
+        + '        + " <button type=\'button\' class=\'ss-toggle\' style=\'font-size:0.8rem;padding:3px 8px;\'>" + (s.enabled ? "Disable" : "Enable") + "</button>"'
+        + '        + " <button type=\'button\' class=\'ss-delete\' style=\'font-size:0.8rem;padding:3px 8px;color:#b91c1c;\'>Delete</button>"'
+        + '        + "</div></div></div>";'
+        + '    }).join("");'
+        + '    listEl.innerHTML = html;'
+        + '    listEl.querySelectorAll(".ss-run").forEach(function(b) {'
+        + '      b.addEventListener("click", function() { runNow(b.closest("[data-id]").getAttribute("data-id"), b); });'
+        + '    });'
+        + '    listEl.querySelectorAll(".ss-toggle").forEach(function(b) {'
+        + '      b.addEventListener("click", function() { mutate(b.closest("[data-id]").getAttribute("data-id"), "toggle"); });'
+        + '    });'
+        + '    listEl.querySelectorAll(".ss-delete").forEach(function(b) {'
+        + '      b.addEventListener("click", function() { if (confirm("Delete this saved search?")) mutate(b.closest("[data-id]").getAttribute("data-id"), "delete"); });'
+        + '    });'
+        + '  }'
+        + '  async function runNow(id, btn) {'
+        + '    setStatus("Running… (this may take a few seconds)");'
+        + '    if (btn) btn.disabled = true;'
+        + '    try {'
+        + '      var r = await fetch("/saved-searches/" + encodeURIComponent(id) + "/run-now", { method: "POST" });'
+        + '      var d = await r.json().catch(function(){return {};});'
+        + '      if (!r.ok || !d.ok) { setStatus(d.error || "Run failed", true); return; }'
+        + '      setStatus("Run done \\u2014 " + d.jobs_new + " new, " + d.jobs_llm_queued + " queued for AI, " + d.jobs_skipped + " skipped, " + d.jobs_already_seen + " already seen.");'
+        + '      await load();'
+        + '    } catch (e) { setStatus("Run failed", true); }'
+        + '    finally { if (btn) btn.disabled = false; }'
+        + '  }'
+        + '  async function load() {'
+        + '    try { var r = await fetch("/saved-searches"); var d = await r.json(); render(d.searches || []); }'
+        + '    catch (e) { listEl.innerHTML = "<p style=\'color:#b91c1c;\'>Could not load saved searches.</p>"; }'
+        + '  }'
+        + '  async function mutate(id, action) {'
+        + '    try {'
+        + '      var r = await fetch("/saved-searches/" + encodeURIComponent(id) + "/" + action, { method: "POST" });'
+        + '      if (!r.ok) { var e = await r.json().catch(function(){return {};}); setStatus(e.error || (action + " failed"), true); return; }'
+        + '      await load();'
+        + '    } catch (e) { setStatus(action + " failed", true); }'
+        + '  }'
+        + '  addBtn && addBtn.addEventListener("click", async function() {'
+        + '    var name = (document.getElementById("ss-name").value || "").trim();'
+        + '    var source = document.getElementById("ss-source").value;'
+        + '    var params = {};'
+        + '    var kw = (document.getElementById("ss-keywords").value || "").trim();'
+        + '    var loc = (document.getElementById("ss-location").value || "").trim();'
+        + '    var sal = (document.getElementById("ss-minsalary").value || "").trim();'
+        + '    if (kw) params.keywords = kw;'
+        + '    if (loc) params.locationName = loc;'
+        + '    if (sal) params.minimumSalary = sal;'
+        + '    if (!name) { setStatus("Name is required.", true); return; }'
+        + '    if (!source) { setStatus("Pick a source.", true); return; }'
+        + '    setStatus("Saving…");'
+        + '    try {'
+        + '      var r = await fetch("/saved-searches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name, source_id: source, params: params }) });'
+        + '      var d = await r.json().catch(function(){return {};});'
+        + '      if (!r.ok || !d.ok) { setStatus(d.error || "Save failed", true); return; }'
+        + '      document.getElementById("ss-name").value = "";'
+        + '      document.getElementById("ss-keywords").value = "";'
+        + '      document.getElementById("ss-location").value = "";'
+        + '      document.getElementById("ss-minsalary").value = "";'
+        + '      setStatus("Saved.");'
+        + '      await load();'
+        + '    } catch (e) { setStatus("Save failed", true); }'
+        + '  });'
+        + '  load();'
+        + '})();'
+        + '</script>'
         + '</div></main></div>'
     )
     return render_page(f"My Profile — {escape(profile_id)}", body, model_label=model_label)
+
+
+def render_digest_page(
+    *,
+    entries: list,
+    filters: dict,
+    sources: list[str],
+    saved_searches: list[tuple[str, str]],
+    model_label: str = "",
+) -> str:
+    """Render the Daily Digest feed. PURE: every external job field (title, company,
+    location) is HTML-escaped; [View] links only to the internal /job/{id} (the
+    external apply URL is intentionally NOT rendered here — the job-detail page
+    shows it with an http(s) guard, so no javascript:/data: vector reaches the feed.
+    """
+    _llm_label = {"pending": "AI: pending", "processing": "AI: running",
+                  "done": "AI: done", "failed": "AI: failed", "skipped": "AI: skipped"}
+
+    def _sel(value: str, current: str) -> str:
+        return " selected" if value == current else ""
+
+    f_date = str(filters.get("date") or "")
+    f_source = str(filters.get("source") or "")
+    f_search = str(filters.get("saved_search_id") or "")
+    f_seen = str(filters.get("seen") or "all")
+
+    source_opts = '<option value="">All sources</option>' + "".join(
+        f'<option value="{escape(s.lower())}"{_sel(s.lower(), f_source)}>{escape(s)}</option>'
+        for s in sources
+    )
+    search_opts = '<option value="">All saved searches</option>' + "".join(
+        f'<option value="{escape(sid)}"{_sel(sid, f_search)}>{escape(name)}</option>'
+        for sid, name in saved_searches
+    )
+    seen_opts = "".join(
+        f'<option value="{v}"{_sel(v, f_seen)}>{label}</option>'
+        for v, label in (("all", "All"), ("unseen", "Unseen only"), ("seen", "Seen only"))
+    )
+
+    filter_bar = (
+        '<form method="get" action="/digest" class="grid" style="grid-template-columns:repeat(4,1fr);gap:10px;align-items:end;margin-bottom:14px;">'
+        + '<label><span>Date</span><input type="date" name="date" value="' + escape(f_date) + '"></label>'
+        + '<label><span>Source</span><select name="source">' + source_opts + '</select></label>'
+        + '<label><span>Saved search</span><select name="saved_search_id">' + search_opts + '</select></label>'
+        + '<label><span>Status</span><select name="seen">' + seen_opts + '</select></label>'
+        + '<div style="grid-column:1/-1;"><button type="submit">Apply filters</button> '
+        + '<a href="/digest" style="margin-left:8px;">Reset</a></div>'
+        + '</form>'
+    )
+
+    unseen_n = sum(1 for e in entries if not e.seen)
+    has_filter = bool(f_date or f_source or f_search or (f_seen != "all"))
+
+    if not entries:
+        empty = (
+            '<p style="color:#64748b;"><em>No jobs match these filters.</em> '
+            '<a href="/digest">Clear filters</a>.</p>' if has_filter
+            else '<p style="color:#64748b;"><em>No digest jobs yet.</em> Save a search in '
+                 '<a href="/profile">My Profile</a> and click <strong>Run now</strong>.</p>'
+        )
+        cards_html = empty
+    else:
+        rows = []
+        for e in entries:
+            dot = "#16a34a" if not e.seen else "#cbd5e1"
+            bits = [escape(e.company or "")]
+            if e.location:
+                bits.append(escape(e.location))
+            if e.salary_display:
+                bits.append(escape(e.salary_display))
+            meta = " · ".join(b for b in bits if b)
+            sub_bits = []
+            if e.saved_search_id:
+                sub_bits.append(escape(e.saved_search_id))
+            sub_bits.append(escape(e.source_id or ""))
+            sub_bits.append(escape(e.digest_date or ""))
+            llm = e.llm_status
+            llm_badge = (
+                f'<span style="font-size:0.72rem;color:#6366f1;margin-left:6px;">{escape(_llm_label.get(llm, ""))}</span>'
+                if llm in _llm_label else ""
+            )
+            rows.append(
+                '<div class="panel digest-card" data-id="' + escape(e.job_id) + '" '
+                'style="padding:10px 14px;margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;align-items:center;">'
+                + '<div>'
+                + f'<span style="color:{dot};font-weight:700;">●</span> '
+                + f'<strong>{escape(str(e.match_score))}</strong> '
+                + f'<span style="color:#475569;">{escape(e.decision or "")}</span> &nbsp;'
+                + f'<a href="/job/{escape(e.job_id)}" class="digest-open">{escape(e.title or "(untitled)")}</a>'
+                + llm_badge
+                + f'<br><small style="color:#64748b;">{" · ".join(sub_bits)}</small>'
+                + '</div>'
+                + f'<div><a href="/job/{escape(e.job_id)}" class="digest-open">View</a></div>'
+                + '</div>'
+            )
+        cards_html = "".join(rows)
+
+    # Preserve current filters in the mark-all-seen POST body.
+    filt_json = json.dumps({
+        "date": f_date or None, "source": f_source or None,
+        "saved_search_id": f_search or None,
+    })
+
+    body = (
+        '<div class="app-shell">'
+        + _render_sidebar("digest")
+        + '<main class="main-content"><div class="content-inner">'
+        + '<section class="panel">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+        + '<h1 style="margin:0;">Daily Digest</h1>'
+        + '<div style="display:flex;gap:8px;align-items:center;">'
+        + '<button type="button" id="reeval-btn" title="Re-score every digest job against your current profile and threshold">Re-evaluate all</button>'
+        + '<button type="button" id="mark-all-seen-btn">Mark all seen</button>'
+        + '</div>'
+        + '</div>'
+        + '<p id="reeval-status" style="color:#6366f1;margin:6px 0 0;display:none;"></p>'
+        + f'<p style="color:#475569;">{len(entries)} shown · {unseen_n} unseen</p>'
+        + filter_bar
+        + '<div id="digest-list">' + cards_html + '</div>'
+        + '</section>'
+        + '</div></main></div>'
+        + '<script>'
+        + '(function(){'
+        + '  var FILT = ' + filt_json + ';'
+        + '  async function markSeen(body){ try{ var r= await fetch("/digest/mark-seen",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); return r.ok; }catch(e){ return false; } }'
+        + '  var allBtn=document.getElementById("mark-all-seen-btn");'
+        + '  allBtn && allBtn.addEventListener("click", async function(){ allBtn.disabled=true; var ok=await markSeen(Object.assign({all:true},FILT)); if(ok){ location.reload(); } else { allBtn.disabled=false; alert("Could not mark all seen."); } });'
+        + '  var reBtn=document.getElementById("reeval-btn");'
+        + '  var reStatus=document.getElementById("reeval-status");'
+        + '  reBtn && reBtn.addEventListener("click", async function(){'
+        + '    if(!confirm("Re-score every digest job against your current profile and threshold? Jobs that now qualify will reappear as unread and may be queued for AI.")) return;'
+        + '    reBtn.disabled=true; reStatus.style.display="block"; reStatus.textContent="Re-evaluating…";'
+        + '    try{'
+        + '      var r=await fetch("/digest/reevaluate",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});'
+        + '      var d=await r.json();'
+        + '      if(r.ok && d && d.ok!==false){'
+        + '        reStatus.textContent="Re-scored "+d.jobs_rescored+" · "+d.jobs_resurfaced+" resurfaced · "+d.jobs_llm_requeued+" queued for AI"+(d.jobs_dequeued?(" · "+d.jobs_dequeued+" de-queued"):"")+(d.jobs_errored?(" · "+d.jobs_errored+" errors"):"");'
+        + '        setTimeout(function(){ location.reload(); }, 1200);'
+        + '      } else { reBtn.disabled=false; reStatus.textContent="Re-evaluate failed: "+((d&&d.error)||"unknown error"); }'
+        + '    }catch(e){ reBtn.disabled=false; reStatus.textContent="Re-evaluate failed: "+e; }'
+        + '  });'
+        + '  document.querySelectorAll(".digest-open").forEach(function(a){'
+        + '    a.addEventListener("click", async function(ev){'
+        + '      if(ev.metaKey||ev.ctrlKey||ev.shiftKey||ev.button!==0) return;'
+        + '      ev.preventDefault();'
+        + '      var card=a.closest("[data-id]"); var id=card?card.getAttribute("data-id"):null;'
+        + '      if(id){ await markSeen({job_ids:[id]}); }'
+        + '      window.location.href=a.getAttribute("href");'
+        + '    });'
+        + '  });'
+        + '})();'
+        + '</script>'
+    )
+    return render_page("Daily Digest", body, model_label=model_label)
 
 
 def _render_sidebar(active_tab: str = "") -> str:
@@ -1926,6 +2300,8 @@ def _render_sidebar(active_tab: str = "") -> str:
         "board":    '<rect x="3" y="3" width="7" height="9" rx="1.5"/>'
                     '<rect x="14" y="3" width="7" height="5" rx="1.5"/>'
                     '<rect x="14" y="12" width="7" height="9" rx="1.5"/>',
+        "digest":   '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>'
+                    '<path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
     }
     nav_items = [
         ("search",   "Find Jobs",   "/?tab=search",   "search"),
@@ -1933,16 +2309,28 @@ def _render_sidebar(active_tab: str = "") -> str:
         ("add_job",  "Add Job",     "/?tab=add_job",  "add"),
         ("history",  "History",     "/?tab=history",  "history"),
         ("board",    "Board View",  "/board/view",    "board"),
+        ("digest",   "Digest",      "/digest",        "digest"),
         ("profile",  "My Profile",  "/profile",       "profile"),
     ]
     items_html = ""
     for key, label, href, icon_name in nav_items:
         is_active = active_tab == key
+        badge = ('<span id="digest-badge" style="display:none;margin-left:auto;background:#16a34a;'
+                 'color:#fff;border-radius:999px;font-size:0.7rem;padding:1px 7px;"></span>'
+                 if key == "digest" else "")
         items_html += (
             f'<a href="{href}" class="nav-item{"  nav-active" if is_active else ""}">'
             f'<span class="nav-icon">{_svg(icons[icon_name])}</span>'
-            f'{escape(label)}</a>\n'
+            f'{escape(label)}{badge}</a>\n'
         )
+    # Sidebar badge: fetch the unseen digest count on every page (D4).
+    badge_script = (
+        '<script>(function(){fetch("/digest/count").then(function(r){return r.json();})'
+        '.then(function(d){var b=document.getElementById("digest-badge");'
+        'if(b&&d&&d.unseen>0){b.textContent=d.unseen;b.style.display="inline-block";}})'
+        '.catch(function(){});})();</script>'
+    )
+    items_html += badge_script
     logo_svg = _svg(icons["evaluate"], sw="1.9")
     lock_svg = (
         f'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" '

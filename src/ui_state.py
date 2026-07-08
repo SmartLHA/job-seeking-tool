@@ -17,14 +17,15 @@ from pathlib import Path
 # the job-detail page footer.
 _PAGE_UPDATED: dict[str, str] = {
     # sidebar tab keys  → bump when modifying that tab's render code
-    "search":   "2026-06-18 16:00 UTC",   # Find Jobs tab  (render_reed_search_results)
-    "evaluate": "2026-06-18 01:00 UTC",   # Evaluate form tab
-    "add_job":  "2026-06-18 01:00 UTC",   # Add Job tab
+    "search":   "2026-07-02 15:05 UTC",   # Find Jobs tab — Exclude keywords filter; un-evaluable cards (no description/snapshot) disabled with a note across Reed/Adzuna/LinkedIn (shared select_shell)
+    "evaluate": "2026-07-02 14:38 UTC",   # Evaluate form tab — Evaluated jobs list now shows Evaluated date/time
+    "add_job":  "2026-06-24 12:30 UTC",   # Add Job tab — D2 source_job_id hidden field
     "history":  "2026-06-18 01:00 UTC",   # History tab
     "board":    "2026-06-18 01:00 UTC",   # Board View page
-    "profile":  "2026-06-18 01:00 UTC",   # My Profile page
+    "profile":  "2026-06-24 14:00 UTC",   # My Profile page — D1 Saved Searches + D3 Digest settings/Run-now
+    "digest":   "2026-06-25 23:03 UTC",   # Digest page — OQ-2 Re-evaluate all button
     # standalone pages (no sidebar)
-    "job":      "2026-06-22 18:00 UTC",   # Job detail page (render_job_page) — F1 v2 ATS keyword re-check panel
+    "job":      "2026-07-07 13:26 UTC",   # Job detail page — Outcome card: filtered status dropdown, allowed-next hint, inline feedback, embed kept on POST /outcome
 }
 
 

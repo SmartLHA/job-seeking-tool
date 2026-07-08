@@ -260,7 +260,7 @@ def test_get_home_page_defaults_to_search_jobs_shell(tmp_path: Path) -> None:
     assert status == 200
     assert "Search Jobs" in body
     assert "Search across connected job boards" in body
-    assert 'id="reed-search-form"' in body
+    assert 'id="job-search-form"' in body
     assert 'name="keywords"' in body
     assert 'name="locationName"' in body
     assert 'name="minimumSalary"' in body
@@ -772,7 +772,7 @@ def test_get_sources_returns_enabled_list(tmp_path: Path) -> None:
         status, body = _http_get(f"{base_url}/sources")
 
     assert status == 200
-    assert json.loads(body) == {"enabled": ["Reed"]}
+    assert json.loads(body) == {"enabled": ["Reed", "Adzuna", "LinkedIn"]}
 
 
 def test_post_outcome_invalid_transition_shows_error_feedback(tmp_path: Path) -> None:
@@ -1296,6 +1296,104 @@ def test_get_search_reed_more_returns_offset_page(tmp_path: Path, monkeypatch) -
     assert "resultsSkip=20" in data["next_url"]
 
 
+def test_get_search_adzuna_more_returns_offset_page(tmp_path: Path, monkeypatch) -> None:
+    # The generic /search/{source}/more endpoint pages Adzuna too: ids are offset
+    # by resultsSkip and next_url advances the camelCase resultsSkip cursor.
+    captured = {}
+
+    def fake_fetch_adzuna_jobs(keyword, location, max_results=50, *, skip=0):
+        captured["skip"] = skip  # offset -> Adzuna page conversion happens inside
+        return [
+            {
+                "id": f"a{i}",
+                "title": f"Analyst {i}",
+                "company": {"display_name": "Acme"},
+                "location": {"display_name": "London"},
+                "description": "Work",
+                "redirect_url": f"https://adzuna.example/jobs/{i}",
+                "created": "2026-06-01T00:00:00Z",
+                "contract_type": "permanent",
+            }
+            for i in range(max_results)
+        ]
+
+    monkeypatch.setattr(
+        "src.job_sources.adzuna_source.fetch_adzuna_jobs", fake_fetch_adzuna_jobs
+    )
+    query = urllib.parse.urlencode(
+        {"keywords": "analyst", "locationName": "London", "resultsToTake": "10", "resultsSkip": "10"}
+    )
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        status, body = _http_get(f"{base_url}/search/adzuna/more?{query}")
+
+    assert status == 200
+    data = json.loads(body)
+    assert data["ok"] is True
+    assert data["count"] == 10
+    assert data["has_more"] is True
+    assert captured["skip"] == 10          # resultsSkip threaded to the client
+    assert 'id="jrc-10"' in data["cards_html"]   # cards offset, no collision with page 1
+    assert "resultsSkip=20" in data["next_url"]
+
+
+def test_get_search_linkedin_more_returns_offset_page(tmp_path: Path, monkeypatch) -> None:
+    # LinkedIn pages by `start` offset and uses snake_case params; the same generic
+    # endpoint must offset card ids and advance the results_skip cursor.
+    captured = {}
+
+    def fake_fetch_search(keywords, location, work_mode, start=0):
+        captured["start"] = start
+        return [
+            {
+                "source": "linkedin",
+                "source_job_id": f"{i}",
+                "title": f"Engineer {i}",
+                "company": "Acme",
+                "location": "London",
+                "salary_display": "",
+                "salary_min_gbp": None,
+                "salary_max_gbp": None,
+                "employment_type": "",
+                "work_mode": "Remote",
+                "url": f"https://www.linkedin.com/jobs/view/{i}/",
+                "description_preview": "Build things",
+                "description_raw": "",
+                "filter_notes": "LinkedIn does not provide salary. Results may vary.",
+            }
+            for i in range(25)
+        ]
+
+    monkeypatch.setattr("src.job_sources.linkedin_source._fetch_search", fake_fetch_search)
+    # Force a cache miss / no disk writes so the test is deterministic.
+    monkeypatch.setattr("src.job_sources.linkedin_source._cache_get", lambda key: None)
+    monkeypatch.setattr("src.job_sources.linkedin_source._cache_set", lambda key, results: None)
+    query = urllib.parse.urlencode(
+        {"keywords": "engineer", "location": "London", "results_to_take": "10", "results_skip": "10"}
+    )
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        status, body = _http_get(f"{base_url}/search/linkedin/more?{query}")
+
+    assert status == 200
+    data = json.loads(body)
+    assert data["ok"] is True
+    assert data["count"] == 10
+    assert data["has_more"] is True
+    assert captured["start"] == 10          # results_skip threaded to the scraper offset
+    assert 'id="li-rc-10"' in data["cards_html"]
+    assert "results_skip=20" in data["next_url"]
+
+
+def test_get_search_unknown_source_more_reports_no_pagination(tmp_path: Path) -> None:
+    # A source with no render_cards_fragment (or an unknown id) returns a clean
+    # JSON error rather than a 500.
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        status, body = _http_get(f"{base_url}/search/nope/more?keywords=x")
+    assert status == 200
+    data = json.loads(body)
+    assert data["ok"] is False
+    assert "pagination" in data["error"].lower()
+
+
 def test_post_parse_cv_missing_boundary_returns_clean_error(tmp_path: Path) -> None:
     # MT-4/MT-6: a multipart Content-Type with no boundary= must yield a clear 400,
     # not an unhandled "not enough values to unpack" crash.
@@ -1433,3 +1531,37 @@ def test_job_page_links_saved_source_url(tmp_path: Path) -> None:
     assert status == 200
     assert 'href="https://example.test/jobs/1"' in body
     assert "View original posting / Apply" in body
+
+
+def test_job_page_apply_link_prefers_url_over_bare_id_source_ref(tmp_path: Path) -> None:
+    # The real bug: a Reed-style job whose source_ref is a bare id but whose
+    # canonical advert link is stored in JobPosting.url must still render an
+    # apply link, sourced from url (not the unusable bare-id source_ref).
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        _http_post(f"{base_url}/evaluate", {
+            "job_id": "apply-link-2", "job_title": "Senior BA", "company": "Acme",
+            "description_raw": "Lead requirements and SQL.",
+            "source_type": "manual", "input_method": "manual", "source_ref": "40227781",
+            "job_url": "https://www.reed.co.uk/jobs/senior-ba/40227781",
+            "location": "London",
+        })
+        status, body = _http_get(f"{base_url}/job/apply-link-2")
+    assert status == 200
+    assert 'href="https://www.reed.co.uk/jobs/senior-ba/40227781"' in body
+    assert "View original posting / Apply" in body
+    # The bare id must not be used as the apply href.
+    assert 'href="40227781"' not in body
+
+
+def test_job_page_no_apply_link_when_only_bare_id_present(tmp_path: Path) -> None:
+    # No usable URL anywhere (bare id only) → no apply anchor, graceful fallback.
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        _http_post(f"{base_url}/evaluate", {
+            "job_id": "apply-link-3", "job_title": "Senior BA", "company": "Acme",
+            "description_raw": "Lead requirements and SQL.",
+            "source_type": "manual", "input_method": "manual", "source_ref": "40227781",
+            "location": "London",
+        })
+        status, body = _http_get(f"{base_url}/job/apply-link-3")
+    assert status == 200
+    assert "View original posting / Apply" not in body

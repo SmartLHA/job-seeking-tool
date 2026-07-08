@@ -25,7 +25,14 @@ _FALLBACK_MODEL = "gemini-2.5-flash-lite"   # fallback (skill extraction, 404 on
 _ANALYSIS_MODEL           = "gemini-3-flash-preview"  # job analysis primary — supports thinking
 _ANALYSIS_FALLBACK_1      = "gemini-2.5-flash"        # first fallback — also supports thinking
 _ANALYSIS_FALLBACK_2      = "gemini-3.1-flash-lite"   # second fallback — no thinking
-_ANALYSIS_THINKING_BUDGET = 8000                      # tokens; 0 = off, 8000 = high reasoning
+# Thinking budget cut from 8000 → 2048: on the Gemini-3 preview models a large
+# budget drives latency past the timeout. max_output_tokens MUST be set on Gemini 3
+# (it's a COMBINED thinking+output cap) or the call can hang indefinitely — so every
+# request now passes one. See ai.google.dev/gemini-api/docs/gemini-3.
+_ANALYSIS_THINKING_BUDGET = 2048                      # tokens; 0 = off
+_ANALYSIS_OUTPUT_TOKENS   = 2048                      # headroom for the JSON answer
+_ANALYSIS_MAX_TOKENS      = _ANALYSIS_THINKING_BUDGET + _ANALYSIS_OUTPUT_TOKENS  # combined cap
+_SKILL_MAX_TOKENS         = 1024                      # skill-extraction answer is small
 _GEMINI_BASE    = "https://generativelanguage.googleapis.com/v1beta/models"
 _TIMEOUT_SECONDS        = 30
 _ANALYSIS_TIMEOUT       = 60   # thinking calls take longer
@@ -42,23 +49,37 @@ def _model() -> str:
     return os.getenv("GEMINI_MODEL", _DEFAULT_MODEL)
 
 
+class RateLimited(Exception):
+    """Raised by the worker-facing path when the ENTIRE model chain failed with
+    HTTP 429 (rate limit). Used by the D6 LLM worker to back off + requeue, as
+    distinct from a 404/503/bad-output failure which should fail fast."""
+
+
 def _call_gemini_model(
     prompt: str,
     model: str,
     key: str,
     thinking_budget: int | None = None,
     timeout: int = _TIMEOUT_SECONDS,
-) -> tuple[str | None, str | None, bool]:
+    max_output_tokens: int | None = None,
+) -> tuple[str | None, str | None, bool, str | None]:
     """Call one specific Gemini model.
 
-    Returns (text, error, should_try_fallback).
-    should_try_fallback is True only when the error is a 404 (model not found).
-    thinking_budget: None = no thinking config; 0 = thinking off; >0 = thinking on with budget.
+    Returns (text, error, should_try_fallback, reason).
+    ``reason`` classifies the failure so the chain can tell 429 from 404/503/timeout
+    (C7): one of None (success), "rate_limited", "not_found", "server_error",
+    "timeout", "fatal". ``should_try_fallback`` is True for 404/429/503 AND timeout
+    (a slow model should fall through to a faster/no-thinking one).
+    ``max_output_tokens`` caps the COMBINED thinking+output budget — required on
+    Gemini 3 or the request can hang indefinitely.
+    thinking_budget: None = no thinking config; 0 = thinking off; >0 = thinking on.
     """
     url = f"{_GEMINI_BASE}/{model}:generateContent"
     gen_config: dict = {"temperature": 0.1}
     if thinking_budget is not None:
         gen_config["thinkingConfig"] = {"thinkingBudget": thinking_budget}
+    if max_output_tokens is not None:
+        gen_config["maxOutputTokens"] = max_output_tokens
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": gen_config,
@@ -67,23 +88,21 @@ def _call_gemini_model(
     try:
         resp = requests.post(url, params={"key": key}, json=payload, timeout=timeout)
     except requests.exceptions.ConnectionError:
-        return None, "Cannot reach Gemini API — check your internet connection", False
+        return None, "Cannot reach Gemini API — check your internet connection", False, "fatal"
     except requests.exceptions.Timeout:
-        return None, f"Gemini API timed out after {timeout}s — try again", False
+        # Slow model: fall through to the next (faster/no-thinking) model in the chain.
+        return None, f"Gemini API timed out after {timeout}s — trying next model", True, "timeout"
 
     if resp.status_code == 404:
-        # Model not available — try next model in chain
-        return None, f"Model {model!r} not found (404)", True
+        return None, f"Model {model!r} not found (404)", True, "not_found"
     if resp.status_code == 429:
-        # Rate limit hit (RPM or RPD) — try next model in chain
-        return None, f"Model {model!r} rate limited (429) — trying next model", True
+        return None, f"Model {model!r} rate limited (429) — trying next model", True, "rate_limited"
     if resp.status_code == 503:
-        # Model overloaded / high demand — try next model in chain
-        return None, f"Model {model!r} unavailable (503 — high demand) — trying next model", True
+        return None, f"Model {model!r} unavailable (503 — high demand) — trying next model", True, "server_error"
     if resp.status_code == 401:
-        return None, "Invalid GOOGLE_API_KEY — check your key in .env", False
+        return None, "Invalid GOOGLE_API_KEY — check your key in .env", False, "fatal"
     if not resp.ok:
-        return None, f"Gemini API error {resp.status_code}: {resp.text[:200]}", False
+        return None, f"Gemini API error {resp.status_code}: {resp.text[:200]}", False, "fatal"
 
     try:
         data = resp.json()
@@ -95,10 +114,10 @@ def _call_gemini_model(
             None,
         )
         if text is None:
-            return None, "Gemini returned no text part in response", False
-        return text.strip(), None, False
+            return None, "Gemini returned no text part in response", False, "fatal"
+        return text.strip(), None, False, None
     except (KeyError, IndexError, ValueError) as exc:
-        return None, f"Gemini returned unexpected response shape: {exc}", False
+        return None, f"Gemini returned unexpected response shape: {exc}", False, "fatal"
 
 
 def _call_gemini(prompt: str) -> tuple[str | None, str | None]:
@@ -111,72 +130,82 @@ def _call_gemini(prompt: str) -> tuple[str | None, str | None]:
         return None, "GOOGLE_API_KEY not set — add it to your environment or .env file"
 
     primary = _model()
-    text, error, try_fallback = _call_gemini_model(prompt, primary, key)
+    text, error, try_fallback, _ = _call_gemini_model(prompt, primary, key, max_output_tokens=_SKILL_MAX_TOKENS)
     if text is not None:
         return text, None
 
     if try_fallback and primary != _FALLBACK_MODEL:
-        logger.warning("Primary model %r unavailable (404/429) — retrying with fallback %r", primary, _FALLBACK_MODEL)
-        text, error, _ = _call_gemini_model(prompt, _FALLBACK_MODEL, key)
+        logger.warning("Primary model %r unavailable — retrying with fallback %r", primary, _FALLBACK_MODEL)
+        text, error, _, _ = _call_gemini_model(prompt, _FALLBACK_MODEL, key, max_output_tokens=_SKILL_MAX_TOKENS)
         if text is not None:
             return text, None
 
     return None, error
 
 
-def _call_gemini_reasoning(prompt: str) -> tuple[str | None, str | None, str | None]:
+def _call_gemini_reasoning(prompt: str) -> tuple[str | None, str | None, str | None, bool]:
     """Send a prompt using the analysis model chain with high thinking budget.
 
-    Chain (on 404/429):
+    Chain (on 404/429/503):
       1. gemini-3-flash-preview  + thinking budget  (primary)
       2. gemini-2.5-flash        + thinking budget  (first fallback)
       3. gemini-3.1-flash-lite   no thinking        (second fallback)
 
-    Returns (text, error, model_used).
-    model_used is the model name that successfully responded, or None on failure.
+    Returns (text, error, model_used, all_rate_limited).
+    ``all_rate_limited`` is True only when at least one model was attempted and
+    EVERY attempt failed with 429 (no success, no 404/503/other) — the D6 worker
+    uses it to raise RateLimited and back off (C7).
     """
     key = _api_key()
     if not key:
-        return None, "GOOGLE_API_KEY not set — add it to your environment or .env file", None
+        return None, "GOOGLE_API_KEY not set — add it to your environment or .env file", None, False
+
+    reasons: list[str | None] = []
+
+    def _all_rl() -> bool:
+        return bool(reasons) and all(r == "rate_limited" for r in reasons)
 
     # 1 — primary with thinking
-    text, error, try_fallback = _call_gemini_model(
+    text, error, try_fallback, reason = _call_gemini_model(
         prompt, _ANALYSIS_MODEL, key,
         thinking_budget=_ANALYSIS_THINKING_BUDGET,
         timeout=_ANALYSIS_TIMEOUT,
+        max_output_tokens=_ANALYSIS_MAX_TOKENS,
     )
     if text is not None:
         logger.info("Gemini reasoning OK (model=%s)", _ANALYSIS_MODEL)
-        return text, None, _ANALYSIS_MODEL
-
+        return text, None, _ANALYSIS_MODEL, False
+    reasons.append(reason)
     if not try_fallback:
-        return None, error, None
+        return None, error, None, _all_rl()
 
     # 2 — first fallback with thinking
-    logger.warning("%r unavailable (404/429) — trying %r with thinking", _ANALYSIS_MODEL, _ANALYSIS_FALLBACK_1)
-    text, error, try_fallback = _call_gemini_model(
+    logger.warning("%r unavailable (404/429/503) — trying %r with thinking", _ANALYSIS_MODEL, _ANALYSIS_FALLBACK_1)
+    text, error, try_fallback, reason = _call_gemini_model(
         prompt, _ANALYSIS_FALLBACK_1, key,
         thinking_budget=_ANALYSIS_THINKING_BUDGET,
         timeout=_ANALYSIS_TIMEOUT,
+        max_output_tokens=_ANALYSIS_MAX_TOKENS,
     )
     if text is not None:
         logger.info("Gemini reasoning OK (model=%s)", _ANALYSIS_FALLBACK_1)
-        return text, None, _ANALYSIS_FALLBACK_1
-
+        return text, None, _ANALYSIS_FALLBACK_1, False
+    reasons.append(reason)
     if not try_fallback:
-        return None, error, None
+        return None, error, None, _all_rl()
 
-    # 3 — second fallback, no thinking
-    logger.warning("%r unavailable (404/429) — trying %r without thinking", _ANALYSIS_FALLBACK_1, _ANALYSIS_FALLBACK_2)
-    text, error, _ = _call_gemini_model(
+    # 3 — second fallback, no thinking (fast safety net for slow/timed-out thinking models)
+    logger.warning("%r unavailable — trying %r without thinking", _ANALYSIS_FALLBACK_1, _ANALYSIS_FALLBACK_2)
+    text, error, try_fallback, reason = _call_gemini_model(
         prompt, _ANALYSIS_FALLBACK_2, key,
         timeout=_TIMEOUT_SECONDS,
+        max_output_tokens=_ANALYSIS_OUTPUT_TOKENS,
     )
     if text is not None:
         logger.info("Gemini reasoning OK (model=%s, no thinking)", _ANALYSIS_FALLBACK_2)
-        return text, None, _ANALYSIS_FALLBACK_2
-
-    return None, error, None
+        return text, None, _ANALYSIS_FALLBACK_2, False
+    reasons.append(reason)
+    return None, error, None, _all_rl()
 
 
 # ---------------------------------------------------------------------------
@@ -329,12 +358,17 @@ def explain_job_match_with_llm(
     profile: "Any",
     job: "Any",
     analysis: "Any",
+    *,
+    raise_on_rate_limit: bool = False,
 ) -> tuple[dict[str, str] | None, str | None]:
     """Generate a structured explanation of the job–candidate fit via Gemini.
 
     Returns ({"fit": ..., "risk": ..., "action": ..., "model_used": ...}, None) on success,
     or (None, error_message) on failure.
-    """
+
+    ``raise_on_rate_limit`` (D6 worker): when True and the whole model chain failed
+    with 429, raise :class:`RateLimited` instead of returning an error string, so the
+    worker can back off + requeue rather than fail-fast."""
     s_min = getattr(job, "salary_min_gbp", None)
     s_max = getattr(job, "salary_max_gbp", None)
     if s_min and s_max:
@@ -378,8 +412,10 @@ def explain_job_match_with_llm(
         blockers=blockers_str,
     )
 
-    raw, error, model_used = _call_gemini_reasoning(prompt)
+    raw, error, model_used, all_rate_limited = _call_gemini_reasoning(prompt)
     if raw is None:
+        if all_rate_limited and raise_on_rate_limit:
+            raise RateLimited(error or "Gemini rate limited (429)")
         logger.warning("Gemini job explanation failed: %s", error)
         return None, error
 
@@ -434,7 +470,7 @@ def ai_review_cv_with_llm(
         cv_text=truncated_cv,
     )
 
-    raw, error, model_used = _call_gemini_reasoning(prompt)
+    raw, error, model_used, _all_rl = _call_gemini_reasoning(prompt)
     if raw is None:
         logger.warning("Gemini CV review failed: %s", error)
         return None, error, None

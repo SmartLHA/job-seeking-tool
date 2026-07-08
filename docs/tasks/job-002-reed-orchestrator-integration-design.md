@@ -1,6 +1,6 @@
 # JOB-002 — Reed Orchestrator Integration Design
 
-**Status:** Draft for Wiser review  
+**Status:** ✅ Implemented — Reed orchestrator integration (JOB-002) shipped and enabled.  
 **Owner:** SilverHand design → Wiser review → Handy build → Scout QA  
 **Date:** 2026-05-13  
 **Scope decision:** Reed only. Adzuna is explicitly out of scope for this implementation.

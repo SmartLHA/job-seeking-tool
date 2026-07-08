@@ -1,6 +1,13 @@
 # PL-05 — Reed Search Polish, Fallback Safety, and Regression Hardening Design
 
-**Status:** Design draft — review pending
+<!-- STATUS -->
+> **Implementation status:** ✅ Implemented (PL-05 shipped)
+> **Divergences from spec:** 2026-07-02 search-triage rework superseded the multi-select behaviour described here — cards now start UNTICKED (tick = shortlist for evaluation only, no auto-select), a per-card ✕ / "Hide unticked on this page" persists jobs to the `not_interested_jobs` store, "More jobs" became a "Next page" button that REPLACES the list, and a "Hidden jobs (N)" overlay allows unhide. See PROJECT_LOG 2026-07-02 and `src/job_sources/_multiselect.py`.
+> **Key functions:** `render_reed_search_results`, `_multiselect.py` (`jstToggle`, `jstEvaluateAll`, `jstHide`, `jstLoadMore`)
+> **Routes:** `GET /search/reed`, `GET /search/{source}/more`, `POST /jobs/batch-evaluate`, `POST /jobs/not-interested`
+<!-- /STATUS -->
+
+**Status:** ✅ Implemented — Reed search polish + regression hardening shipped (PL-05).
 **Story:** PL-05 from `docs/tasks/reed-search-first-story-breakdown.md`
 **Date:** 2026-05-13
 **Owner:** SilverHand

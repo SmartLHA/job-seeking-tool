@@ -10,25 +10,38 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def fetch_adzuna_jobs(keyword: str, location: str, max_results: int = 50) -> List[Dict[str, Any]]:
+def fetch_adzuna_jobs(keyword: str, location: str, max_results: int = 50, *, skip: int = 0) -> List[Dict[str, Any]]:
     """
     Fetch jobs from Adzuna API based on keyword and location.
+
+    Adzuna paginates by *page number* in the URL path (1-indexed), not by an
+    offset. ``skip`` is the running result offset from the UI's ``resultsSkip``
+    cursor; convert it to a page so "More jobs" returns the next page instead of
+    repeating page 1. Each page holds ``max_results`` rows, so
+    ``page = skip // max_results + 1`` (e.g. skip=10, take=10 -> page 2).
     """
     app_id = os.getenv("ADZUNA_APP_ID")
     app_key = os.getenv("ADZUNA_APP_KEY")
-    
+
     if not app_id or not app_key:
         logger.error("ADZUNA_APP_ID or ADZUNA_APP_KEY not found in environment variables.")
         return []
 
-    url = "https://api.adzuna.com/1/data/gb/jobs"
+    # Adzuna search endpoint: /v1/api/jobs/{country}/search/{page}
+    # Ref: https://developer.adzuna.com/overview and /docs/search
+    # (The previous /1/data/gb/jobs path with a "max_results" param was not a
+    #  valid Adzuna endpoint and always returned nothing.)
+    country = "gb"
+    per_page = max(1, int(max_results))
+    page = (max(0, int(skip)) // per_page) + 1
+    url = f"https://api.adzuna.com/v1/api/jobs/{country}/search/{page}"
     params = {
         "app_id": app_id,
         "app_key": app_key,
+        "results_per_page": max_results,
         "what": keyword,
         "where": location,
-        "max_results": max_results,
-        "distance": 25
+        "content-type": "application/json",
     }
 
     try:

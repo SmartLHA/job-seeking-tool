@@ -1,6 +1,6 @@
 # JOB-007 — Create URL Ingestion Design Doc Brief
 
-**Status:** Draft for Wiser review  
+**Status:** ✅ Complete / superseded — target artifact `docs/tasks/url-ingestion-design.md` now exists and the design has shipped (`parse_job_from_url` in `src/job_hunt_parsing.py`).  
 **Owner:** SilverHand brief → Wiser review → Handy doc creation → Scout QA  
 **Date:** 2026-05-13  
 **Target artifact:** `docs/tasks/url-ingestion-design.md`

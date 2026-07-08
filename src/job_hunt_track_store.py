@@ -102,6 +102,7 @@ def delete(job_id: str) -> bool:
         original_len = len(jobs)
         jobs = [j for j in jobs if j.get("id") != job_id]
         if len(jobs) < original_len:
+            data["jobs"] = jobs
             _save_data(data)
             return True
         return False

@@ -1,5 +1,12 @@
 # PL-01 — App Landing Restructure: Search-First Shell Design
 
+<!-- STATUS -->
+> **Implementation status:** ✅ Implemented — search-first shell live. Updated 2026-06-24: the Find Jobs tab now renders **one shared search-criteria form** with a submit button per source (`formaction` posts the same fields to each `/search/{source_id}`), so criteria are entered once across Reed + Adzuna.
+> **Divergences from spec:** Originally Reed-only with a single per-source form; now multi-source via a shared form (`_render_shared_search_form`). Results still render one source at a time.
+> **Key functions:** `_render_home`, `_render_search_jobs_tab`, `_render_shared_search_form`
+> **Routes:** `GET /`, `GET /search/{source_id}`
+<!-- /STATUS -->
+
 **Status:** Design draft — review pending
 **Story:** PL-01 from `docs/tasks/reed-search-first-story-breakdown.md`
 **Date:** 2026-05-13

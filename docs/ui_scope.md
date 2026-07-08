@@ -11,7 +11,7 @@ Search a configured source or add a job → review fields → explicitly evaluat
 → inspect the explainable result → prepare material or record outcome → submit manually
 ```
 
-Reed is the enabled source. The generic source registry makes future sources possible, but Adzuna and LinkedIn must remain unavailable until their complete source adapters are implemented and tested.
+Reed, Adzuna, and LinkedIn are the enabled sources (all live via the generic source registry). Further sources remain unavailable until their complete adapters are implemented and tested.
 
 ### Search, review, and batch queue
 
@@ -56,5 +56,5 @@ Reed is the enabled source. The generic source registry makes future sources pos
 
 - Gap Coach, deterministic aggregation over stored analyses.
 - Daily digest and saved searches.
-- Adzuna and LinkedIn source adapters.
+- *(Adzuna and LinkedIn source adapters — shipped & enabled, 2026-06.)*
 - DOCX/PDF application-package export.

@@ -126,7 +126,7 @@ Exit criteria:
 ## Deferred Until After MVP
 - broad ingestion expansion
 - messy multi-source parsing reliability as a primary product goal
-- cover letter generation
+- ~~cover letter generation~~ — SHIPPED (GAP-G; `POST /cover-letter`, markdown/text output). DOCX/PDF export still deferred.
 - deeper analytics
 - larger automation/orchestration features
 - richer UI beyond the minimal local workflow

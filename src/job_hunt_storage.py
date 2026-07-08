@@ -186,6 +186,14 @@ def job_analysis_from_dict(payload: dict[str, Any], *, job_id: str | None = None
                 payload.get("keyword_match_baseline_rate"), "keyword_match_baseline_rate"
             ),
             keyword_match_source=payload.get("keyword_match_source") or "master",
+            # D6 — LLM enrichment fields (explicit reads; missing on old records → None).
+            llm_fit_summary=_optional_string(payload.get("llm_fit_summary"), "llm_fit_summary"),
+            llm_risk_summary=_optional_string(payload.get("llm_risk_summary"), "llm_risk_summary"),
+            llm_recommended_action=_optional_string(
+                payload.get("llm_recommended_action"), "llm_recommended_action"
+            ),
+            llm_model=_optional_string(payload.get("llm_model"), "llm_model"),
+            llm_generated_at=_optional_string(payload.get("llm_generated_at"), "llm_generated_at"),
         )
     except (TypeError, ValueError) as exc:
         raise StorageError(f"invalid analysis payload: {exc}") from exc

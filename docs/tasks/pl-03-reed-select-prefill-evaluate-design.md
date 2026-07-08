@@ -1,6 +1,6 @@
 # PL-03 — Select Reed Job to Prefill Review/Evaluate Form Design
 
-**Status:** Design draft — review pending
+**Status:** ✅ Implemented — Reed select/prefill/evaluate shipped (`POST /select/{source}`, `POST /prefill`, `POST /evaluate`); bookmark→evaluate bridge live.
 **Story:** PL-03 from `docs/tasks/reed-search-first-story-breakdown.md`
 **Date:** 2026-05-13
 **Owner:** SilverHand

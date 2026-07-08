@@ -40,6 +40,7 @@ OPTIONAL_REVIEWED_JOB_FIELDS = {
     "salary_max_gbp",
     "source_quality_score",
     "url",
+    "source_job_id",
 }
 
 
@@ -96,6 +97,7 @@ def reviewed_job_from_dict(
         salary_min_gbp=_optional_non_negative_int(payload.get("salary_min_gbp"), "salary_min_gbp"),
         salary_max_gbp=_optional_non_negative_int(payload.get("salary_max_gbp"), "salary_max_gbp"),
         source_quality_score=_optional_non_negative_int(payload.get("source_quality_score"), "source_quality_score"),
+        source_job_id=_optional_string(payload.get("source_job_id"), "source_job_id", empty_as_none=True),
     )
 
 
@@ -121,6 +123,7 @@ def reviewed_job_to_dict(job: JobPosting) -> dict[str, Any]:
         "salary_min_gbp": job.salary_min_gbp,
         "salary_max_gbp": job.salary_max_gbp,
         "source_quality_score": job.source_quality_score,
+        "source_job_id": job.source_job_id,
     }
 
 

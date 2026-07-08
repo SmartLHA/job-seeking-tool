@@ -111,6 +111,12 @@ earlier monolithic checkout or unimplemented planning notes.
 - The end-to-end workflow includes review/evaluate, a review queue and batch
   evaluation, board APIs/views, outcome tracking, profile/CV handling, CV tailoring,
   cover-letter generation, and optional manual Gemini analysis.
+- Search results are triaged page-by-page (2026-07-02): cards start unticked and a
+  tick means "shortlist for evaluation" only; a per-card ✕ (or "Hide unticked on
+  this page") marks jobs not-interested in a persistent SQLite store so they are
+  filtered from all future searches, with a 10-second undo and a "Hidden jobs"
+  overlay to unhide later; "Next page" replaces the list instead of appending, and
+  shortlisted jobs survive page changes.
 - Evaluation uses seven weighted scoring components, categorical confidence, source
   quality gating, an ATS readiness score, and F1 per-job keyword matching. F1 is an
   advisory CV-coverage signal only; it never changes Apply / Review / Skip. F1 v2
@@ -121,6 +127,12 @@ earlier monolithic checkout or unimplemented planning notes.
   and `withdrawn`.
 - Remaining product work is additive: saved searches/daily digest, Gap Coach,
   additional source adapters, and packaging/export improvements.
+- Test baseline (2026-07-08 coverage audit): 79% line coverage; the 60 functions
+  found with zero coverage are down to 3 after 10 new test files / 257 tests
+  (independently verified). Only `ui_routes.main` (needs refactor) and the
+  `test_fetch.py` scratch script remain untested. The audit also caught and fixed a
+  real `track_store.delete()` persistence bug. Known debt: TEST-F1..F3 in
+  PROJECT_TODO (vacuous tests, one env-test leak, 14 functions <50%).
 
 The references below that describe “no UI required in early phases” or “Phase 8 UI”
 are historical development sequencing, not a statement of the current product.
@@ -268,7 +280,14 @@ Before implementation starts, preserve these boundaries:
 
 ## Module Responsibilities
 
-## Module Responsibilities
+> **Current architecture note (2026-06):** the module map below is an early design
+> sketch using provisional names (e.g. `profile.py`, `ingestion.py`) and predates the
+> LT-01 UI split. For the authoritative current module list see `docs/function_list.md`.
+> Live code is split into `src/ui_routes.py` (routing + source registration),
+> `src/ui_handlers.py` (handlers), `src/ui_render.py` (HTML), `src/ui_state.py` (config),
+> `src/ui_utils.py` (helpers); job sources under `src/job_sources/` (Reed, Adzuna,
+> LinkedIn + `source_registry`); plus `job_hunt_*` domain modules (scoring, decision,
+> digest, saved_searches, scheduler, etc.).
 
 ### profile.py
 - load/save candidate profile

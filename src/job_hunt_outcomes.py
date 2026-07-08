@@ -211,4 +211,17 @@ def _validate_transition(current_status: OutcomeStatus, next_status: OutcomeStat
         raise OutcomeValidationError(
             f"invalid outcome transition: {current_status} -> {next_status}"
         )
-__all__ = ["OutcomeValidationError", "create_outcome_record", "update_outcome", "outcome_to_dict", "outcome_from_dict"]
+
+
+def allowed_next_statuses(current_status: OutcomeStatus | None) -> list[OutcomeStatus]:
+    """Return valid next statuses from ``current_status`` (state-machine order).
+
+    ``None`` means no outcome record exists yet, which behaves as ``not_applied``.
+    The current status itself is included (same-status re-save updates notes).
+    """
+    status = current_status if current_status in _ALLOWED_TRANSITIONS else _DEFAULT_INITIAL_STATUS
+    allowed = _ALLOWED_TRANSITIONS[status]
+    return [s for s in ALLOWED_OUTCOME_STATUSES if s in allowed]
+
+
+__all__ = ["OutcomeValidationError", "allowed_next_statuses", "create_outcome_record", "update_outcome", "outcome_to_dict", "outcome_from_dict"]

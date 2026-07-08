@@ -30,10 +30,12 @@ from src.ui_state import (
 from src.ui_utils import (
     escape,
     default_form_values,
+    form_values_from_reviewed_job,
     stringify_form_value,
     optional_text,
     reviewed_job_payload_from_form,
     create_select_nonce,
+    render_select_options,
 )
 from src.ui_render import (
     ProfilePageViewModel,
@@ -52,7 +54,7 @@ from src.ui_render import (
 
 from src.job_hunt_orchestrator import run_local_evaluation_flow_from_payload
 from src.job_hunt_parsing import parse_job_from_text, parse_job_from_url
-from src.job_hunt_outcomes import ALLOWED_OUTCOME_STATUSES, create_outcome_record, update_outcome
+from src.job_hunt_outcomes import ALLOWED_OUTCOME_STATUSES, allowed_next_statuses, create_outcome_record, update_outcome
 from src.job_hunt_profile import load_candidate_profile, save_candidate_profile, ProfileValidationError, parse_cv_file, candidate_profile_from_dict
 from src.job_hunt_models import JobPosting, Skill
 from src.job_hunt_config import get_enabled_sources, DEFAULT_TAILORING_POLICY
@@ -79,6 +81,17 @@ from src.job_hunt_storage import (
 )
 
 from src.job_sources import reed_source as _reed_source
+from src.job_hunt_saved_searches import (
+    SavedSearch,
+    SavedSearchError,
+    SavedSearchNotFound,
+    create_saved_search,
+    delete_saved_search,
+    list_saved_searches,
+    load_saved_search,
+    toggle_saved_search,
+    update_last_run,
+)
 
 
 # MT-5: anchor profile storage to an absolute path derived from the project root
@@ -200,6 +213,7 @@ def render_profile(req, config, responder, profile_id, *, parsed_cv_text=None, p
         form_values=form_values,
         flash=flash,
         model_label=config.model_label,
+        enabled_sources=get_enabled_sources(),
     )
     responder.send_html(page)
 
@@ -366,6 +380,33 @@ def handle_save_profile(req, config, responder):
 
     payload["candidate_id"] = profile_id
 
+    # Daily Digest (D3) settings — preserve current values when the form omits a field
+    # so editing the rest of the profile never silently resets digest prefs.
+    try:
+        _existing = load_candidate_profile(profile_json_path)
+    except Exception:
+        _existing = None
+    if _existing is None and config.profile_path.stem == profile_id:
+        try:
+            _existing = load_candidate_profile(config.profile_path)
+        except Exception:
+            _existing = None
+
+    def _digest_default(attr, fallback):
+        return getattr(_existing, attr, fallback) if _existing is not None else fallback
+
+    for _bf, _fb in (("digest_enabled", True), ("digest_llm_enabled", True)):
+        _v = form.get(_bf, "").strip()
+        payload[_bf] = _v if _v else str(_digest_default(_bf, _fb)).lower()
+    for _nf, _fb in (("digest_threshold", 70), ("digest_max_per_source", 50),
+                     ("digest_max_llm_per_run", 10), ("digest_llm_rpm", 4),
+                     ("digest_llm_rpd", 200), ("digest_llm_batch_size", 4),
+                     ("digest_llm_batch_interval_min", 15)):
+        _v = form.get(_nf, "").strip()
+        payload[_nf] = _v if _v else _digest_default(_nf, _fb)
+    _rt = form.get("digest_run_time", "").strip()
+    payload["digest_run_time"] = _rt if _rt else _digest_default("digest_run_time", "07:00")
+
     try:
         profile_obj = candidate_profile_from_dict(payload)
     except ProfileValidationError as exc:
@@ -471,14 +512,16 @@ def render_home(req, config, responder, *, values=None, error=None, tab='search'
     responder.send_html(page)
 
 
-def render_job(req, config, responder, job_id, *, flash=None, flash_kind='success'):
+def render_job(req, config, responder, job_id, *, flash=None, flash_kind='success', embed=None):
     if not job_id.strip():
         responder.redirect("/")
         return
 
-    # ?embed=1 → render without sidebar (used by review-queue iframe)
-    _qp = parse_qs(urlparse(req.path).query)
-    embed = _qp.get("embed", [""])[0] == "1"
+    # ?embed=1 → render without sidebar (used by review-queue iframe).
+    # POST handlers can pass embed= explicitly since their path has no query.
+    if embed is None:
+        _qp = parse_qs(urlparse(req.path).query)
+        embed = _qp.get("embed", [""])[0] == "1"
 
     try:
         reviewed_job = load_reviewed_job(job_id, config.state_root)
@@ -503,6 +546,33 @@ def render_job(req, config, responder, job_id, *, flash=None, flash_kind='succes
         model_label=config.model_label,
     ))
     responder.send_html(page)
+
+
+def handle_evaluate_form(req, config, responder, job_id):
+    """GET /job/<id>/evaluate-form — reload a saved job into the Evaluate form.
+
+    Bridges the bookmark -> evaluate gap: a job saved via POST /jobs/save has no
+    analysis, so we prefill the manual Evaluate tab with its stored fields for
+    explicit user review, preserving job_id so the existing POST /evaluate path
+    updates the same record. Read-only (no side effects).
+    """
+    if not job_id.strip():
+        responder.redirect("/")
+        return
+    try:
+        reviewed_job = load_reviewed_job(job_id, config.state_root)
+    except FileNotFoundError:
+        responder.send_html(
+            render_page("Job not found", "<p>No saved job was found for that id.</p>", model_label=config.model_label),
+            status=HTTPStatus.NOT_FOUND,
+        )
+        return
+    values = form_values_from_reviewed_job(reviewed_job)
+    render_home(
+        req, config, responder,
+        values=values, tab="evaluate",
+        evaluate_notice="Review the saved details below, then Evaluate. Add any missing skills or description first.",
+    )
 
 
 def handle_job_explain(req, config, responder, job_id):
@@ -533,6 +603,50 @@ def handle_job_explain(req, config, responder, job_id):
     responder.send_json({"ok": True, **explanation})
 
 
+def _take_skip_param_keys(search_values: dict) -> tuple[str, str]:
+    """Return the (take_key, skip_key) param names a source uses for paging.
+
+    Reed/Adzuna emit camelCase ``resultsToTake``/``resultsSkip``; LinkedIn emits
+    snake_case ``results_to_take``/``results_skip``. Detect by which take key the
+    source's normaliser produced."""
+    if "resultsToTake" in search_values:
+        return "resultsToTake", "resultsSkip"
+    return "results_to_take", "results_skip"
+
+
+def _parse_exclude_terms(raw: str) -> list[str]:
+    """Split the exclude-keywords field into normalised terms.
+
+    Accepts a comma-separated string (multiple values); each term is trimmed and
+    casefolded, blanks dropped, duplicates removed while preserving order."""
+    seen: set[str] = set()
+    terms: list[str] = []
+    for part in (raw or "").split(","):
+        term = " ".join(part.casefold().split())
+        if term and term not in seen:
+            seen.add(term)
+            terms.append(term)
+    return terms
+
+
+def _apply_exclude_filter(results, raw_exclude: str):
+    """Drop results whose job title contains any excluded term (substring, case-
+    insensitive). Returns (kept_results, excluded_count). Matches title only so a
+    passing mention in the description never over-filters."""
+    terms = _parse_exclude_terms(raw_exclude)
+    if not terms or not results:
+        return results, 0
+    kept = []
+    excluded = 0
+    for r in results:
+        title = " ".join(str(r.get("title") or "").casefold().split())
+        if any(t in title for t in terms):
+            excluded += 1
+        else:
+            kept.append(r)
+    return kept, excluded
+
+
 def handle_source_search(req, config, responder, source_id):
     params = req.query
     from src.job_sources.source_registry import get_source
@@ -546,18 +660,53 @@ def handle_source_search(req, config, responder, source_id):
     from urllib.parse import urlencode as _urlencode_ss
     search_values = source.normalize_search_params(params)
     search_values["_source_id"] = source_id  # carried through to _render_search_jobs_tab
+    # Exclude-keywords: normalisers drop unknown keys, so read the raw field here
+    # and carry it in search_values so it survives form re-render and paging.
+    exclude_raw = (params.get("excludeKeywords") or "").strip()
+    if exclude_raw:
+        search_values["excludeKeywords"] = exclude_raw
     error: str | None = None
     results: list[dict[str, Any]] = []
     try:
         results = source.search_handler(search_values)
     except Exception as exc:
         error = f"{source.display_name} search failed: {exc}. Manual fallback is still available."
-    # Build "More jobs" URL: same params but skip advanced by resultsToTake
-    if source_id == "reed" and not error and len(results) >= int(search_values.get("resultsToTake", "10")):
-        _next_skip = int(search_values.get("resultsToTake", "10"))
-        _more_params = {k: v for k, v in search_values.items() if not k.startswith("_") and k != "resultsSkip"}
-        _more_params["resultsSkip"] = str(_next_skip)
-        search_values["_more_url"] = "/search/reed/more?" + _urlencode_ss(_more_params)
+    # Filter out not-interested jobs (display-only: paging math below stays on
+    # the RAW count so the skip cursor still advances one full source page).
+    _raw_count = len(results)
+    if not error and results:
+        try:
+            from src.job_hunt_not_interested import filter_results as _filter_ni
+            results, _hidden_ct = _filter_ni(results, state_root=config.state_root)
+            if _hidden_ct:
+                search_values["_hidden_count"] = str(_hidden_ct)
+        except Exception as exc:  # never let the hide-store break search
+            logger.warning("not-interested filter failed: %s", exc)
+    # Exclude-keyword title filter (display-only, same as the hide filter).
+    if not error and results:
+        results, _excl_ct = _apply_exclude_filter(results, exclude_raw)
+        if _excl_ct:
+            search_values["_excluded_count"] = str(_excl_ct)
+    # Build "More jobs" URL for ANY source: same params, skip cursor advanced by
+    # one page. Sources differ in param naming (Reed/Adzuna use camelCase
+    # resultsToTake/resultsSkip; LinkedIn uses snake_case results_to_take/
+    # results_skip), so pick whichever the source's normaliser emitted.
+    take_key, skip_key = _take_skip_param_keys(search_values)
+    try:
+        _take = int(search_values.get(take_key, "10") or "10")
+    except (TypeError, ValueError):
+        _take = 10
+    if not error and _take > 0 and _raw_count >= _take:
+        try:
+            _cur_skip = int(search_values.get(skip_key, "0") or "0")
+        except (TypeError, ValueError):
+            _cur_skip = 0
+        _more_params = {
+            str(k): str(v) for k, v in search_values.items()
+            if not str(k).startswith("_") and k != skip_key
+        }
+        _more_params[skip_key] = str(_cur_skip + _take)
+        search_values["_more_url"] = f"/search/{source_id}/more?" + _urlencode_ss(_more_params)
     render_home(req, config, responder, tab="search", search_values=search_values, reed_results=results, reed_error=error)
 
 
@@ -702,6 +851,7 @@ def handle_outcome(req, config, responder):
 
     status = form.get("status", "").strip()
     notes = form.get("notes", "")
+    embed = form.get("embed", "") == "1"
     try:
         try:
             current = load_application_outcome(job_id, config.state_root)
@@ -712,13 +862,13 @@ def handle_outcome(req, config, responder):
                 outcome = update_outcome(outcome, status=status, notes=notes)
         save_application_outcome(outcome, config.state_root)
     except Exception as exc:
-        render_job(req, config, responder, job_id, flash=f"Outcome update failed: {exc}", flash_kind="error")
+        render_job(req, config, responder, job_id, flash=f"Outcome update failed: {exc}", flash_kind="error", embed=embed)
         return
 
     # Upsert hook (QW-7)
     _upsert_job_to_index(config, job_id, outcome=outcome)
 
-    render_job(req, config, responder, job_id, flash="Outcome updated.", flash_kind="success")
+    render_job(req, config, responder, job_id, flash="Outcome updated.", flash_kind="success", embed=embed)
 
 
 def handle_decision_override(req, config, responder, job_id):
@@ -1028,7 +1178,15 @@ def handle_batch_evaluate(req, config, responder):
             errors.append({"index": i, "error": "Each job entry must be an object"})
             continue
         try:
-            values = _reed_source.reed_select_form_to_evaluate_values(job_form, config)
+            # Dispatch to the per-source select handler by the card's "source"
+            # field so non-Reed sources (Adzuna, …) batch-evaluate too. Falls
+            # back to Reed for back-compat with any source-less payloads.
+            from src.job_sources.source_registry import get_source as _get_source
+            _src_id = (job_form.get("source") or "reed").strip().lower()
+            _src = _get_source(_src_id)
+            if _src is None:
+                raise ValueError(f"Unknown job source: {_src_id}")
+            values = _src.select_handler(job_form, config)
             reviewed_job_payload = reviewed_job_payload_from_form(values)
             raw_input_payload = raw_input_payload_from_form(values, reviewed_job_payload)
             result = run_local_evaluation_flow_from_payload(
@@ -1062,32 +1220,146 @@ def handle_batch_evaluate(req, config, responder):
     responder.send_json({"ok": True, "jobs": results, "errors": errors})
 
 
-def handle_search_reed_more(req, config, responder):
-    params = req.query
-    """GET /search/reed/more?... — AJAX endpoint returning next page of Reed cards as JSON."""
+def handle_source_search_more(req, config, responder, source_id):
+    """GET /search/{source_id}/more?... — AJAX endpoint returning the next page of
+    cards as JSON, for any source that registered a ``render_cards_fragment``.
+
+    Works for Reed, Adzuna and LinkedIn alike: it normalises the query through the
+    source's own normaliser (so each source's param naming and skip cursor are
+    honoured), re-runs the search one page deep, and renders the bare cards with
+    their ids offset by ``skip`` so they never collide with already-shown cards."""
     from urllib.parse import urlencode as _urlencode
-    search_values = _reed_source.normalize_reed_search_params(params)
-    take = int(search_values["resultsToTake"])
-    skip = int(search_values.get("resultsSkip", "0"))
+    from src.job_sources.source_registry import get_source
+    source = get_source(source_id)
+    if source is None or source.render_cards_fragment is None:
+        responder.send_json(
+            {"ok": False, "error": f"Source '{source_id}' does not support pagination."}
+        )
+        return
+    search_values = source.normalize_search_params(req.query)
+    take_key, skip_key = _take_skip_param_keys(search_values)
     try:
-        results = _reed_source.search_reed_jobs_for_ui(search_values)
+        take = int(search_values.get(take_key, "10") or "10")
+    except (TypeError, ValueError):
+        take = 10
+    try:
+        skip = int(search_values.get(skip_key, "0") or "0")
+    except (TypeError, ValueError):
+        skip = 0
+    try:
+        results = source.search_handler(search_values)
     except Exception as exc:
         responder.send_json({"ok": False, "error": str(exc)})
         return
+    # Display-only not-interested filter; has_more / next skip stay on the RAW
+    # count so the cursor still advances one full source page.
+    raw_count = len(results)
+    hidden_count = 0
+    if results:
+        try:
+            from src.job_hunt_not_interested import filter_results as _filter_ni
+            results, hidden_count = _filter_ni(results, state_root=config.state_root)
+        except Exception as exc:
+            logger.warning("not-interested filter failed: %s", exc)
+    # Exclude-keyword title filter — read the raw field carried in the query.
+    exclude_raw = (req.query.get("excludeKeywords") or "").strip()
+    if results and exclude_raw:
+        results, _excl_ct = _apply_exclude_filter(results, exclude_raw)
+        hidden_count += _excl_ct
     nonce = create_select_nonce()
-    cards_html = _reed_source._render_reed_cards_fragment(results, skip=skip, nonce=nonce)
-    has_more = len(results) >= take
-    next_skip = skip + take
-    next_params = {k: v for k, v in search_values.items() if k != "resultsSkip"}
-    next_params["resultsSkip"] = str(next_skip)
-    next_url = "/search/reed/more?" + _urlencode(next_params)
+    cards_html = source.render_cards_fragment(results, skip=skip, nonce=nonce)
+    has_more = take > 0 and raw_count >= take
+    next_params = {
+        str(k): str(v) for k, v in search_values.items()
+        if not str(k).startswith("_") and k != skip_key
+    }
+    if exclude_raw:
+        next_params["excludeKeywords"] = exclude_raw
+    next_params[skip_key] = str(skip + take)
+    next_url = f"/search/{source_id}/more?" + _urlencode(next_params)
     responder.send_json({
         "ok": True,
         "cards_html": cards_html,
         "has_more": has_more,
         "next_url": next_url,
-        "count": len(results),
+        "count": raw_count,
+        "visible_count": len(results),
+        "hidden_count": hidden_count,
     })
+
+
+def handle_search_reed_more(req, config, responder):
+    """Back-compat shim for the old Reed-only route; delegates to the generic
+    handler. Retained so existing imports/links keep working."""
+    handle_source_search_more(req, config, responder, "reed")
+
+
+def _read_json_body(req, responder) -> dict | None:
+    """Parse a JSON object request body; sends a 400 and returns None on error."""
+    try:
+        body = json.loads(req.raw_body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+        responder.send_json({"ok": False, "error": "Invalid JSON"}, status=HTTPStatus.BAD_REQUEST)
+        return None
+    if not isinstance(body, dict):
+        responder.send_json({"ok": False, "error": "Body must be a JSON object"}, status=HTTPStatus.BAD_REQUEST)
+        return None
+    return body
+
+
+def handle_jobs_hide(req, config, responder):
+    """POST /jobs/not-interested — persist jobs as not-interested (idempotent).
+
+    Body: ``{"jobs": [{"source", "source_job_id", "title", "company"}, ...]}``
+    Returns the per-entry ``keys`` (kept client-side for undo) plus counts."""
+    from src.job_hunt_not_interested import count_hidden, hide_jobs
+    body = _read_json_body(req, responder)
+    if body is None:
+        return
+    jobs = body.get("jobs")
+    if not isinstance(jobs, list) or not jobs:
+        responder.send_json({"ok": False, "error": "jobs must be a non-empty array"}, status=HTTPStatus.BAD_REQUEST)
+        return
+    try:
+        result = hide_jobs(jobs, state_root=config.state_root)
+    except (ValueError, TypeError) as exc:
+        responder.send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+        return
+    responder.send_json({
+        "ok": True,
+        "keys": result["keys"],
+        "hidden": len(result["hidden"]),
+        "already_hidden": len(result["already_hidden"]),
+        "total_hidden": count_hidden(state_root=config.state_root),
+    })
+
+
+def handle_jobs_unhide(req, config, responder):
+    """POST /jobs/not-interested/undo — remove keys from the not-interested
+    store. Serves both the undo toast and the Hidden jobs overlay's Unhide.
+    Body: ``{"keys": ["source:id", ...]}``"""
+    from src.job_hunt_not_interested import count_hidden, unhide_jobs
+    body = _read_json_body(req, responder)
+    if body is None:
+        return
+    keys = body.get("keys")
+    if not isinstance(keys, list) or not keys:
+        responder.send_json({"ok": False, "error": "keys must be a non-empty array"}, status=HTTPStatus.BAD_REQUEST)
+        return
+    removed = unhide_jobs([str(k) for k in keys], state_root=config.state_root)
+    responder.send_json({
+        "ok": True,
+        "removed": removed,
+        "total_hidden": count_hidden(state_root=config.state_root),
+    })
+
+
+def handle_jobs_hidden_list(req, config, responder):
+    """GET /jobs/not-interested — all hidden jobs, newest first, for the
+    Hidden jobs overlay."""
+    from src.job_hunt_not_interested import list_hidden
+    rows = list_hidden(state_root=config.state_root)
+    responder.send_json({"ok": True, "jobs": rows, "count": len(rows)})
 
 
 def handle_get_review_queue(req, config, responder):
@@ -1180,6 +1452,337 @@ def handle_jobs_save(req, config, responder):
     _upsert_job_to_index(config, job_id, reviewed_job=job, analysis=None, outcome=outcome)
 
     responder.send_json({"job_id": job_id, "status": "not_applied"})
+
+
+# --------------------------------------------------------------------------- #
+# Saved Searches (Daily Job Digest — phase D1)
+# --------------------------------------------------------------------------- #
+
+def _saved_search_to_json(s: SavedSearch) -> dict[str, Any]:
+    return {
+        "search_id": s.search_id,
+        "name": s.name,
+        "source_id": s.source_id,
+        "params": dict(s.params),
+        "enabled": s.enabled,
+        "created_at": s.created_at,
+        "last_run_at": s.last_run_at,
+        "last_run_count": s.last_run_count,
+    }
+
+
+def handle_saved_searches_list(req, config, responder):
+    """GET /saved-searches — JSON list of all saved searches."""
+    searches = list_saved_searches(state_root=config.state_root)
+    responder.send_json({"searches": [_saved_search_to_json(s) for s in searches]})
+
+
+def handle_saved_searches_create(req, config, responder):
+    """POST /saved-searches — create a saved search from a JSON body
+    ``{name, source_id, params}``."""
+    try:
+        raw = req.raw_body.decode("utf-8")
+        payload = json.loads(raw) if raw.strip() else {}
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        responder.send_json({"ok": False, "error": "Invalid JSON body"}, status=HTTPStatus.BAD_REQUEST)
+        return
+    if not isinstance(payload, dict):
+        responder.send_json({"ok": False, "error": "Body must be a JSON object"}, status=HTTPStatus.BAD_REQUEST)
+        return
+
+    name = payload.get("name")
+    source_id = payload.get("source_id") or payload.get("source")
+    # Use a real default (not `or {}`) so invalid falsy params ([] , "") reach
+    # _validate_params and are rejected rather than silently coerced to {} (Codex MED).
+    params = payload.get("params", {})
+
+    # source_id must be a registered/enabled source (case-insensitive)
+    enabled_sources = {s.lower() for s in get_enabled_sources()}
+    if not isinstance(source_id, str) or source_id.strip().lower() not in enabled_sources:
+        responder.send_json(
+            {"ok": False, "error": f"Unknown source_id (enabled: {sorted(enabled_sources)})"},
+            status=HTTPStatus.BAD_REQUEST,
+        )
+        return
+
+    try:
+        search = create_saved_search(name, source_id, params, state_root=config.state_root)
+    except SavedSearchError as exc:
+        responder.send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+        return
+
+    responder.send_json(
+        {"ok": True, "search": _saved_search_to_json(search)},
+        status=HTTPStatus.CREATED,
+    )
+
+
+def handle_saved_search_delete(req, config, responder, search_id):
+    """POST /saved-searches/{id}/delete — idempotent delete."""
+    try:
+        deleted = delete_saved_search(search_id, state_root=config.state_root)
+    except SavedSearchError:
+        responder.send_json({"ok": False, "error": "Invalid search_id"}, status=HTTPStatus.BAD_REQUEST)
+        return
+    if not deleted:
+        responder.send_json({"ok": False, "error": "Saved search not found"}, status=HTTPStatus.NOT_FOUND)
+        return
+    responder.send_json({"ok": True, "deleted": True})
+
+
+def handle_digest_count(req, config, responder):
+    """GET /digest/count — JSON `{unseen: N}` for the sidebar badge.
+    Returns 0 until the D3 pipeline starts populating digest rows."""
+    from src.job_hunt_digest import unseen_count
+    responder.send_json({"unseen": unseen_count(db_path=_index_db_path(config))})
+
+
+def _load_active_profile(config):
+    """Load the candidate profile for digest runs (startup profile)."""
+    return load_candidate_profile(config.profile_path)
+
+
+def handle_run_now(req, config, responder, search_id):
+    """POST /saved-searches/{id}/run-now — synchronously run ONE saved search through
+    the digest pipeline and return the DigestRunResult JSON. No LLM calls (D3)."""
+    from src.job_hunt_scheduler import run_digest_pipeline
+    try:
+        search = load_saved_search(search_id, state_root=config.state_root)
+    except SavedSearchNotFound:
+        responder.send_json({"ok": False, "error": "Saved search not found"}, status=HTTPStatus.NOT_FOUND)
+        return
+    except SavedSearchError:
+        responder.send_json({"ok": False, "error": "Invalid search_id"}, status=HTTPStatus.BAD_REQUEST)
+        return
+
+    try:
+        profile = _load_active_profile(config)
+    except Exception as exc:
+        responder.send_json({"ok": False, "error": f"Could not load profile: {exc}"},
+                            status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        return
+
+    result = run_digest_pipeline(
+        config=config,
+        saved_searches=[search],
+        profile=profile,
+        db_path=_index_db_path(config),
+    )
+    # Record run metadata on the saved search (best-effort).
+    try:
+        update_last_run(search_id, state_root=config.state_root, count=result.jobs_new)
+    except Exception as exc:
+        logger.warning("run-now: could not update last_run for %s: %s", search_id, exc)
+
+    payload = {"ok": True, **result.to_dict()}
+    responder.send_json(payload)
+
+
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_DIGEST_MARK_MAX = 500
+
+
+def _valid_iso_date(value) -> bool:
+    """True only for a real calendar date in YYYY-MM-DD form (rejects 2026-99-99)."""
+    if not isinstance(value, str) or not _ISO_DATE.match(value):
+        return False
+    from datetime import date as _date
+    try:
+        _date.fromisoformat(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _parse_digest_filters(query, config):
+    """Strictly parse digest feed filters from the query string. Unknown/invalid
+    values are dropped (not 500). Returns a dict for query_digest + the raw values
+    for the render layer."""
+    enabled = {s.lower() for s in get_enabled_sources()}
+    date = query.get("date", "").strip()
+    if not _valid_iso_date(date):
+        date = ""
+    source = query.get("source", "").strip().lower()
+    if source not in enabled:
+        source = ""
+    saved_search_id = query.get("saved_search_id", "").strip()
+    try:
+        from src.job_hunt_saved_searches import validate_search_id
+        validate_search_id(saved_search_id) if saved_search_id else None
+    except Exception:
+        saved_search_id = ""
+    seen_raw = query.get("seen", "all").strip().lower()
+    seen = {"unseen": False, "seen": True}.get(seen_raw, None)
+    return {
+        "date": date or None,
+        "source_id": source or None,
+        "saved_search_id": saved_search_id or None,
+        "seen": seen,
+    }, {"date": date, "source": source, "saved_search_id": saved_search_id, "seen": seen_raw}
+
+
+def handle_digest(req, config, responder):
+    """GET /digest — the digest feed page with date/source/saved-search/seen filters."""
+    from src.job_hunt_digest import query_digest
+    from src.ui_render import render_digest_page
+
+    filters, raw = _parse_digest_filters(req.query, config)
+    entries = query_digest(db_path=_index_db_path(config), limit=200, **filters)
+    try:
+        searches = [(s.search_id, s.name) for s in list_saved_searches(state_root=config.state_root)]
+    except Exception:
+        searches = []
+    page = render_digest_page(
+        entries=entries,
+        filters=raw,
+        sources=get_enabled_sources(),
+        saved_searches=searches,
+        model_label=config.model_label,
+    )
+    responder.send_html(page)
+
+
+def handle_digest_mark_seen(req, config, responder):
+    """POST /digest/mark-seen — body must be exactly ONE mode:
+    `{"job_ids": [...]}` (bounded list) or `{"all": true, <optional filters>}`."""
+    from src.job_hunt_digest import mark_all_seen, mark_seen
+
+    raw = req.raw_body.decode("utf-8", errors="replace")
+    try:
+        payload = json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError:
+        responder.send_json({"ok": False, "error": "Invalid JSON body"}, status=HTTPStatus.BAD_REQUEST)
+        return
+    if not isinstance(payload, dict):
+        responder.send_json({"ok": False, "error": "Body must be a JSON object"}, status=HTTPStatus.BAD_REQUEST)
+        return
+
+    has_all = "all" in payload
+    has_ids = "job_ids" in payload
+    db_path = _index_db_path(config)
+
+    def _bad(msg):
+        responder.send_json({"ok": False, "error": msg}, status=HTTPStatus.BAD_REQUEST)
+
+    # Exactly one mode: `all:true` (no job_ids) XOR `job_ids:[...]` (no `all`).
+    if has_all and has_ids:
+        _bad("Provide either all:true or job_ids, not both")
+        return
+    if not has_all and not has_ids:
+        _bad("Provide all:true or job_ids")
+        return
+
+    if has_all:
+        if payload.get("all") is not True:
+            _bad("all must be true")
+            return
+        # All-mode filters must be valid when supplied — never silently widen scope.
+        date = payload.get("date")
+        source = payload.get("source")
+        ssid = payload.get("saved_search_id")
+        if date is not None and not _valid_iso_date(date):
+            _bad("invalid date")
+            return
+        if source is not None and not (
+            isinstance(source, str) and source.lower() in {s.lower() for s in get_enabled_sources()}
+        ):
+            _bad("invalid source")
+            return
+        if ssid is not None and not (isinstance(ssid, str) and ssid.strip()):
+            _bad("invalid saved_search_id")
+            return
+        marked = mark_all_seen(
+            db_path=db_path,
+            date=date if isinstance(date, str) else None,
+            source_id=source.lower() if isinstance(source, str) and source else None,
+            saved_search_id=ssid if isinstance(ssid, str) and ssid else None,
+        )
+        responder.send_json({"ok": True, "marked": marked})
+        return
+
+    # id mode
+    job_ids = payload.get("job_ids")
+    if not isinstance(job_ids, list):
+        _bad("job_ids must be a list")
+        return
+    if not all(isinstance(j, str) and j.strip() for j in job_ids):
+        _bad("job_ids must all be non-empty strings")
+        return
+    if len(job_ids) > _DIGEST_MARK_MAX:
+        _bad(f"too many job_ids (max {_DIGEST_MARK_MAX})")
+        return
+    marked = mark_seen(job_ids, db_path=db_path)
+    responder.send_json({"ok": True, "marked": marked})
+
+
+# Set by the server at startup (D5/D6) so status/manual-drain handlers can reach
+# the live daemons. None when daemons aren't running (e.g. unit tests).
+_DIGEST_SCHEDULER = None
+_LLM_WORKER = None
+
+
+def set_daemons(scheduler=None, worker=None) -> None:
+    global _DIGEST_SCHEDULER, _LLM_WORKER
+    _DIGEST_SCHEDULER = scheduler
+    _LLM_WORKER = worker
+
+
+def handle_scheduler_status(req, config, responder):
+    """GET /scheduler/status — live status from the D5 scheduler daemon when running."""
+    if _DIGEST_SCHEDULER is not None:
+        responder.send_json(_DIGEST_SCHEDULER.status())
+        return
+    responder.send_json({
+        "running": False, "last_run": None, "next_run": None, "last_error": None,
+        "note": "Scheduler daemon not running; use Run now per saved search.",
+    })
+
+
+def handle_run_llm_batch(req, config, responder):
+    """POST /digest/run-llm-batch — drain ONE paced LLM batch synchronously now."""
+    from src.job_hunt_scheduler import drain_llm_batch
+    try:
+        profile = _load_active_profile(config)
+    except Exception as exc:
+        responder.send_json({"ok": False, "error": f"Could not load profile: {exc}"},
+                            status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        return
+    result = drain_llm_batch(config=config, profile=profile, db_path=_index_db_path(config))
+    responder.send_json({"ok": True, **result.to_dict()})
+
+
+def handle_digest_reevaluate(req, config, responder):
+    """POST /digest/reevaluate — re-score every indexed digest job against the
+    current profile/threshold (OQ-2). Synchronous, no LLM call here (crossed-up jobs
+    are only queued for the paced worker). Returns the ReevalResult JSON."""
+    from src.job_hunt_scheduler import reevaluate_digest_jobs
+    try:
+        profile = _load_active_profile(config)
+    except Exception as exc:
+        responder.send_json({"ok": False, "error": f"Could not load profile: {exc}"},
+                            status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        return
+    result = reevaluate_digest_jobs(config=config, profile=profile, db_path=_index_db_path(config))
+    responder.send_json({"ok": True, **result.to_dict()})
+
+
+def handle_llm_queue(req, config, responder):
+    """GET /digest/llm-queue — queue counts + RPD usage."""
+    from src.job_hunt_scheduler import llm_queue_stats
+    responder.send_json(llm_queue_stats(db_path=_index_db_path(config)))
+
+
+def handle_saved_search_toggle(req, config, responder, search_id):
+    """POST /saved-searches/{id}/toggle — flip enabled."""
+    try:
+        search = toggle_saved_search(search_id, state_root=config.state_root)
+    except SavedSearchNotFound:
+        responder.send_json({"ok": False, "error": "Saved search not found"}, status=HTTPStatus.NOT_FOUND)
+        return
+    except SavedSearchError:
+        responder.send_json({"ok": False, "error": "Invalid search_id"}, status=HTTPStatus.BAD_REQUEST)
+        return
+    responder.send_json({"ok": True, "enabled": search.enabled, "search": _saved_search_to_json(search)})
 
 
 def handle_tailor(req, config, responder):
@@ -1406,6 +2009,11 @@ def load_recent_job_history(state_root: str | Path, *, limit: int = 10) -> list[
         except Exception:
             continue
 
+        try:
+            evaluated_at = datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            evaluated_at = None
+
         rows.append(
             {
                 "job_id": job_id,
@@ -1415,9 +2023,38 @@ def load_recent_job_history(state_root: str | Path, *, limit: int = 10) -> list[
                 "match_score": analysis.match_score,
                 "confidence": analysis.confidence,
                 "outcome_status": outcome_status,
+                "evaluated_at": evaluated_at,
             }
         )
     return rows
+
+
+def _render_shared_search_form(values: dict[str, str], buttons_html: str) -> str:
+    """One set of search criteria shared by every source. Each source has its own
+    submit button (rendered into ``buttons_html``) that posts these same fields to
+    its ``/search/{source_id}`` endpoint via the button's ``formaction``. All
+    registered sources normalise this identical field set, so the criteria only
+    need to be entered once."""
+    return f"""
+    <form method="get" action="/search/reed" id="job-search-form" class="panel subtle">
+      <h3>Search criteria</h3>
+      <div class="grid two-col">
+        <label><span>Keywords / job title</span><input name="keywords" value="{escape(values.get('keywords', ''))}" placeholder="Business Analyst"></label>
+        <label><span>Exclude keywords <small style="color:var(--ink-faint);font-weight:400;">(comma-separated; title match)</small></span><input name="excludeKeywords" value="{escape(values.get('excludeKeywords', ''))}" placeholder="trainee, junior, graduate"></label>
+        <label><span>Location</span><input name="locationName" value="{escape(values.get('locationName', ''))}" placeholder="London"></label>
+        <label><span>Minimum salary</span><input name="minimumSalary" inputmode="numeric" value="{escape(values.get('minimumSalary', ''))}" placeholder="50000"></label>
+        <label><span>Results to take</span><input name="resultsToTake" inputmode="numeric" value="{escape(values.get('resultsToTake', '10'))}" placeholder="10"></label>
+        <label><span>Work mode</span><select name="workMode">{render_select_options(['any', 'remote', 'hybrid', 'onsite'], values.get('workMode', 'any'))}</select></label>
+        <label><span>Employment type</span><select name="employmentType">{render_select_options(['any', 'permanent', 'contract'], values.get('employmentType', 'any'))}</select></label>
+      </div>
+      <p class="prefill-status">Remote/hybrid, employment type and minimum salary are applied best-effort per source; unsupported filters are called out in result notes.</p>
+      <div class="actions">
+        {buttons_html}
+        <a href="/?tab=add_job" class="tab-link">Manual Fallback</a>
+        <a href="/?tab=evaluate" class="tab-link">Evaluate existing details</a>
+      </div>
+    </form>
+    """
 
 
 def _render_search_jobs_tab(
@@ -1429,34 +2066,87 @@ def _render_search_jobs_tab(
 ) -> str:
     from src.job_sources.source_registry import all_sources
     enabled_sources = [s.lower() for s in get_enabled_sources()]
-    _active_pill = "background:#0f172a;color:white;border-radius:8px;padding:6px 14px;font-weight:600;font-size:0.875rem;"
-    _inactive_pill = "background:#e2e8f0;color:#94a3b8;border-radius:8px;padding:6px 14px;font-weight:600;font-size:0.875rem;cursor:not-allowed;"
+    sources = all_sources()
 
-    source_forms_html = ""
-    source_results_html = ""
-    pills_html = ""
+    # Prefill the shared criteria from the last search if there was one, so the
+    # values persist and the other source's button can be clicked without
+    # re-typing. All sources normalise the same field set, so any source's empty
+    # default works as the baseline.
+    active_search_source = (search_values or {}).get("_source_id")
+    if search_values and active_search_source:
+        form_values = search_values
+    elif sources:
+        form_values = sources[0].normalize_search_params({})
+    else:
+        form_values = {}
 
-    for source in all_sources():
+    # One submit button per source; disabled (greyed) when the source is not in
+    # ENABLED_SOURCES. Each enabled button posts the shared criteria to its own
+    # /search/{source_id} endpoint via formaction.
+    buttons_html = ""
+    for source in sources:
         enabled = source.source_id in enabled_sources
-        pill_label = source.display_name if enabled else f"{source.display_name} — disabled"
-        pills_html += f'<span style="{_active_pill if enabled else _inactive_pill}">{escape(pill_label)}</span>\n'
-        # Pass current search_values if they came from this source's last search
-        # (identified by the hidden 'source' field in the form values dict).
-        # Default to empty form values for all other sources.
-        active_search_source = (search_values or {}).get("_source_id")
-        form_values = search_values if active_search_source == source.source_id else source.normalize_search_params({})
-        source_forms_html += source.render_search_form(form_values, enabled)
+        if enabled:
+            buttons_html += (
+                f'<button type="submit" formaction="/search/{escape(source.source_id)}">'
+                f'Search {escape(source.display_name)}</button>\n'
+            )
+        else:
+            buttons_html += (
+                f'<button type="button" disabled title="Coming soon" '
+                f'style="opacity:0.5;cursor:not-allowed;">Search {escape(source.display_name)} — disabled</button>\n'
+            )
+
+    form_html = _render_shared_search_form(form_values, buttons_html)
+
+    # Results: only the source actually searched renders results (single active
+    # source, unchanged). Each source keeps its own results renderer.
+    source_results_html = ""
+    for source in sources:
         if active_search_source == source.source_id:
-            source_results_html += source.render_results(reed_results, reed_error, reed_select_nonce, search_values.get("_more_url") if search_values else None)
+            source_results_html += source.render_results(
+                reed_results,
+                reed_error,
+                reed_select_nonce,
+                search_values.get("_more_url") if search_values else None,
+            )
+
+    # Not-interested note: explains short (or fully empty) pages caused by the
+    # server-side hide filter, so a filtered page never looks broken.
+    hidden_note_html = ""
+    _hidden_ct = (search_values or {}).get("_hidden_count")
+    if active_search_source and _hidden_ct:
+        if reed_results:
+            _note = f"{escape(_hidden_ct)} job(s) on this page are hidden as not interested."
+        else:
+            _note = (
+                f"All {escape(_hidden_ct)} job(s) on this page are hidden as not interested. "
+                "Use Next page, or unhide jobs from the Hidden jobs list on any results page."
+            )
+        hidden_note_html = (
+            '<div style="margin-top:14px;padding:10px 14px;border:1px dashed var(--line);'
+            'border-radius:var(--r-md);font-size:12.5px;color:var(--ink-faint);">'
+            f'{_note}</div>'
+        )
+
+    # Exclude-keyword note: explains jobs removed by the title exclude filter.
+    excluded_note_html = ""
+    _excl_ct = (search_values or {}).get("_excluded_count")
+    if active_search_source and _excl_ct:
+        _excl_terms = escape((search_values or {}).get("excludeKeywords", ""))
+        excluded_note_html = (
+            '<div style="margin-top:14px;padding:10px 14px;border:1px dashed var(--line);'
+            'border-radius:var(--r-md);font-size:12.5px;color:var(--ink-faint);">'
+            f'{escape(_excl_ct)} job(s) on this page hidden by exclude keywords ({_excl_terms}).</div>'
+        )
 
     return f"""
     <section class="panel">
       <h2>Search Jobs</h2>
-      <p>Search across connected job boards. Active sources are driven by <code>/sources</code> config.</p>
-      <div class="source-toggles" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-        {pills_html}
-      </div>
-      {source_forms_html}
+      <p>Enter your criteria once, then pick a board. Search across connected job boards. Active sources are driven by <code>/sources</code> config.</p>
+      {form_html}
+      {hidden_note_html}
+      {excluded_note_html}
       {source_results_html}
     </section>
     """
@@ -1543,7 +2233,7 @@ def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash, flash_kind="su
         outcome_status=outcome.status if outcome else None,
         outcome_notes=outcome.notes if outcome else None,
         outcome_updated_at=outcome.updated_at if outcome else None,
-        outcome_status_options=list(ALLOWED_OUTCOME_STATUSES),
+        outcome_status_options=allowed_next_statuses(outcome.status if outcome else None),
         flash=flash, flash_kind=flash_kind, embed=embed, model_label=model_label, **a,
     )
 
@@ -1572,4 +2262,14 @@ def _build_profile_page_vm(profile_obj: Any) -> "ProfilePageViewModel":
         achievements=list(profile_obj.achievements or []),
         master_cv_ref=profile_obj.master_cv_ref,
         master_cv_text=profile_obj.master_cv_text,
+        digest_enabled=profile_obj.digest_enabled,
+        digest_threshold=profile_obj.digest_threshold,
+        digest_run_time=profile_obj.digest_run_time,
+        digest_max_per_source=profile_obj.digest_max_per_source,
+        digest_llm_enabled=profile_obj.digest_llm_enabled,
+        digest_max_llm_per_run=profile_obj.digest_max_llm_per_run,
+        digest_llm_rpm=profile_obj.digest_llm_rpm,
+        digest_llm_rpd=profile_obj.digest_llm_rpd,
+        digest_llm_batch_size=profile_obj.digest_llm_batch_size,
+        digest_llm_batch_interval_min=profile_obj.digest_llm_batch_interval_min,
     )
