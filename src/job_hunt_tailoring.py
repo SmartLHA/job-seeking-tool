@@ -7,6 +7,7 @@ from src.job_hunt_config import DEFAULT_TAILORING_POLICY, TailoringPolicy
 from src.job_hunt_models import CandidateProfile, JobAnalysis, JobPosting, TailoredCVResult
 
 from src.job_hunt_cover_letter import generate_cover_letter
+from src.text_grounding import quote_in_text
 
 
 class TailoringValidationError(ValueError):
@@ -323,9 +324,9 @@ def validate_tailored_cv(
 
 
 def _validate_promoted_bullets(tailored: TailoredCVResult, markdown: str) -> bool:
-    """Every promoted bullet must appear verbatim in the markdown."""
+    """Every promoted bullet must be grounded in the rendered markdown."""
     for bullet in tailored.promoted:
-        if bullet not in markdown:
+        if not quote_in_text(bullet, markdown):
             return False
     return True
 

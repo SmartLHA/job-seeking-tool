@@ -61,6 +61,20 @@ _LLM_RPD_SQL = (
     "CREATE TABLE IF NOT EXISTS llm_rpd (date TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0)"
 )
 
+_QUALITATIVE_INDEX_SQL = """
+CREATE TABLE IF NOT EXISTS qualitative_index (
+    job_ref          TEXT PRIMARY KEY,
+    status           TEXT NOT NULL,
+    grade            TEXT,
+    culture_flag     TEXT,
+    legitimacy_tier  TEXT,
+    model            TEXT,
+    prompt_version   TEXT,
+    error_text       TEXT,
+    created_at       TEXT
+);
+"""
+
 _ALLOWED_TRANSITIONS: dict[str, list[str]] = {
     "not_applied": ["applied", "withdrawn"],
     "applied":     ["interview", "rejected", "withdrawn"],
@@ -115,6 +129,7 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
                 if "duplicate column name" not in str(exc).lower():
                     raise
     conn.execute(_LLM_RPD_SQL)
+    conn.execute(_QUALITATIVE_INDEX_SQL)
     for stmt in _INDEX_SQL:
         conn.execute(stmt)
     conn.commit()
@@ -566,6 +581,151 @@ def incr_rpd_counter(db_path: Path, date: str) -> int:
         conn.commit()
         row = conn.execute("SELECT count FROM llm_rpd WHERE date = ?", (date,)).fetchone()
         return int(row["count"]) if row else 0
+    finally:
+        conn.close()
+
+
+class LLMQuotaExhausted(RuntimeError):
+    """Raised when no Gemini attempt can be reserved under the daily cap."""
+
+
+def reserve_llm_rpd_attempt(db_path: Path, date: str, daily_cap: int | None = None) -> int:
+    """Reserve one Gemini attempt before the HTTP call.
+
+    Kept separate from ``incr_rpd_counter`` so existing digest success-accounting
+    behavior is unchanged in slice 1; qualitative assessments call this before
+    each attempt so failures still consume quota.
+    """
+    if daily_cap is None:
+        return incr_rpd_counter(db_path, date)
+    conn = open_db(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT count FROM llm_rpd WHERE date = ?", (date,)).fetchone()
+        current = int(row["count"]) if row else 0
+        if current >= daily_cap:
+            conn.rollback()
+            raise LLMQuotaExhausted("daily LLM quota exhausted - try tomorrow")
+        conn.execute(
+            "INSERT INTO llm_rpd(date, count) VALUES(?, 1) "
+            "ON CONFLICT(date) DO UPDATE SET count = count + 1",
+            (date,),
+        )
+        conn.commit()
+        row = conn.execute("SELECT count FROM llm_rpd WHERE date = ?", (date,)).fetchone()
+        return int(row["count"]) if row else current + 1
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def claim_qualitative_assessment(
+    db_path: Path,
+    job_ref: str,
+    *,
+    now: str,
+    force: bool = False,
+    model: str | None = None,
+    prompt_version: str | None = None,
+) -> dict[str, Any]:
+    """Atomic qualitative assessment compare-and-set.
+
+    Returns ``{"claimed": True, "row": row}`` only for the request that owns the
+    Gemini call. Existing pending/running rows are returned as in-flight; done and
+    error rows are returned unless ``force`` is requested. Force never overrides a
+    running row.
+    """
+    conn = open_db(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        existing = conn.execute(
+            "SELECT * FROM qualitative_index WHERE job_ref = ?",
+            (job_ref,),
+        ).fetchone()
+        if existing is not None:
+            status = existing["status"]
+            if status in {"pending", "running"}:
+                conn.commit()
+                return {"claimed": False, "row": dict(existing), "in_flight": True}
+            if not force:
+                conn.commit()
+                return {"claimed": False, "row": dict(existing), "in_flight": False}
+            conn.execute(
+                """UPDATE qualitative_index
+                      SET status = 'running',
+                          grade = NULL,
+                          culture_flag = NULL,
+                          legitimacy_tier = NULL,
+                          model = ?,
+                          prompt_version = ?,
+                          error_text = NULL,
+                          created_at = ?
+                    WHERE job_ref = ?
+                      AND status NOT IN ('pending', 'running')""",
+                (model, prompt_version, now, job_ref),
+            )
+        else:
+            conn.execute(
+                """INSERT INTO qualitative_index
+                    (job_ref, status, grade, culture_flag, legitimacy_tier,
+                     model, prompt_version, error_text, created_at)
+                   VALUES (?, 'running', NULL, NULL, NULL, ?, ?, NULL, ?)""",
+                (job_ref, model, prompt_version, now),
+            )
+        row = conn.execute(
+            "SELECT * FROM qualitative_index WHERE job_ref = ?",
+            (job_ref,),
+        ).fetchone()
+        conn.commit()
+        return {"claimed": True, "row": dict(row), "in_flight": True}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def finish_qualitative_assessment(
+    db_path: Path,
+    job_ref: str,
+    *,
+    status: str,
+    legitimacy_tier: str | None = None,
+    culture_flag: str | None = None,
+    model: str | None = None,
+    prompt_version: str | None = None,
+    error_text: str | None = None,
+) -> None:
+    if status not in {"done", "error"}:
+        raise ValueError(f"invalid qualitative status: {status!r}")
+    conn = open_db(db_path)
+    try:
+        conn.execute(
+            """UPDATE qualitative_index
+                  SET status = ?,
+                      culture_flag = ?,
+                      legitimacy_tier = ?,
+                      model = COALESCE(?, model),
+                      prompt_version = COALESCE(?, prompt_version),
+                      error_text = ?
+                WHERE job_ref = ?""",
+            (status, culture_flag, legitimacy_tier, model, prompt_version, error_text, job_ref),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_qualitative_index_row(db_path: Path, job_ref: str) -> dict[str, Any] | None:
+    conn = open_db(db_path)
+    try:
+        row = conn.execute(
+            "SELECT * FROM qualitative_index WHERE job_ref = ?",
+            (job_ref,),
+        ).fetchone()
+        return dict(row) if row else None
     finally:
         conn.close()
 

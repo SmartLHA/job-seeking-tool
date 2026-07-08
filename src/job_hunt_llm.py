@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -143,7 +143,11 @@ def _call_gemini(prompt: str) -> tuple[str | None, str | None]:
     return None, error
 
 
-def _call_gemini_reasoning(prompt: str) -> tuple[str | None, str | None, str | None, bool]:
+def _call_gemini_reasoning(
+    prompt: str,
+    *,
+    before_attempt: Callable[[str], None] | None = None,
+) -> tuple[str | None, str | None, str | None, bool]:
     """Send a prompt using the analysis model chain with high thinking budget.
 
     Chain (on 404/429/503):
@@ -166,6 +170,8 @@ def _call_gemini_reasoning(prompt: str) -> tuple[str | None, str | None, str | N
         return bool(reasons) and all(r == "rate_limited" for r in reasons)
 
     # 1 — primary with thinking
+    if before_attempt is not None:
+        before_attempt(_ANALYSIS_MODEL)
     text, error, try_fallback, reason = _call_gemini_model(
         prompt, _ANALYSIS_MODEL, key,
         thinking_budget=_ANALYSIS_THINKING_BUDGET,
@@ -181,6 +187,8 @@ def _call_gemini_reasoning(prompt: str) -> tuple[str | None, str | None, str | N
 
     # 2 — first fallback with thinking
     logger.warning("%r unavailable (404/429/503) — trying %r with thinking", _ANALYSIS_MODEL, _ANALYSIS_FALLBACK_1)
+    if before_attempt is not None:
+        before_attempt(_ANALYSIS_FALLBACK_1)
     text, error, try_fallback, reason = _call_gemini_model(
         prompt, _ANALYSIS_FALLBACK_1, key,
         thinking_budget=_ANALYSIS_THINKING_BUDGET,
@@ -196,6 +204,8 @@ def _call_gemini_reasoning(prompt: str) -> tuple[str | None, str | None, str | N
 
     # 3 — second fallback, no thinking (fast safety net for slow/timed-out thinking models)
     logger.warning("%r unavailable — trying %r without thinking", _ANALYSIS_FALLBACK_1, _ANALYSIS_FALLBACK_2)
+    if before_attempt is not None:
+        before_attempt(_ANALYSIS_FALLBACK_2)
     text, error, try_fallback, reason = _call_gemini_model(
         prompt, _ANALYSIS_FALLBACK_2, key,
         timeout=_TIMEOUT_SECONDS,

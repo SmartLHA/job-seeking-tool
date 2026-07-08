@@ -72,11 +72,14 @@ from src.job_hunt_keyword_match import compute_keyword_match
 from src.job_hunt_cover_letter import generate_cover_letter_text, save_cover_letter
 from src.job_hunt_storage import (
     ensure_storage_layout,
+    archive_qualitative_assessment,
     load_application_outcome,
     load_job_analysis,
+    load_qualitative_assessment,
     load_reviewed_job,
     save_application_outcome,
     save_job_analysis,
+    save_qualitative_assessment,
     save_reviewed_job,
 )
 
@@ -539,9 +542,20 @@ def render_job(req, config, responder, job_id, *, flash=None, flash_kind='succes
         outcome = load_application_outcome(job_id, config.state_root)
     except FileNotFoundError:
         outcome = None
+    try:
+        qualitative_assessment = load_qualitative_assessment(job_id, config.state_root)
+    except FileNotFoundError:
+        qualitative_assessment = None
+    try:
+        from src.job_hunt_index import get_qualitative_index_row
+        qualitative_index = get_qualitative_index_row(_index_db_path(config), job_id)
+    except Exception:
+        qualitative_index = None
 
     page = render_job_page(_build_job_page_vm(
         reviewed_job, analysis, outcome,
+        qualitative_assessment=qualitative_assessment,
+        qualitative_index=qualitative_index,
         flash=flash, flash_kind=flash_kind, embed=embed,
         model_label=config.model_label,
     ))
@@ -601,6 +615,144 @@ def handle_job_explain(req, config, responder, job_id):
         responder.send_json({"ok": False, "error": explain_error or "LLM unavailable"}, status=HTTPStatus.SERVICE_UNAVAILABLE)
         return
     responder.send_json({"ok": True, **explanation})
+
+
+def handle_qualitative_assess(req, config, responder, job_id):
+    """POST /job/{id}/qualitative-assess — idempotent advisory assessment."""
+    from src.job_hunt_index import (
+        LLMQuotaExhausted,
+        claim_qualitative_assessment,
+        finish_qualitative_assessment,
+        rpd_used_today,
+        reserve_llm_rpd_attempt,
+    )
+    from src.job_hunt_llm import _call_gemini_reasoning
+    from src.job_hunt_qualitative import (
+        PROMPT_VERSION,
+        QualitativeValidationFailure,
+        build_qualitative_prompt,
+        parse_and_validate,
+    )
+    from src.job_hunt_scheduler import rpd_date_key
+
+    if not job_id.strip():
+        responder.send_html(
+            render_page("Missing job id", "<p>Missing job id.</p>", model_label=config.model_label),
+            status=HTTPStatus.BAD_REQUEST,
+        )
+        return
+    try:
+        reviewed_job = load_reviewed_job(job_id, config.state_root)
+    except FileNotFoundError:
+        responder.send_html(
+            render_page("Job not found", "<p>No saved job was found for that id.</p>", model_label=config.model_label),
+            status=HTTPStatus.NOT_FOUND,
+        )
+        return
+
+    force = str(req.form.get("force") or "").strip() == "1" or (
+        isinstance(req.json_body, dict) and str(req.json_body.get("force") or "").strip() == "1"
+    )
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    db_path = _index_db_path(config)
+    claim = claim_qualitative_assessment(
+        db_path,
+        job_id,
+        now=now,
+        force=force,
+        model=None,
+        prompt_version=PROMPT_VERSION,
+    )
+    row = claim.get("row") or {}
+    if not claim.get("claimed"):
+        flash = "Qualitative assessment is already running." if row.get("status") in {"pending", "running"} else None
+        render_job(req, config, responder, job_id, flash=flash, flash_kind="success")
+        return
+
+    if force:
+        archive_qualitative_assessment(job_id, config.state_root)
+
+    try:
+        profile = load_candidate_profile(config.profile_path)
+    except Exception as exc:
+        finish_qualitative_assessment(
+            db_path, job_id, status="error", prompt_version=PROMPT_VERSION,
+            error_text=f"Could not load profile: {exc}",
+        )
+        render_job(req, config, responder, job_id, flash="Qualitative assessment failed.", flash_kind="error")
+        return
+
+    prompt = build_qualitative_prompt(reviewed_job.description_raw, profile)
+    target_roles = [r for r in getattr(profile, "target_roles", []) if str(r).strip()]
+    allow_unknown_archetype = not target_roles
+    validation_failure: QualitativeValidationFailure | None = None
+    last_error = ""
+    model_used = None
+    quota_message = "daily LLM quota exhausted - try tomorrow"
+    date_key = rpd_date_key(datetime.now(timezone.utc))
+
+    if rpd_used_today(db_path, date_key) >= profile.digest_llm_rpd:
+        finish_qualitative_assessment(
+            db_path, job_id, status="error",
+            prompt_version=PROMPT_VERSION, error_text=quota_message,
+        )
+        render_job(req, config, responder, job_id, flash=quota_message, flash_kind="error")
+        return
+
+    def _reserve(_model: str) -> None:
+        reserve_llm_rpd_attempt(
+            db_path,
+            rpd_date_key(datetime.now(timezone.utc)),
+            profile.digest_llm_rpd,
+        )
+
+    for attempt in range(2):
+        try:
+            raw, error, model_used, _all_rate_limited = _call_gemini_reasoning(prompt, before_attempt=_reserve)
+        except LLMQuotaExhausted as exc:
+            last_error = str(exc) or quota_message
+            break
+        if raw is None:
+            last_error = error or "Gemini unavailable"
+            break
+        parsed = parse_and_validate(
+            raw,
+            reviewed_job.description_raw,
+            allow_unknown_archetype=allow_unknown_archetype,
+        )
+        if not isinstance(parsed, QualitativeValidationFailure):
+            created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            assessment = {
+                **parsed,
+                "job_id": job_id,
+                "model": model_used,
+                "prompt_version": PROMPT_VERSION,
+                "created_at": created_at,
+            }
+            save_qualitative_assessment(job_id, assessment, config.state_root)
+            culture = assessment["dimensions"].get("culture_signals", {})
+            culture_flag = "caution" if isinstance(culture, dict) and culture.get("score") in (1, 2) else None
+            finish_qualitative_assessment(
+                db_path, job_id, status="done",
+                legitimacy_tier=assessment["posting_quality"].get("tier"),
+                culture_flag=culture_flag,
+                model=model_used,
+                prompt_version=PROMPT_VERSION,
+                error_text=None,
+            )
+            render_job(req, config, responder, job_id, flash="Qualitative assessment saved.")
+            return
+        validation_failure = parsed
+        last_error = parsed.message
+        if attempt == 0:
+            continue
+
+    finish_qualitative_assessment(
+        db_path, job_id, status="error", model=model_used,
+        prompt_version=PROMPT_VERSION, error_text=last_error,
+    )
+    flash = last_error if last_error == quota_message else "Qualitative assessment failed."
+    render_job(req, config, responder, job_id, flash=flash, flash_kind="error")
 
 
 def _take_skip_param_keys(search_values: dict) -> tuple[str, str]:
@@ -2182,7 +2334,8 @@ def _keyword_match_vm_fields(reviewed_job, analysis) -> dict:
     )
 
 
-def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash, flash_kind="success",
+def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash,
+                       qualitative_assessment=None, qualitative_index=None, flash_kind="success",
                        embed=False, model_label="") -> "JobPageViewModel":
     if analysis is not None:
         sb = analysis.score_breakdown
@@ -2234,6 +2387,8 @@ def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash, flash_kind="su
         outcome_notes=outcome.notes if outcome else None,
         outcome_updated_at=outcome.updated_at if outcome else None,
         outcome_status_options=allowed_next_statuses(outcome.status if outcome else None),
+        qualitative_assessment=qualitative_assessment,
+        qualitative_index=qualitative_index,
         flash=flash, flash_kind=flash_kind, embed=embed, model_label=model_label, **a,
     )
 

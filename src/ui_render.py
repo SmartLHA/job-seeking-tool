@@ -549,6 +549,8 @@ class JobPageViewModel:
     outcome_notes: str | None
     outcome_updated_at: object | None
     outcome_status_options: list[str]
+    qualitative_assessment: dict | None
+    qualitative_index: dict | None
     flash: str | None
     flash_kind: str
     embed: bool
@@ -801,6 +803,99 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'font-size:11.5px;font-weight:600;{ff}color:var(--ink-soft);background:var(--surface-sunk);'
             f'border:1px solid var(--line);white-space:nowrap;">{escape(text)}</span>'
         )
+
+    def _render_qualitative_panel() -> str:
+        assessment = vm.qualitative_assessment
+        qrow = vm.qualitative_index or {}
+        status = qrow.get("status")
+        show_panel = assessment is not None or status in {"running", "pending", "error"}
+        force_button = ""
+        if assessment is not None or status == "error":
+            force_button = (
+                f'<button type="submit" name="force" value="1" style="padding:4px 12px;font-size:12px;'
+                f'cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);'
+                f'border-radius:var(--r-md);font-weight:600;font-family:inherit;">Re-run</button>'
+            )
+        button = (
+            f'<form method="post" action="/job/{escape(vm.job_id)}/qualitative-assess" style="margin:0;">'
+            f'<button type="submit" style="padding:6px 14px;font-size:12.5px;cursor:pointer;border:1px solid var(--accent);'
+            f'background:transparent;color:var(--accent);border-radius:var(--r-md);font-weight:600;font-family:inherit;">'
+            f'Qualitative assessment (AI)</button>{force_button}</form>'
+        )
+        if not show_panel:
+            return (
+                f'<div style="margin-top:16px;background:var(--surface);border:1px solid var(--line);'
+                f'border-radius:var(--r-lg);padding:var(--pad);box-shadow:var(--shadow-sm);">'
+                f'{_section_label("Qualitative assessment", right=button)}'
+                f'<p style="font-size:12.5px;color:var(--ink-faint);margin:0;">'
+                f'This sends the job description and a profile summary to the Gemini API.</p>'
+                f'</div>'
+            )
+        if status in {"running", "pending"} and assessment is None:
+            body = '<p style="font-size:13px;color:var(--ink-faint);margin:0;">Assessment is already in flight.</p>'
+        elif status == "error" and assessment is None:
+            body = (
+                f'<div style="font-size:13px;color:var(--skip);background:var(--skip-bg);'
+                f'border:1px solid var(--skip-line);border-radius:var(--r-md);padding:10px 12px;">'
+                f'Assessment failed: {escape(qrow.get("error_text") or "validation failed")}</div>'
+            )
+        else:
+            dims = assessment.get("dimensions", {}) if isinstance(assessment, dict) else {}
+            dim_labels = {
+                "seniority_fit": "Seniority fit",
+                "culture_signals": "Culture signals",
+                "red_flags": "Red flags",
+                "role_archetype_alignment": "Role archetype alignment",
+            }
+            rows = []
+            for key, label in dim_labels.items():
+                dim = dims.get(key, {})
+                if isinstance(dim, dict) and dim.get("tier") == "unknown":
+                    rows.append(
+                        f'<div style="padding:12px 0;border-bottom:1px solid var(--line-soft);">'
+                        f'<div style="font-size:13px;font-weight:700;color:var(--ink);">{escape(label)}: unknown</div>'
+                        f'<div style="font-size:13px;color:var(--ink-faint);margin-top:4px;">{escape(dim.get("warning") or "")}</div>'
+                        f'</div>'
+                    )
+                    continue
+                evidence = dim.get("evidence", []) if isinstance(dim, dict) else []
+                evidence_html = "".join(
+                    f'<blockquote style="margin:6px 0 0;padding-left:10px;border-left:3px solid var(--line);'
+                    f'font-size:12.5px;color:var(--ink-soft);">{escape(q)}</blockquote>'
+                    for q in evidence
+                )
+                rows.append(
+                    f'<div style="padding:12px 0;border-bottom:1px solid var(--line-soft);">'
+                    f'<div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">'
+                    f'<div style="font-size:13px;font-weight:700;color:var(--ink);">{escape(label)}</div>'
+                    f'<span style="font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--ink-soft);">'
+                    f'{escape(str(dim.get("score", "—")))} / 5</span></div>'
+                    f'{evidence_html}'
+                    f'<div style="font-size:13px;color:var(--ink-soft);margin-top:7px;line-height:1.5;">'
+                    f'{escape(dim.get("reasoning") or "")}</div>'
+                    f'</div>'
+                )
+            pq = assessment.get("posting_quality", {}) if isinstance(assessment, dict) else {}
+            signals = pq.get("signals", []) if isinstance(pq, dict) else []
+            signals_html = "".join(f'<li>{escape(s)}</li>' for s in signals) or '<li>No signals provided.</li>'
+            body = (
+                "".join(rows)
+                + f'<div style="padding-top:12px;">'
+                f'<div style="font-size:11.5px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-faint);">Posting quality</div>'
+                f'<div style="font-size:13px;margin-top:6px;">Tier: <strong>{escape(pq.get("tier") or "unknown")}</strong></div>'
+                f'<ul style="margin:6px 0 0;padding-left:18px;font-size:13px;line-height:1.6;color:var(--ink-soft);">{signals_html}</ul>'
+                f'</div>'
+            )
+        return (
+            f'<div style="margin-top:16px;background:var(--surface);border:1px solid var(--line);'
+            f'border-radius:var(--r-lg);padding:var(--pad);box-shadow:var(--shadow-sm);">'
+            f'{_section_label("Qualitative assessment", right=button)}'
+            f'<p style="font-size:12.5px;color:var(--ink-faint);margin:0 0 10px;">'
+            f'This sends the job description and a profile summary to the Gemini API.</p>'
+            f'{body}</div>'
+        )
+
+    qualitative_panel_html = _render_qualitative_panel()
 
     # ── main analysis block ───────────────────────────────────────────────────
     if vm.has_analysis:
@@ -1516,6 +1611,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             {flash_html}
             {job_header_html}
             {verdict_card_html}
+            {qualitative_panel_html}
             {keyword_block_html}
             {reasons_grid_html}
             {ai_block_html}
@@ -1546,6 +1642,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
           {flash_html}
           {job_header_html}
           {verdict_card_html}
+          {qualitative_panel_html}
           {keyword_block_html}
           {reasons_grid_html}
           {ai_block_html}

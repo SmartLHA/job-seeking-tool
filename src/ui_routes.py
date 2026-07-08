@@ -35,6 +35,7 @@ from src.ui_handlers import (
     handle_parse_cv,
     handle_save_profile,
     handle_job_explain,
+    handle_qualitative_assess,
     handle_evaluate_form,
     handle_source_search,
     handle_source_select,
@@ -290,6 +291,10 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             ats_recheck_match = re.match(r"^/job/([^/]+)/ats-recheck$", parsed.path)
             if ats_recheck_match:
                 handle_ats_recheck(req, config, responder, ats_recheck_match.group(1))
+                return
+            qualitative_match = re.match(r"^/job/([^/]+)/qualitative-assess$", parsed.path)
+            if qualitative_match:
+                handle_qualitative_assess(req, config, responder, qualitative_match.group(1))
                 return
             if parsed.path == "/jobs/batch-evaluate":
                 handle_batch_evaluate(req, config, responder)

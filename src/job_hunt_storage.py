@@ -102,6 +102,44 @@ def save_job_analysis(analysis: JobAnalysis, root: str | Path) -> Path:
     return path
 
 
+def save_qualitative_assessment(job_id: str, assessment: dict[str, Any], root: str | Path) -> Path:
+    """Persist qualitative assessment under analyses/qualitative/{job_id}.json."""
+    if not isinstance(assessment, dict):
+        raise StorageError("qualitative assessment must be an object")
+    path = _qualitative_assessment_path(root, job_id)
+    _write_json(path, assessment)
+    return path
+
+
+def load_qualitative_assessment(job_id: str, root: str | Path) -> dict[str, Any]:
+    """Load a qualitative assessment payload for a job."""
+    payload = _read_json(_qualitative_assessment_path(root, job_id))
+    if not isinstance(payload, dict):
+        raise StorageError("qualitative assessment file must contain an object")
+    return payload
+
+
+def archive_qualitative_assessment(job_id: str, root: str | Path) -> Path | None:
+    """Move an existing qualitative assessment to a versioned archive path."""
+    path = _qualitative_assessment_path(root, job_id)
+    if not path.exists():
+        return None
+    payload = _read_json(path)
+    if not isinstance(payload, dict):
+        payload = {"archived_payload": payload}
+    created_at = str(payload.get("created_at") or "unknown").replace(":", "").replace("/", "-")
+    prompt_version = str(payload.get("prompt_version") or "unknown").replace("/", "-")
+    archive_dir = path.parent / "archive"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = archive_dir / f"{job_id.strip()}__{prompt_version}__{created_at}.json"
+    suffix = 1
+    while archive_path.exists():
+        archive_path = archive_dir / f"{job_id.strip()}__{prompt_version}__{created_at}__{suffix}.json"
+        suffix += 1
+    path.replace(archive_path)
+    return archive_path
+
+
 def load_job_analysis(job_id: str, root: str | Path) -> JobAnalysis:
     """Load the derived analysis for a reviewed job."""
     path = _state_file_path(root, "analyses", job_id)
@@ -276,6 +314,13 @@ def _state_file_path(root: str | Path, state_dir_name: str, record_id: str) -> P
         "logs": layout.logs_dir,
     }
     return state_dirs[state_dir_name] / f"{record_id.strip()}.json"
+
+
+def _qualitative_assessment_path(root: str | Path, job_id: str) -> Path:
+    if not isinstance(job_id, str) or not job_id.strip():
+        raise StorageError("job id must be a non-empty string")
+    layout = ensure_storage_layout(root)
+    return layout.analyses_dir / "qualitative" / f"{job_id.strip()}.json"
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

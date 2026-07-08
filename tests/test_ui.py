@@ -3,7 +3,9 @@ from __future__ import annotations
 import html
 import json
 import re
+import sys
 import threading
+import types
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -12,13 +14,24 @@ from pathlib import Path
 
 from http.server import ThreadingHTTPServer
 
+try:
+    import requests  # noqa: F401
+except ModuleNotFoundError:
+    requests_stub = types.ModuleType("requests")
+    requests_stub.exceptions = types.SimpleNamespace(ConnectionError=Exception, Timeout=TimeoutError)
+    requests_stub.post = lambda *args, **kwargs: None
+    sys.modules["requests"] = requests_stub
+
 from src.job_hunt_storage import (
+    load_qualitative_assessment,
     load_application_outcome,
     load_job_analysis,
     load_raw_input,
     load_reviewed_job,
     save_application_outcome,
 )
+from src.job_hunt_index import get_qualitative_index_row, incr_rpd_counter
+from src.job_hunt_scheduler import rpd_date_key
 from src.ui_state import UIServerConfig
 from src.ui_routes import _build_handler
 from src.ui_utils import (
@@ -29,6 +42,7 @@ from src.ui_utils import (
     split_lines_or_commas,
 )
 from src.ui_handlers import (
+    handle_qualitative_assess,
     load_recent_job_history,
     raw_input_payload_from_form,
 )
@@ -205,6 +219,88 @@ def _http_post(url: str, form: dict[str, str]) -> tuple[int, str]:
         return exc.code, exc.read().decode("utf-8")
 
 
+class _FakeResponder:
+    def __init__(self) -> None:
+        self.status = None
+        self.body = ""
+        self.redirect_location = None
+
+    def send_html(self, body: str, *, status=None) -> None:
+        self.status = status
+        self.body = body
+
+    def send_json(self, payload, *, status=None) -> None:
+        self.status = status
+        self.body = json.dumps(payload)
+
+    def redirect(self, location: str) -> None:
+        self.redirect_location = location
+
+
+def _ui_config(tmp_path: Path) -> UIServerConfig:
+    return UIServerConfig(
+        profile_path=_write_profile(tmp_path),
+        state_root=tmp_path / "state",
+        report_dir=tmp_path / "reports",
+        host="127.0.0.1",
+        port=0,
+    )
+
+
+def _save_evaluated_job(tmp_path: Path, config: UIServerConfig, *, job_id: str) -> None:
+    run_local_evaluation_flow_from_payload(
+        profile_path=config.profile_path,
+        reviewed_job_payload={
+            "job_id": job_id,
+            "job_title": "Business Analyst",
+            "company": "Example Co",
+            "description_raw": "Looking for stakeholder management and SQL.",
+            "source_type": "copied_text",
+            "source_ref": "manual-note-001",
+            "location": "London",
+            "work_mode": "hybrid",
+            "employment_type": "full-time",
+            "required_skills": ["Stakeholder Management", "SQL"],
+            "preferred_skills": ["Power BI"],
+            "required_years_experience": 3,
+            "domain": "finance",
+            "salary_min_gbp": 50000,
+            "salary_max_gbp": 55000,
+        },
+        state_root=config.state_root,
+        report_dir=config.report_dir,
+        raw_input_payload={"copied_text": "original text"},
+    )
+
+
+def _qualitative_llm_payload() -> str:
+    return json.dumps({
+        "dimensions": {
+            "seniority_fit": {
+                "score": 4,
+                "evidence": ["Looking for stakeholder management"],
+                "reasoning": "The role has clear BA ownership signals.",
+            },
+            "culture_signals": {
+                "score": 3,
+                "evidence": ["Looking for stakeholder management and SQL"],
+                "reasoning": "The JD has little explicit culture evidence.",
+            },
+            "red_flags": {
+                "score": 5,
+                "evidence": ["SQL"],
+                "reasoning": "No material red flags are visible in the JD.",
+            },
+            "role_archetype_alignment": {
+                "score": 5,
+                "evidence": ["stakeholder management and SQL"],
+                "reasoning": "The activities align with Business Analyst target roles.",
+            },
+        },
+        "posting_quality": {"tier": "unknown_caution", "signals": ["Short JD text."]},
+    })
+
+
 
 
 def _first_reed_select_form(body: str) -> dict[str, str]:
@@ -251,6 +347,110 @@ def _valid_evaluate_form(*, job_id: str = "job-ui-001") -> dict[str, str]:
         "salary_max_gbp": "55000",
         "notes": "Reviewed and approved",
     }
+
+
+def test_post_qualitative_assess_uses_mocked_llm_and_renders_panel(tmp_path: Path, monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_reasoning(prompt: str, *, before_attempt=None):
+        calls.append(prompt)
+        if before_attempt:
+            before_attempt("gemini-test")
+        return _qualitative_llm_payload(), None, "gemini-test", False
+
+    monkeypatch.setattr("src.job_hunt_llm._call_gemini_reasoning", fake_reasoning)
+    config = _ui_config(tmp_path)
+    _save_evaluated_job(tmp_path, config, job_id="job-qual-001")
+    req = types.SimpleNamespace(path="/job/job-qual-001/qualitative-assess", form={}, json_body=None)
+    responder = _FakeResponder()
+
+    handle_qualitative_assess(req, config, responder, "job-qual-001")
+    stored = load_qualitative_assessment("job-qual-001", config.state_root)
+
+    assert len(calls) == 1
+    assert "raw CV" not in calls[0]
+    assert "This sends the job description and a profile summary to the Gemini API." in responder.body
+    assert "Seniority fit" in responder.body
+    assert stored["model"] == "gemini-test"
+    assert stored["posting_quality"]["tier"] == "unknown_caution"
+
+
+def test_post_qualitative_assess_daily_cap_skips_llm_and_marks_error(tmp_path: Path, monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_reasoning(prompt: str, *, before_attempt=None):
+        calls.append(prompt)
+        raise AssertionError("LLM should not be called after daily cap is exhausted")
+
+    monkeypatch.setattr("src.job_hunt_llm._call_gemini_reasoning", fake_reasoning)
+    config = _ui_config(tmp_path)
+    profile_payload = json.loads(config.profile_path.read_text(encoding="utf-8"))
+    profile_payload["digest_llm_rpd"] = 1
+    config.profile_path.write_text(json.dumps(profile_payload), encoding="utf-8")
+    _save_evaluated_job(tmp_path, config, job_id="job-qual-cap")
+    db_path = config.state_root / "job_hunt_index.db"
+    incr_rpd_counter(db_path, rpd_date_key())
+    req = types.SimpleNamespace(path="/job/job-qual-cap/qualitative-assess", form={}, json_body=None)
+    responder = _FakeResponder()
+
+    handle_qualitative_assess(req, config, responder, "job-qual-cap")
+    row = get_qualitative_index_row(db_path, "job-qual-cap")
+
+    assert calls == []
+    assert row is not None
+    assert row["status"] == "error"
+    assert row["error_text"] == "daily LLM quota exhausted - try tomorrow"
+    assert "daily LLM quota exhausted - try tomorrow" in responder.body
+
+
+def test_post_qualitative_force_rejected_while_running(tmp_path: Path, monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_reasoning(prompt: str, *, before_attempt=None):
+        calls.append(prompt)
+        return _qualitative_llm_payload(), None, "gemini-test", False
+
+    monkeypatch.setattr("src.job_hunt_llm._call_gemini_reasoning", fake_reasoning)
+    config = _ui_config(tmp_path)
+    _save_evaluated_job(tmp_path, config, job_id="job-qual-running")
+    from src.job_hunt_index import claim_qualitative_assessment
+    claim_qualitative_assessment(
+        config.state_root / "job_hunt_index.db",
+        "job-qual-running",
+        now="2026-07-08T10:00:00",
+    )
+    req = types.SimpleNamespace(path="/job/job-qual-running/qualitative-assess", form={"force": "1"}, json_body=None)
+    responder = _FakeResponder()
+
+    handle_qualitative_assess(req, config, responder, "job-qual-running")
+
+    assert calls == []
+    assert "Assessment is already in flight." in responder.body
+
+
+def test_post_qualitative_force_versions_done_assessment(tmp_path: Path, monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_reasoning(prompt: str, *, before_attempt=None):
+        calls.append(prompt)
+        if before_attempt:
+            before_attempt("gemini-test")
+        return _qualitative_llm_payload(), None, "gemini-test", False
+
+    monkeypatch.setattr("src.job_hunt_llm._call_gemini_reasoning", fake_reasoning)
+    config = _ui_config(tmp_path)
+    _save_evaluated_job(tmp_path, config, job_id="job-qual-force")
+    req = types.SimpleNamespace(path="/job/job-qual-force/qualitative-assess", form={}, json_body=None)
+    first_responder = _FakeResponder()
+    handle_qualitative_assess(req, config, first_responder, "job-qual-force")
+    force_req = types.SimpleNamespace(path="/job/job-qual-force/qualitative-assess", form={"force": "1"}, json_body=None)
+    second_responder = _FakeResponder()
+    handle_qualitative_assess(force_req, config, second_responder, "job-qual-force")
+    archives = list((config.state_root / "analyses" / "qualitative" / "archive").glob("job-qual-force__*.json"))
+
+    assert len(calls) == 2
+    assert archives
+    assert "Qualitative assessment saved." in second_responder.body
 
 
 def test_get_home_page_defaults_to_search_jobs_shell(tmp_path: Path) -> None:
