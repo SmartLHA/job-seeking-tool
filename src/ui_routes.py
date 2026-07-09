@@ -51,6 +51,9 @@ from src.ui_handlers import (
     handle_get_board,
     handle_get_board_view,
     handle_batch_evaluate,
+    handle_batch_assess,
+    handle_get_batch,
+    handle_cancel_batch,
     handle_search_reed_more,
     handle_source_search_more,
     handle_get_review_queue,
@@ -260,6 +263,10 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             if parsed.path == "/review-queue":
                 handle_get_review_queue(req, config, responder)
                 return
+            batch_match = re.match(r"^/batch/([^/]+)$", parsed.path)
+            if batch_match:
+                handle_get_batch(req, config, responder, batch_match.group(1))
+                return
             responder.send_html(render_page("Not found", "<p>Page not found.</p>", model_label=config.model_label), status=HTTPStatus.NOT_FOUND)
 
         def do_POST(self) -> None:  # noqa: N802
@@ -298,6 +305,13 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/jobs/batch-evaluate":
                 handle_batch_evaluate(req, config, responder)
+                return
+            if parsed.path == "/jobs/batch-assess":
+                handle_batch_assess(req, config, responder)
+                return
+            batch_cancel_match = re.match(r"^/batch/([^/]+)/cancel$", parsed.path)
+            if batch_cancel_match:
+                handle_cancel_batch(req, config, responder, batch_cancel_match.group(1))
                 return
             if parsed.path == "/jobs/save":
                 handle_jobs_save(req, config, responder)

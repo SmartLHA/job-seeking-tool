@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable
 
 from src.job_hunt_models import CandidateProfile, Skill
 from src.text_grounding import normalize_grounding_text, quote_in_text
@@ -18,6 +20,16 @@ DIMENSIONS = (
 )
 
 POSTING_QUALITY_TIERS = {"high_confidence", "unknown_caution", "suspicious"}
+
+
+@dataclass(frozen=True, slots=True)
+class QualitativeRunResult:
+    ok: bool
+    error: str | None = None
+    grade: str | None = None
+    model: str | None = None
+    legitimacy_tier: str | None = None
+    culture_flag: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +146,130 @@ def apply_grade_to_assessment(
     assessment["cap_reason"] = grade["cap_reason"]
     assessment["grade_warning"] = grade["warning"]
     return grade
+
+
+def run_qualitative_assessment_pipeline(
+    *,
+    job_id: str,
+    profile: CandidateProfile,
+    state_root: str | Path,
+    db_path: Path,
+    before_persist: Callable[[], bool] | None = None,
+) -> QualitativeRunResult:
+    """Run the shared qualitative Gemini pipeline for one already-claimed job."""
+    from src.job_hunt_index import LLMQuotaExhausted, finish_qualitative_assessment, reserve_llm_rpd_attempt, rpd_used_today
+    from src.job_hunt_llm import RateLimited, _call_gemini_reasoning
+    from src.job_hunt_models import effective_decision
+    from src.job_hunt_scheduler import rpd_date_key
+    from src.job_hunt_storage import load_job_analysis, load_reviewed_job, save_qualitative_assessment
+
+    reviewed_job = load_reviewed_job(job_id, state_root)
+    prompt = build_qualitative_prompt(reviewed_job.description_raw, profile)
+    target_roles = [r for r in getattr(profile, "target_roles", []) if str(r).strip()]
+    allow_unknown_archetype = not target_roles
+    last_error = ""
+    model_used = None
+    date_key = rpd_date_key(datetime.now(timezone.utc))
+    daily_cap = getattr(profile, "digest_llm_rpd", None)
+    if daily_cap is not None and rpd_used_today(db_path, date_key) >= daily_cap:
+        raise LLMQuotaExhausted("daily LLM quota exhausted - try tomorrow")
+
+    def _reserve(_model: str) -> None:
+        reserve_llm_rpd_attempt(
+            db_path,
+            rpd_date_key(datetime.now(timezone.utc)),
+            getattr(profile, "digest_llm_rpd", None),
+        )
+
+    for attempt in range(2):
+        try:
+            raw, error, model_used, all_rate_limited = _call_gemini_reasoning(
+                prompt,
+                before_attempt=_reserve,
+            )
+        except LLMQuotaExhausted:
+            raise
+        if raw is None and all_rate_limited:
+            raise RateLimited(error or "Gemini rate limited (429)")
+        if raw is None:
+            last_error = error or "Gemini unavailable"
+            break
+        parsed = parse_and_validate(
+            raw,
+            reviewed_job.description_raw,
+            allow_unknown_archetype=allow_unknown_archetype,
+        )
+        if isinstance(parsed, QualitativeValidationFailure):
+            last_error = parsed.message
+            if attempt == 0:
+                continue
+            break
+
+        created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        assessment = {
+            **parsed,
+            "job_id": job_id,
+            "model": model_used,
+            "prompt_version": PROMPT_VERSION,
+            "created_at": created_at,
+        }
+        try:
+            analysis = load_job_analysis(job_id, state_root)
+        except FileNotFoundError:
+            analysis = None
+        grade = (
+            apply_grade_to_assessment(
+                analysis.match_score,
+                assessment,
+                effective_decision=effective_decision(analysis),
+                has_blockers=bool(analysis.blockers),
+                confidence=analysis.confidence,
+                decision_reason=analysis.decision_reason,
+            )
+            if analysis is not None else None
+        )
+        culture = assessment["dimensions"].get("culture_signals", {})
+        culture_flag = "caution" if isinstance(culture, dict) and culture.get("score") in (1, 2) else None
+        result = QualitativeRunResult(
+            ok=True,
+            grade=grade.get("display_grade") if grade else None,
+            model=model_used,
+            legitimacy_tier=assessment["posting_quality"].get("tier"),
+            culture_flag=culture_flag,
+        )
+        if before_persist is not None and not before_persist():
+            finish_qualitative_assessment(
+                db_path,
+                job_id,
+                status="error",
+                model=model_used,
+                prompt_version=PROMPT_VERSION,
+                error_text="cancelled before persist",
+            )
+            return QualitativeRunResult(ok=False, error="cancelled before persist", model=model_used)
+        save_qualitative_assessment(job_id, assessment, state_root)
+        finish_qualitative_assessment(
+            db_path,
+            job_id,
+            status="done",
+            grade=result.grade,
+            legitimacy_tier=result.legitimacy_tier,
+            culture_flag=result.culture_flag,
+            model=result.model,
+            prompt_version=PROMPT_VERSION,
+            error_text=None,
+        )
+        return result
+
+    finish_qualitative_assessment(
+        db_path,
+        job_id,
+        status="error",
+        model=model_used,
+        prompt_version=PROMPT_VERSION,
+        error_text=last_error,
+    )
+    return QualitativeRunResult(ok=False, error=last_error, model=model_used)
 
 
 def build_qualitative_prompt(jd_text: str, profile: CandidateProfile) -> str:

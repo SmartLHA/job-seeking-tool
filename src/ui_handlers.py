@@ -679,18 +679,12 @@ def handle_qualitative_assess(req, config, responder, job_id):
         LLMQuotaExhausted,
         claim_qualitative_assessment,
         finish_qualitative_assessment,
-        rpd_used_today,
-        reserve_llm_rpd_attempt,
     )
-    from src.job_hunt_llm import _call_gemini_reasoning
+    from src.job_hunt_llm import RateLimited
     from src.job_hunt_qualitative import (
         PROMPT_VERSION,
-        QualitativeValidationFailure,
-        apply_grade_to_assessment,
-        build_qualitative_prompt,
-        parse_and_validate,
+        run_qualitative_assessment_pipeline,
     )
-    from src.job_hunt_scheduler import rpd_date_key
 
     if not job_id.strip():
         responder.send_html(
@@ -739,93 +733,32 @@ def handle_qualitative_assess(req, config, responder, job_id):
         render_job(req, config, responder, job_id, flash="Qualitative assessment failed.", flash_kind="error")
         return
 
-    prompt = build_qualitative_prompt(reviewed_job.description_raw, profile)
-    target_roles = [r for r in getattr(profile, "target_roles", []) if str(r).strip()]
-    allow_unknown_archetype = not target_roles
-    validation_failure: QualitativeValidationFailure | None = None
-    last_error = ""
-    model_used = None
     quota_message = "daily LLM quota exhausted - try tomorrow"
-    date_key = rpd_date_key(datetime.now(timezone.utc))
-
-    if rpd_used_today(db_path, date_key) >= profile.digest_llm_rpd:
+    try:
+        result = run_qualitative_assessment_pipeline(
+            job_id=job_id,
+            profile=profile,
+            state_root=config.state_root,
+            db_path=db_path,
+        )
+    except LLMQuotaExhausted as exc:
+        last_error = str(exc) or quota_message
         finish_qualitative_assessment(
-            db_path, job_id, status="error",
-            prompt_version=PROMPT_VERSION, error_text=quota_message,
+            db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=last_error,
         )
-        render_job(req, config, responder, job_id, flash=quota_message, flash_kind="error")
+        render_job(req, config, responder, job_id, flash=last_error, flash_kind="error")
         return
-
-    def _reserve(_model: str) -> None:
-        reserve_llm_rpd_attempt(
-            db_path,
-            rpd_date_key(datetime.now(timezone.utc)),
-            profile.digest_llm_rpd,
+    except RateLimited as exc:
+        last_error = str(exc) or "Gemini rate limited (429)"
+        finish_qualitative_assessment(
+            db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=last_error,
         )
-
-    for attempt in range(2):
-        try:
-            raw, error, model_used, _all_rate_limited = _call_gemini_reasoning(prompt, before_attempt=_reserve)
-        except LLMQuotaExhausted as exc:
-            last_error = str(exc) or quota_message
-            break
-        if raw is None:
-            last_error = error or "Gemini unavailable"
-            break
-        parsed = parse_and_validate(
-            raw,
-            reviewed_job.description_raw,
-            allow_unknown_archetype=allow_unknown_archetype,
-        )
-        if not isinstance(parsed, QualitativeValidationFailure):
-            created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            assessment = {
-                **parsed,
-                "job_id": job_id,
-                "model": model_used,
-                "prompt_version": PROMPT_VERSION,
-                "created_at": created_at,
-            }
-            try:
-                analysis = load_job_analysis(job_id, config.state_root)
-            except FileNotFoundError:
-                analysis = None
-            grade = (
-                apply_grade_to_assessment(
-                    analysis.match_score,
-                    assessment,
-                    effective_decision=effective_decision(analysis),
-                    has_blockers=bool(analysis.blockers),
-                    confidence=analysis.confidence,
-                    decision_reason=analysis.decision_reason,
-                )
-                if analysis is not None else None
-            )
-            save_qualitative_assessment(job_id, assessment, config.state_root)
-            culture = assessment["dimensions"].get("culture_signals", {})
-            culture_flag = "caution" if isinstance(culture, dict) and culture.get("score") in (1, 2) else None
-            finish_qualitative_assessment(
-                db_path, job_id, status="done",
-                grade=grade.get("display_grade") if grade else None,
-                legitimacy_tier=assessment["posting_quality"].get("tier"),
-                culture_flag=culture_flag,
-                model=model_used,
-                prompt_version=PROMPT_VERSION,
-                error_text=None,
-            )
-            render_job(req, config, responder, job_id, flash="Qualitative assessment saved.")
-            return
-        validation_failure = parsed
-        last_error = parsed.message
-        if attempt == 0:
-            continue
-
-    finish_qualitative_assessment(
-        db_path, job_id, status="error", model=model_used,
-        prompt_version=PROMPT_VERSION, error_text=last_error,
-    )
-    flash = last_error if last_error == quota_message else "Qualitative assessment failed."
-    render_job(req, config, responder, job_id, flash=flash, flash_kind="error")
+        render_job(req, config, responder, job_id, flash="Qualitative assessment failed.", flash_kind="error")
+        return
+    if result.ok:
+        render_job(req, config, responder, job_id, flash="Qualitative assessment saved.")
+    else:
+        render_job(req, config, responder, job_id, flash="Qualitative assessment failed.", flash_kind="error")
 
 
 def _take_skip_param_keys(search_values: dict) -> tuple[str, str]:
@@ -1630,6 +1563,152 @@ def handle_get_review_queue(req, config, responder):
         active_id = jobs_info[0]["job_id"]
     ids_csv = ",".join(j["job_id"] for j in jobs_info)
     responder.send_html(render_review_queue_page(ReviewQueueViewModel(jobs=jobs_info, active_id=active_id, ids_csv=ids_csv, model_label=config.model_label)))
+
+
+def _batch_assess_selected_ids(req) -> list[str]:
+    parsed = parse_qs(req.raw_body.decode("utf-8"), keep_blank_values=True)
+    ids = parsed.get("job_id", [])
+    if not ids and req.form.get("job_ids"):
+        ids = str(req.form.get("job_ids") or "").split(",")
+    return [str(j).strip() for j in ids if str(j).strip()]
+
+
+def _job_is_hidden(config, reviewed_job) -> bool:
+    try:
+        from src.job_hunt_not_interested import hidden_lookup, make_fingerprint, make_key
+        keys, fps = hidden_lookup(state_root=config.state_root)
+        key = make_key(
+            reviewed_job.source_type or "",
+            reviewed_job.source_job_id or "",
+            reviewed_job.job_title or "",
+            reviewed_job.company or "",
+        )
+        fp = make_fingerprint(reviewed_job.source_type or "", reviewed_job.job_title or "", reviewed_job.company or "")
+        return key in keys or fp in fps
+    except Exception:
+        return False
+
+
+def handle_batch_assess(req, config, responder):
+    """POST /jobs/batch-assess — enqueue selected review-queue jobs."""
+    from src.job_hunt_index import enqueue_eval_batch, get_qualitative_index_row
+
+    selected = _batch_assess_selected_ids(req)
+    force = str(req.form.get("force") or "").strip() == "1"
+    if not selected:
+        responder.send_html(render_page("No jobs selected", "<p>Select at least one review job to assess.</p>", model_label=config.model_label), status=HTTPStatus.BAD_REQUEST)
+        return
+    if len(set(selected)) != len(selected):
+        responder.send_html(render_page("Duplicate selection", "<p>Duplicate job selected in this batch.</p>", model_label=config.model_label), status=HTTPStatus.BAD_REQUEST)
+        return
+
+    eligible: list[str] = []
+    errors: list[str] = []
+    db_path = _index_db_path(config)
+    for job_id in selected:
+        try:
+            reviewed = load_reviewed_job(job_id, config.state_root)
+            analysis = load_job_analysis(job_id, config.state_root)
+        except FileNotFoundError:
+            errors.append(f"{job_id}: missing reviewed job or analysis")
+            continue
+        if effective_decision(analysis) != "review":
+            errors.append(f"{job_id}: decision is not Review")
+            continue
+        if _job_is_hidden(config, reviewed):
+            errors.append(f"{job_id}: job is hidden/not interested")
+            continue
+        qrow = get_qualitative_index_row(db_path, job_id)
+        if qrow and qrow.get("status") == "done" and not force:
+            errors.append(f"{job_id}: assessment already done")
+            continue
+        eligible.append(job_id)
+
+    if errors or not eligible:
+        items = "".join(f"<li>{escape(e)}</li>" for e in errors) or "<li>No eligible jobs selected.</li>"
+        responder.send_html(
+            render_page("Batch not queued", f"<p>Fix the selection and try again.</p><ul>{items}</ul>", model_label=config.model_label),
+            status=HTTPStatus.BAD_REQUEST,
+        )
+        return
+    try:
+        batch_id = enqueue_eval_batch(
+            db_path,
+            eligible,
+            now=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            force=force,
+        )
+    except ValueError as exc:
+        responder.send_html(render_page("Batch not queued", f"<p>{escape(str(exc))}</p>", model_label=config.model_label), status=HTTPStatus.BAD_REQUEST)
+        return
+    responder.redirect(f"/batch/{batch_id}")
+
+
+def handle_get_batch(req, config, responder, batch_id: str):
+    """GET /batch/{batch_id} — server-rendered batch progress."""
+    from src.job_hunt_index import get_eval_batch, get_eval_queue_stats
+
+    db_path = _index_db_path(config)
+    rows = get_eval_batch(db_path, batch_id)
+    if not rows:
+        responder.send_html(render_page("Batch not found", "<p>No batch found for that id.</p>", model_label=config.model_label), status=HTTPStatus.NOT_FOUND)
+        return
+    stats = get_eval_queue_stats(db_path, batch_id)
+    done = stats.get("done", 0)
+    total = stats.get("total", 0)
+    terminal = stats.get("done", 0) + stats.get("error", 0) + stats.get("cancelled", 0)
+    refresh = "" if terminal >= total else '<meta http-equiv="refresh" content="5">'
+    waiting_on_quota = any(
+        row.get("status") == "pending" and "quota" in str(row.get("error_text") or "").lower()
+        for row in rows
+    )
+    cancel_requested = any(row.get("status") == "cancelled" for row in rows)
+    note = ""
+    if waiting_on_quota:
+        note = '<p style="color:var(--review);font-weight:700;">Waiting on Gemini quota; pending jobs will retry when quota is available.</p>'
+    elif cancel_requested:
+        note = '<p style="color:var(--ink-muted);font-weight:700;">Cancel requested; any running job will finish its call but will not persist a result.</p>'
+    row_html = []
+    for row in rows:
+        job_id = row["job_ref"]
+        try:
+            reviewed = load_reviewed_job(job_id, config.state_root)
+            title = reviewed.job_title or job_id
+            company = reviewed.company or ""
+        except Exception:
+            title = job_id
+            company = ""
+        status = row["status"]
+        result_link = f' <a href="/job/{escape(job_id)}">Result</a>' if status == "done" else ""
+        error = f'<div style="color:var(--skip);font-size:12px;margin-top:4px;">{escape(row.get("error_text") or "")}</div>' if row.get("error_text") else ""
+        row_html.append(
+            f'<tr><td><a href="/job/{escape(job_id)}">{escape(title)}</a><div style="font-size:12px;color:var(--ink-faint);">{escape(company)}</div></td>'
+            f'<td><strong>{escape(status)}</strong>{result_link}{error}</td></tr>'
+        )
+    body = (
+        refresh
+        + f'<section class="panel"><h2>Assessment batch</h2>'
+        + f'<p><strong>{done}</strong> done / <strong>{total}</strong> total. '
+        + 'Cancel affects pending jobs only; a running job may complete before the page updates.</p>'
+        + note
+        + f'<form method="post" action="/batch/{escape(batch_id)}/cancel" style="margin:12px 0;">'
+        + '<button type="submit">Cancel pending jobs</button></form>'
+        + '<table><thead><tr><th>Job</th><th>Status</th></tr></thead><tbody>'
+        + "".join(row_html)
+        + '</tbody></table></section>'
+    )
+    responder.send_html(render_page("Batch progress", body, model_label=config.model_label))
+
+
+def handle_cancel_batch(req, config, responder, batch_id: str):
+    from src.job_hunt_index import cancel_eval_batch
+
+    cancel_eval_batch(
+        _index_db_path(config),
+        batch_id,
+        now=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    )
+    responder.redirect(f"/batch/{batch_id}")
 
 
 def handle_jobs_save(req, config, responder):

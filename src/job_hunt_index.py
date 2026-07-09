@@ -75,6 +75,40 @@ CREATE TABLE IF NOT EXISTS qualitative_index (
 );
 """
 
+_EVAL_QUEUE_SQL = """
+CREATE TABLE IF NOT EXISTS eval_queue (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id     TEXT NOT NULL,
+    job_ref      TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    force        INTEGER NOT NULL DEFAULT 0,
+    claim_token  TEXT,
+    retries      INTEGER NOT NULL DEFAULT 0,
+    error_text   TEXT,
+    created_at   TEXT,
+    started_at   TEXT,
+    finished_at  TEXT
+);
+"""
+
+_EVAL_BATCH_SQL = """
+CREATE TABLE IF NOT EXISTS eval_batch (
+    batch_id             TEXT PRIMARY KEY,
+    cancel_requested_at  TEXT,
+    created_at           TEXT
+);
+"""
+
+_EVAL_QUEUE_MIGRATION_COLUMNS: list[tuple[str, str]] = [
+    ("force", "INTEGER NOT NULL DEFAULT 0"),
+]
+
+_EVAL_QUEUE_INDEX_SQL: list[str] = [
+    "CREATE INDEX IF NOT EXISTS idx_eval_queue_batch ON eval_queue(batch_id, id)",
+    "CREATE INDEX IF NOT EXISTS idx_eval_queue_status ON eval_queue(status, created_at, id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_eval_queue_batch_job ON eval_queue(batch_id, job_ref)",
+]
+
 _ALLOWED_TRANSITIONS: dict[str, list[str]] = {
     "not_applied": ["applied", "withdrawn"],
     "applied":     ["interview", "rejected", "withdrawn"],
@@ -130,7 +164,19 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
                     raise
     conn.execute(_LLM_RPD_SQL)
     conn.execute(_QUALITATIVE_INDEX_SQL)
+    conn.execute(_EVAL_QUEUE_SQL)
+    conn.execute(_EVAL_BATCH_SQL)
+    existing_eval = {row[1] for row in conn.execute("PRAGMA table_info(eval_queue)")}
+    for col_name, col_type in _EVAL_QUEUE_MIGRATION_COLUMNS:
+        if col_name not in existing_eval:
+            try:
+                conn.execute(f"ALTER TABLE eval_queue ADD COLUMN {col_name} {col_type}")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
     for stmt in _INDEX_SQL:
+        conn.execute(stmt)
+    for stmt in _EVAL_QUEUE_INDEX_SQL:
         conn.execute(stmt)
     conn.commit()
 
@@ -720,6 +766,49 @@ def finish_qualitative_assessment(
         conn.close()
 
 
+def release_qualitative_assessment_claim(
+    db_path: Path,
+    job_ref: str,
+    *,
+    previous_row: dict[str, Any] | None,
+) -> None:
+    """Undo a qualitative claim when no LLM attempt was made."""
+    conn = open_db(db_path)
+    try:
+        if previous_row is None:
+            conn.execute(
+                "DELETE FROM qualitative_index WHERE job_ref = ? AND status = 'running'",
+                (job_ref,),
+            )
+        else:
+            conn.execute(
+                """UPDATE qualitative_index
+                      SET status = ?,
+                          grade = ?,
+                          culture_flag = ?,
+                          legitimacy_tier = ?,
+                          model = ?,
+                          prompt_version = ?,
+                          error_text = ?,
+                          created_at = ?
+                    WHERE job_ref = ? AND status = 'running'""",
+                (
+                    previous_row.get("status"),
+                    previous_row.get("grade"),
+                    previous_row.get("culture_flag"),
+                    previous_row.get("legitimacy_tier"),
+                    previous_row.get("model"),
+                    previous_row.get("prompt_version"),
+                    previous_row.get("error_text"),
+                    previous_row.get("created_at"),
+                    job_ref,
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def update_qualitative_grade(db_path: Path, job_ref: str, grade: str | None) -> None:
     conn = open_db(db_path)
     try:
@@ -742,6 +831,293 @@ def get_qualitative_index_row(db_path: Path, job_ref: str) -> dict[str, Any] | N
         return dict(row) if row else None
     finally:
         conn.close()
+
+
+# ===========================================================================
+# Slice 3 — persisted qualitative batch queue
+# ===========================================================================
+
+_EVAL_QUEUE_STATUSES = {"pending", "running", "done", "error", "cancelled"}
+
+
+def enqueue_eval_batch(
+    db_path: Path,
+    job_refs: list[str],
+    *,
+    now: str,
+    batch_id: str | None = None,
+    force: bool = False,
+) -> str:
+    """Create a persisted qualitative-assessment batch.
+
+    Duplicate job ids inside the same requested batch are rejected before insert;
+    the DB also has a UNIQUE(batch_id, job_ref) guard for concurrent misuse.
+    """
+    cleaned = [str(j).strip() for j in job_refs if str(j).strip()]
+    if not cleaned:
+        raise ValueError("no jobs selected")
+    if len(set(cleaned)) != len(cleaned):
+        raise ValueError("duplicate job selected in batch")
+    bid = batch_id or str(uuid.uuid4())
+    conn = open_db(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "INSERT OR IGNORE INTO eval_batch(batch_id, cancel_requested_at, created_at) VALUES(?, NULL, ?)",
+            (bid, now),
+        )
+        conn.executemany(
+            """INSERT INTO eval_queue
+                (batch_id, job_ref, status, force, claim_token, retries, error_text,
+                 created_at, started_at, finished_at)
+               VALUES (?, ?, 'pending', ?, NULL, 0, NULL, ?, NULL, NULL)""",
+            [(bid, job_ref, 1 if force else 0, now) for job_ref in cleaned],
+        )
+        conn.commit()
+        return bid
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def claim_eval_queue_row(db_path: Path, *, now: str) -> dict[str, Any] | None:
+    """Atomically claim the oldest pending eval_queue row."""
+    token = str(uuid.uuid4())
+    conn = open_db(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            """SELECT id FROM eval_queue
+                WHERE status = 'pending'
+                ORDER BY created_at ASC, id ASC
+                LIMIT 1"""
+        ).fetchone()
+        if row is None:
+            conn.commit()
+            return None
+        conn.execute(
+            """UPDATE eval_queue
+                  SET status = 'running', claim_token = ?, started_at = ?, error_text = NULL
+                WHERE id = ? AND status = 'pending'""",
+            (token, now, row["id"]),
+        )
+        claimed = conn.execute(
+            "SELECT * FROM eval_queue WHERE id = ? AND claim_token = ? AND status = 'running'",
+            (row["id"], token),
+        ).fetchone()
+        conn.commit()
+        return dict(claimed) if claimed else None
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def finish_eval_queue_row(
+    db_path: Path,
+    row_id: int,
+    claim_token: str,
+    *,
+    status: str,
+    now: str,
+    error_text: str | None = None,
+    retries: int | None = None,
+) -> bool:
+    """Finish a running queue row using its claim token."""
+    if status not in {"done", "error", "cancelled"}:
+        raise ValueError(f"invalid eval_queue finish status: {status!r}")
+    sets = ["status = :status", "claim_token = NULL", "finished_at = :now", "error_text = :error_text"]
+    params: dict[str, Any] = {
+        "id": int(row_id),
+        "claim_token": claim_token,
+        "status": status,
+        "now": now,
+        "error_text": error_text,
+    }
+    if retries is not None:
+        sets.append("retries = :retries")
+        params["retries"] = int(retries)
+    conn = open_db(db_path)
+    try:
+        cur = conn.execute(
+            f"UPDATE eval_queue SET {', '.join(sets)} "
+            "WHERE id = :id AND claim_token = :claim_token AND status = 'running'",
+            params,
+        )
+        conn.commit()
+        return cur.rowcount == 1
+    finally:
+        conn.close()
+
+
+def requeue_eval_queue_row(
+    db_path: Path,
+    row_id: int,
+    claim_token: str,
+    *,
+    now: str,
+    retries: int,
+    error_text: str | None = None,
+) -> bool:
+    """Return a running row to pending after a retryable 429/backoff."""
+    conn = open_db(db_path)
+    try:
+        cur = conn.execute(
+            """UPDATE eval_queue
+                  SET status = 'pending',
+                      claim_token = NULL,
+                      retries = ?,
+                      error_text = ?,
+                      started_at = NULL,
+                      finished_at = NULL
+                WHERE id = ? AND claim_token = ? AND status = 'running'""",
+            (int(retries), error_text, int(row_id), claim_token),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+    finally:
+        conn.close()
+
+
+def return_eval_queue_row_to_pending(
+    db_path: Path,
+    row_id: int,
+    claim_token: str,
+    *,
+    error_text: str | None = None,
+) -> bool:
+    """Return a running row to pending without changing its retry count."""
+    conn = open_db(db_path)
+    try:
+        cur = conn.execute(
+            """UPDATE eval_queue
+                  SET status = 'pending',
+                      claim_token = NULL,
+                      error_text = ?,
+                      started_at = NULL,
+                      finished_at = NULL
+                WHERE id = ? AND claim_token = ? AND status = 'running'""",
+            (error_text, int(row_id), claim_token),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+    finally:
+        conn.close()
+
+
+def cancel_eval_batch(db_path: Path, batch_id: str, *, now: str) -> int:
+    """Cancel pending rows and record batch intent for running rows."""
+    conn = open_db(db_path)
+    try:
+        conn.execute(
+            """INSERT INTO eval_batch(batch_id, cancel_requested_at, created_at)
+               VALUES(?, ?, ?)
+               ON CONFLICT(batch_id) DO UPDATE SET cancel_requested_at = excluded.cancel_requested_at""",
+            (batch_id, now, now),
+        )
+        cur = conn.execute(
+            """UPDATE eval_queue
+                  SET status = 'cancelled', finished_at = ?, error_text = NULL
+                WHERE batch_id = ? AND status = 'pending'""",
+            (now, batch_id),
+        )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+def is_eval_queue_row_cancelled(db_path: Path, row_id: int) -> bool:
+    conn = open_db(db_path)
+    try:
+        row = conn.execute("SELECT status FROM eval_queue WHERE id = ?", (int(row_id),)).fetchone()
+        return bool(row and row["status"] == "cancelled")
+    finally:
+        conn.close()
+
+
+def is_eval_batch_cancel_requested(db_path: Path, batch_id: str) -> bool:
+    conn = open_db(db_path)
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM eval_batch WHERE batch_id = ? AND cancel_requested_at IS NOT NULL",
+            (batch_id,),
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+def reset_stale_eval_queue_running(
+    db_path: Path,
+    *,
+    now: datetime,
+    older_than_minutes: int = 30,
+    max_retries: int = 5,
+) -> int:
+    """Crash recovery for eval_queue rows stuck in running."""
+    cutoff = (now - timedelta(minutes=older_than_minutes)).isoformat(timespec="seconds")
+    conn = open_db(db_path)
+    try:
+        cur = conn.execute(
+            """UPDATE eval_queue
+                  SET status = CASE WHEN retries + 1 >= ? THEN 'error' ELSE 'pending' END,
+                      retries = retries + 1,
+                      error_text = CASE WHEN retries + 1 >= ? THEN 'stale running row exceeded retry cap' ELSE error_text END,
+                      claim_token = NULL,
+                      started_at = CASE WHEN retries + 1 >= ? THEN started_at ELSE NULL END,
+                      finished_at = CASE WHEN retries + 1 >= ? THEN ? ELSE NULL END
+                WHERE status = 'running'
+                  AND (started_at IS NULL OR started_at <= ?)""",
+            (int(max_retries), int(max_retries), int(max_retries), int(max_retries),
+             now.isoformat(timespec="seconds"), cutoff),
+        )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+def pause_eval_batch_for_quota(db_path: Path, batch_id: str, *, now: str, error_text: str) -> int:
+    """Annotate pending/running rows so progress shows the batch is waiting on quota."""
+    conn = open_db(db_path)
+    try:
+        cur = conn.execute(
+            """UPDATE eval_queue
+                  SET error_text = ?
+                WHERE batch_id = ? AND status IN ('pending', 'running')""",
+            (error_text, batch_id),
+        )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+def get_eval_batch(db_path: Path, batch_id: str) -> list[dict[str, Any]]:
+    conn = open_db(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT * FROM eval_queue WHERE batch_id = ? ORDER BY id ASC",
+            (batch_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_eval_queue_stats(db_path: Path, batch_id: str) -> dict[str, int]:
+    rows = get_eval_batch(db_path, batch_id)
+    stats = {s: 0 for s in _EVAL_QUEUE_STATUSES}
+    for row in rows:
+        status = row.get("status")
+        if status in stats:
+            stats[status] += 1
+    stats["total"] = len(rows)
+    return stats
 
 
 # ===========================================================================

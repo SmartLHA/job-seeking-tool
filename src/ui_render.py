@@ -145,7 +145,10 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
             f'border:1px solid var(--line);">{src_esc}</span>'
         )
         queue_rows.append(
-            f'<button onclick="rqSwitch({chr(39)}{jid}{chr(39)})" '
+            f'<div style="display:grid;grid-template-columns:24px 1fr;gap:8px;align-items:start;">'
+            f'<input type="checkbox" name="job_id" value="{jid}" aria-label="Select {title_esc}" '
+            f'style="margin-top:14px;width:16px;height:16px;">'
+            f'<button type="button" onclick="rqSwitch({chr(39)}{jid}{chr(39)})" '
             f'id="rq-row-{jid}" '
             f'style="text-align:left;padding:12px 13px;border-radius:var(--r-md);width:100%;'
             f'min-width:0;overflow:hidden;'
@@ -161,7 +164,7 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
             f'<div style="font-size:12px;color:var(--ink-faint);margin-top:2px;'
             f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{company_esc}</div>'
             f'<div style="display:flex;align-items:center;gap:6px;margin-top:8px;">{src_badge}</div>'
-            f'</button>'
+            f'</button></div>'
         )
 
     rows_html = "\n".join(queue_rows)
@@ -211,13 +214,16 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
       <div style="flex:1;display:flex;overflow:hidden;">
         <div style="width:300px;flex-shrink:0;border-right:1px solid var(--line);
                     background:var(--surface);display:flex;flex-direction:column;overflow:hidden;">
-          <div style="padding:14px 14px 6px;">
+          <form method="post" action="/jobs/batch-assess" style="display:flex;flex-direction:column;min-height:0;flex:1;">
+          <div style="padding:14px 14px 8px;">
             <div style="font-size:10.5px;font-weight:700;letter-spacing:0.07em;
                         text-transform:uppercase;color:var(--ink-faint);">Jobs &#xb7; fit score</div>
+            <button type="submit" style="margin-top:10px;width:100%;padding:8px 10px;border:1px solid var(--accent);background:transparent;color:var(--accent);border-radius:var(--r-md);font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;">Assess selected (AI)</button>
           </div>
           <div style="flex:1;overflow-y:auto;padding:0 10px 14px;display:flex;flex-direction:column;gap:6px;">
             {rows_html}
           </div>
+          </form>
         </div>
         <iframe id="rq-iframe" src="/job/{active_id_esc}?embed=1"
                 style="flex:1;border:none;height:100%;background:var(--bg);"
