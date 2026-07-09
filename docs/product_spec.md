@@ -1,6 +1,6 @@
 # Product Specification
 
-**Updated: 2026-07-02 (search triage UX).** Source code in `src/` is authoritative. This document describes the recovered split UI and F1 keyword-match implementation, not the earlier monolithic checkout.
+**Updated: 2026-07-09 (career-ops absorption — qualitative assessment, A-F grade, batch queue).** Source code in `src/` is authoritative. This document describes the recovered split UI and F1 keyword-match implementation, not the earlier monolithic checkout.
 
 ## Product
 
@@ -29,6 +29,9 @@ A local-first UK job-search copilot that helps a candidate discover roles, revie
 | Board and outcome | SQLite jobs index, JSON board, board HTML view, saved-job path, legal outcome transitions, and review queue. A bookmarked (saved-but-unevaluated) job can be reloaded into the Evaluate form via `GET /job/<id>/evaluate-form` and scored in place; evaluated jobs offer a Re-evaluate link to the same route. The job page's outcome form offers only legal next statuses, shows an allowed-next / final-status hint, and gives inline success/error feedback in the card (2026-07-07). |
 | Profile | Structured `Skill(name, level, years, evidence_type)`, CV parsing, and local profile save. |
 | AI analysis | Manual Gemini explanation and CV-review actions, separate from deterministic policy. |
+| Qualitative assessment | On-demand, LLM-judged advisory panel (`POST /job/{id}/qualitative-assess`, idempotent): culture-fit and UK BA/PM archetype alignment, red flags, posting-quality signals, evidence quotes. Never changes `match_score` or the Apply/Review/Skip decision. Sends JD text + a minimised profile summary to Gemini; the panel discloses this. |
+| A-F grade | Deterministic letter grade over the existing 0-100 score (A≥80 aligned with Apply). Capped, never raised, by the effective Apply/Review/Skip decision and by qualitative culture/red-flags evidence; always shown as base→capped+reason when a cap applies. |
+| Batch assessment | `POST /jobs/batch-assess` queues a review-queue selection for qualitative assessment against the existing paced Gemini worker (no second worker); `GET /batch/{batch_id}` shows live progress; `POST /batch/{batch_id}/cancel` cancels pending rows (a running job finishes its in-flight call). |
 
 ## Workflow
 
@@ -61,6 +64,7 @@ Search configured source or add a job
 ## Backlog
 
 - Gap Coach aggregate.
+- *(Career-ops absorption — qualitative assessment / A-F grade / batch queue **complete** 2026-07-08/09, slices 1-3 of 4; see `docs/tasks/career-ops-absorption-design.md`.)* Deferred from the port: bulk URL/JD paste as batch-assess input (v1 is review-queue selection only); comp-vs-market dimension (needs a market-data source this tool doesn't fetch).
 - *(Daily Digest **complete** 2026-06-24, D1–D6: saved searches, schema/dedup, deterministic pipeline + Run-now, filterable `/digest` feed with sidebar unseen badge, automatic daily scheduler daemon, and a paced rate-limited Gemini worker that enriches high-match jobs. Both daemons auto-start gated by the user's My Profile toggles; the worker also needs a Gemini key. **OQ-2 (2026-06-26):** a manual "Re-evaluate all" action re-scores the indexed digest jobs against the current profile/threshold and resurfaces the ones that now qualify — the digest is otherwise new-only by design.)*
 - *(Source adapters shipped: Adzuna 2026-06-24 — P5-1; LinkedIn 2026-06-28 — P5-2. Both enabled.)*
 - DOCX/PDF application-package export.

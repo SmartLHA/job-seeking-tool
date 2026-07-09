@@ -11,6 +11,7 @@ Local-first UK job-search decision support and application preparation. It score
 - Structured skills, safe URL ingestion, decision overrides, local JSON state, SQLite jobs/board index, board view, and outcome tracking.
 - Decision-gated Tailor CV and Cover Letter actions on job detail pages. Output is markdown/text; DOCX/PDF export is not implemented.
 - Optional Gemini job explanation is manually triggered and cannot alter score or decision.
+- Career-ops absorption (2026-07-08/09): on-demand, LLM-judged qualitative assessment (culture fit, archetype alignment, red flags, posting-quality signals — advisory only), a deterministic A-F grade over the existing score (capped by the effective decision and by qualitative evidence, never raised), and a persisted batch-assessment queue for review-queue selections sharing the existing paced Gemini worker.
 
 ## Run the UI
 
@@ -34,7 +35,8 @@ Required source credentials are read from the environment. Reed needs `REED_API_
 | Search | `GET /search/{source}`, `GET /search/{source}/more`, `POST /select/{source}`, `GET /sources` |
 | Not-interested triage | `POST /jobs/not-interested` (hide), `POST /jobs/not-interested/undo` (undo/unhide), `GET /jobs/not-interested` (hidden list) |
 | Review/evaluate | `POST /prefill`, `POST /job-submit`, `POST /evaluate`, `GET /job/<id>`, `GET /job/<id>/explain`, `GET /job/<id>/evaluate-form`, `GET /review-queue`, `POST /jobs/batch-evaluate` |
-| Job actions | `POST /job/<id>/decision`, `POST /job/<id>/add-gap-skills`, `POST /job/<id>/ai-review-cv`, `POST /job/<id>/ats-recheck`, `POST /tailor`, `POST /cover-letter` |
+| Job actions | `POST /job/<id>/decision`, `POST /job/<id>/add-gap-skills`, `POST /job/<id>/ai-review-cv`, `POST /job/<id>/ats-recheck`, `POST /tailor`, `POST /cover-letter`, `POST /job/<id>/qualitative-assess` |
+| Batch qualitative assessment | `POST /jobs/batch-assess`, `GET /batch/<batch_id>`, `POST /batch/<batch_id>/cancel` |
 | Board/outcomes | `GET /jobs`, `GET /board`, `GET /board/view`, `POST /jobs/save`, `POST /outcome` |
 | Profile | `GET /profile`, `POST /profile/parse-cv`, `POST /profile/save` |
 | Saved searches | `GET /saved-searches`, `POST /saved-searches`, `POST /saved-searches/{id}/delete`, `POST /saved-searches/{id}/toggle`, `POST /saved-searches/{id}/run-now` |

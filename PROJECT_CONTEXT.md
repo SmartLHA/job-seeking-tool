@@ -133,6 +133,19 @@ earlier monolithic checkout or unimplemented planning notes.
   `test_fetch.py` scratch script remain untested. The audit also caught and fixed a
   real `track_store.delete()` persistence bug. Known debt: TEST-F1..F3 in
   PROJECT_TODO (vacuous tests, one env-test leak, 14 functions <50%).
+- Career-ops absorption (2026-07-08/09, `docs/tasks/career-ops-absorption-design.md`,
+  slices 1-3 of 4 shipped): an LLM-judged qualitative assessment layer (culture fit,
+  UK BA/PM archetype alignment, red flags, posting-quality signals — advisory only,
+  `POST /job/{id}/qualitative-assess`, idempotent), a deterministic A-F grade
+  presentation over the existing 0-100 score (capped, never raised, by both the
+  effective Apply/Review/Skip decision and the qualitative culture/red-flags
+  evidence — always shown as base→capped+reason, never a bare capped letter), and a
+  persisted batch-assessment queue (`POST /jobs/batch-assess` from a review-queue
+  selection, `GET /batch/{batch_id}` progress page, cancel) sharing the existing
+  paced Gemini worker rather than running a second one. Comp-vs-market dimension
+  excluded (no market-data source); bulk URL/JD paste batch input deferred
+  (`CAREER-F1` in PROJECT_TODO). Full suite 2026-07-09: 919 passed, 2 failed
+  (pre-existing, unrelated), 1 skipped.
 
 The references below that describe “no UI required in early phases” or “Phase 8 UI”
 are historical development sequencing, not a statement of the current product.

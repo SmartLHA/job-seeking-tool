@@ -1,5 +1,12 @@
 # Design: Absorbing career-ops Scoring & Batch Evaluation (PLAN ONLY — not approved)
 
+<!-- STATUS -->
+> **Implementation status:** ✅ Implemented 2026-07-09 (slices 1-3 of 4)
+> **Divergences from spec:** comp-vs-market dimension excluded (§1 — no market-data source); career-ops' "posting legitimacy" is implemented as "posting quality signals" naming (§1); the score-only grade rule in §5 was AMENDED mid-session to add a decision-aware cap (Codex HIGH — a purely score-banded grade could show "A" beside a Skip); slice-4 "polish" items (cancel, retry caps, stale-running reset, digest-worker coexistence) were pulled forward into slice 3 rather than deferred; bulk URL/JD paste batch input (also slice-4 scope) remains deferred — v1 batch input is review-queue selection only (§10.4), tracked as `CAREER-F1` in `PROJECT_TODO.md`.
+> **Key functions:** `build_qualitative_prompt()`, `parse_and_validate()`, `run_qualitative_assessment_pipeline()` (`job_hunt_qualitative.py`); `normalize_grounding_text()`, `quote_in_text()` (`text_grounding.py`); `derive_base_grade()`, `derive_grade()`, `apply_grade_to_assessment()` (`job_hunt_qualitative.py`); `claim_qualitative_assessment()`, `finish_qualitative_assessment()`, `reserve_llm_rpd_attempt()`, `enqueue_eval_batch()`, `claim_eval_queue_row()`, `finish_eval_queue_row()`, `cancel_eval_batch()` (`job_hunt_index.py`); `process_eval_queue_once()` (`job_hunt_scheduler.py`); `handle_qualitative_assess()`, `handle_batch_assess()`, `handle_get_batch()`, `handle_cancel_batch()` (`ui_handlers.py`)
+> **Routes:** `POST /job/{id}/qualitative-assess`, `POST /jobs/batch-assess`, `GET /batch/{batch_id}`, `POST /batch/{batch_id}/cancel`
+<!-- /STATUS -->
+
 Status: DECISIONS CONFIRMED by Mike 2026-07-08 (grade A ≥80; batch v1 = review-queue selection only; BA/PM archetype list approved). Awaiting final build approval. No code written.
 Date: 2026-07-08
 External Codex review: see §10 (first attempt timed out twice; retried after decisions confirmed).

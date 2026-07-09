@@ -1,3 +1,49 @@
+## 2026-07-09
+
+### A-F grade badge with decision-aware and culture caps (career-ops absorption slice 2)
+- **Status:** ✅ COMPLETE — see `docs/tasks/career-ops-absorption-design.md` §5 for the derivation rules (amended this session after a Codex HIGH finding).
+- **Motivation:** Continue the career-ops absorption plan (Mike-approved 2026-07-08): give the existing 0-100 `match_score` a letter-grade presentation layer, without creating a second authoritative signal alongside Apply/Review/Skip.
+- **Changes:**
+  - `src/job_hunt_qualitative.py` — `derive_base_grade(match_score)` (score-only band: A≥80, B 72-79, C 65-71, D 50-64, F<50); `derive_grade(...)` composes the base grade with the effective-decision cap and the qualitative culture/red-flags cap; `apply_grade_to_assessment(...)`; `_grade_is_better_than`, `_apply_grade_cap`, `_decision_grade_cap` helpers.
+  - `src/job_hunt_index.py` — `update_qualitative_grade(db_path, job_ref, grade)`; grade persisted to the `qualitative_index` table with stale-row backfill so older rows compute a grade on next read.
+  - `src/ui_render.py` — `_grade_badge()` and `_grade_warning_banner()` nested render helpers inside the job page renderer: always shows base → capped grade + the capping reason when they differ (never a bare capped letter); warning banner triggers on base A/B combined with a culture/red-flags score ≤2.
+  - `src/ui_handlers.py` — wiring so the job-page view model carries the derived grade alongside the qualitative assessment.
+- **Key facts:** AMENDED design rule (2026-07-09, Codex HIGH from the slice-2 review): the grade is NOT purely score-banded — it is capped to the maximum letter of the EFFECTIVE decision band (Apply→A, Review→B, Skip→D, Skip-due-to-blocker→F), because `decide_application()` can override a high score (hard blockers, low confidence), and a score-only grade could otherwise show "A" beside a Skip decision. `score_job()`/`decide_application()` themselves are untouched — the cap is pure presentation.
+
+### Persisted batch assessment queue with progress UI (career-ops absorption slice 3)
+- **Status:** ✅ COMPLETE — `tests/test_eval_queue.py` (10 tests, includes concurrency/cancel/restart-resume cases per the design's Codex LOW risk note).
+- **Motivation:** Continue the career-ops absorption plan — port the "queue + resumable state" idea from career-ops' batch conductor (not its parallel workers, which are useless against a free-tier Gemini rate limit) so a whole review-queue selection can be sent for qualitative assessment without blocking the request thread.
+- **Changes:**
+  - `src/job_hunt_index.py` — new `eval_queue` / `eval_batch` tables (force column, `cancel_requested_at`); `enqueue_eval_batch`, `claim_eval_queue_row`, `finish_eval_queue_row`, `requeue_eval_queue_row`, `return_eval_queue_row_to_pending`, `cancel_eval_batch`, `is_eval_queue_row_cancelled`, `is_eval_batch_cancel_requested`, `reset_stale_eval_queue_running`, `pause_eval_batch_for_quota`, `get_eval_batch`, `get_eval_queue_stats`.
+  - `src/job_hunt_scheduler.py` — `process_eval_queue_once(...)` / `EvalQueuePollResult` folded into the existing `LLMQueueWorker` loop as a single shared dispatcher (per the design's Codex HIGH finding): digest tasks are polled first, then at most one `eval_queue` row per cycle; quota-pause returns the row to `pending` rather than losing it; stale `running` claims are reset every poll (not just at worker startup); crash recovery re-derives batch state from the DB rather than in-memory.
+  - `src/ui_handlers.py` — `_batch_assess_selected_ids`, `handle_batch_assess` (`POST /jobs/batch-assess` — enqueues the review-queue's selected job ids; rejects duplicate enqueue within a batch, per the design's eligibility rules), `handle_get_batch` (`GET /batch/{batch_id}` — server-rendered progress: N done / M total, per-job status, failures with error text), `handle_cancel_batch` (`POST /batch/{batch_id}/cancel` — pending rows only; a running job finishes its in-flight Gemini call, with a pre-persist cancel check so cancellation never silently drops a completed result).
+  - `src/ui_routes.py` — routes for `POST /jobs/batch-assess`, `GET /batch/{batch_id}`, `POST /batch/{batch_id}/cancel`.
+  - `src/ui_render.py` — review-queue checkboxes so jobs can be selected for a batch-assess request.
+  - `tests/test_eval_queue.py` — **NEW.** 10 tests: queue state machine (pending→running→done/error/cancelled), duplicate-enqueue rejection, cancel-while-running honours the final cancel check before persisting, stale-claim reset per poll, restart resume, route-level enqueue/progress/cancel flow.
+- **Key facts:** `src/job_hunt_scheduler.py` entered version control for the first time in this commit (it existed on disk from earlier Daily Digest work but had not previously been committed). Batch v1 input is review-queue selection only (Mike-approved 2026-07-08); bulk URL/JD paste is deferred (tracked as a follow-up below).
+
+### Qualitative assessment layer — LLM-judged dimensions, legitimacy tier, idempotent on-demand route (career-ops absorption slice 1)
+- **Status:** ✅ COMPLETE — `tests/test_qualitative.py` (18 tests) + qualitative route tests in `tests/test_ui.py` (10 tests).
+- **Motivation:** career-ops (santifer/career-ops, MIT) research found the tool's real value was a qualitative dimension layer (culture fit, archetype alignment, red flags, posting-legitimacy signals) that the existing deterministic `score_job()` doesn't cover — see `docs/tasks/career-ops-absorption-design.md` for the full mapping, corrections to the original brief (target stack is this Python tool, not Next.js/Supabase), and the Codex design review (3 HIGH findings, all incorporated: shared LLM quota gate, on-demand route idempotency, separate storage from `JobAnalysis`).
+- **Changes:**
+  - `src/job_hunt_qualitative.py` — **NEW.** `build_qualitative_prompt(jd_text, profile)`, `parse_and_validate(...)` (strict-JSON schema validation, fail-closed on malformed LLM output), `run_qualitative_assessment_pipeline(...)`, `QualitativeRunResult`/`QualitativeValidationFailure`/`QualitativeValidationError`.
+  - `src/text_grounding.py` — **NEW.** `normalize_grounding_text(text)` and `quote_in_text(quote, source_text)` — shared quote-validation helpers (whitespace/casing/Unicode-punctuation folding) so evidence-quote checks don't fail on formatting noise; reused by CV tailoring's existing bullet validator rather than duplicating it.
+  - `src/job_hunt_index.py` — new `qualitative_index` table; `claim_qualitative_assessment(...)` / `finish_qualitative_assessment(...)` (atomic CAS claim — `BEGIN IMMEDIATE` + `INSERT ... ON CONFLICT DO NOTHING` / conditional `UPDATE`, so concurrent requests can never double-claim the same job); `reserve_llm_rpd_attempt(db_path, date, daily_cap)` — quota now reserved per Gemini attempt (incl. failures/429s/fallback retries), not only on success, raising `LLMQuotaExhausted` when the daily cap is hit.
+  - `src/ui_handlers.py` — `handle_qualitative_assess` (`POST /job/{id}/qualitative-assess` — idempotent: an in-flight claim returns its running status instead of calling Gemini; `force` is honoured only when no claim is running, and archives the prior assessment by prompt_version/created_at).
+  - `src/ui_render.py` — assessment panel (dimensions, evidence quotes, legitimacy tier) with a one-line Gemini privacy disclosure (JD + a minimised profile summary — not the raw CV — is sent to the API).
+  - `src/job_hunt_llm.py` — `before_attempt` hook threaded through `_call_gemini_reasoning` so every Gemini attempt (digest enrichment and qualitative assessment alike) reserves quota before the call, closing the undercounting gap the design flagged.
+  - `src/ui_routes.py` — route for `POST /job/{id}/qualitative-assess`.
+  - `tests/test_qualitative.py` — **NEW.** 18 tests: prompt building, schema validation (valid + malformed fixtures), pipeline happy-path and failure-closed paths.
+- **Key facts:** Assessment JSON is stored at `analyses/qualitative/{job_id}.json` — a separate subdirectory from the existing `analyses/{job_id}.json` `JobAnalysis` documents, per the design's storage-collision HIGH finding; the qualitative layer never changes `match_score` or the Apply/Review/Skip decision, only an advisory panel plus (slice 2) a capped grade.
+
+### Environment fix — venv rebuild + missing `beautifulsoup4` dependency declared
+- **Status:** ✅ COMPLETE — full suite: 919 passed, 2 failed (both pre-existing, unrelated to this session — see below), 1 skipped.
+- **Motivation:** The local venv's `pyvenv.cfg` still pointed at an old folder name, and `src/job_sources/linkedin_source.py` imports `bs4` (BeautifulSoup) without it being a declared dependency anywhere.
+- **Changes:**
+  - venv rebuilt against the current project folder path (uncommitted, machine-local; not a repo file).
+  - `requirements-dev.txt` — added `beautifulsoup4>=4,<5`.
+- **Key facts:** The 2 pre-existing failures are unrelated WIP, not caused by this session: `tests/test_digest_pipeline.py::test_run_now_route` (stub-source registration) and `tests/test_ui.py::test_post_tailor_returns_tailored_cv_result_for_apply_job` (422 — already tracked as `TRIAGE-F1` in `PROJECT_TODO.md`, first logged 2026-07-02).
+
 ## 2026-07-08
 
 ### Test-coverage audit + 10 new test files (257 tests) — zero-coverage functions 60 → 3
