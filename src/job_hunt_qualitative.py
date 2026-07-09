@@ -32,6 +32,110 @@ class QualitativeValidationError(ValueError):
         self.failure = QualitativeValidationFailure(code=code, message=message)
 
 
+GRADE_ORDER = {"A": 0, "B": 1, "C": 2, "D": 3, "F": 4}
+DECISION_GRADE_CAPS = {"apply": "A", "review": "B", "skip": "D"}
+
+
+def derive_base_grade(match_score: float) -> str:
+    score = float(match_score)
+    if score >= 80:
+        return "A"
+    if score >= 72:
+        return "B"
+    if score >= 65:
+        return "C"
+    if score >= 50:
+        return "D"
+    return "F"
+
+
+def derive_grade(
+    match_score: float,
+    assessment: dict[str, Any] | None = None,
+    *,
+    effective_decision: str | None = None,
+    has_blockers: bool = False,
+    confidence: str | None = None,
+    decision_reason: str | None = None,
+) -> dict[str, Any]:
+    base_grade = derive_base_grade(match_score)
+    capped_grade = base_grade
+    cap_reason = None
+    warning = None
+
+    decision_cap, decision_cap_reason = _decision_grade_cap(
+        effective_decision,
+        has_blockers=has_blockers,
+        confidence=confidence,
+        decision_reason=decision_reason,
+    )
+    if decision_cap is not None and _grade_is_better_than(capped_grade, decision_cap):
+        capped_grade = decision_cap
+        cap_reason = decision_cap_reason
+
+    if isinstance(assessment, dict):
+        dims = assessment.get("dimensions")
+        dims = dims if isinstance(dims, dict) else {}
+        culture = dims.get("culture_signals")
+        red_flags = dims.get("red_flags")
+        culture_score = _dimension_score(culture)
+        red_flags_score = _dimension_score(red_flags)
+
+        if _grade_is_better_than(base_grade, "C"):
+            if culture_score is not None and culture_score <= 2 and _culture_contradicts_requirements(culture):
+                capped_grade, cap_reason = _apply_grade_cap(
+                    capped_grade,
+                    cap_reason,
+                    "C",
+                    "culture evidence contradicts requirements",
+                )
+            elif red_flags_score is not None and red_flags_score <= 2:
+                capped_grade, cap_reason = _apply_grade_cap(
+                    capped_grade,
+                    cap_reason,
+                    "C",
+                    "red flags score indicates material risk",
+                )
+
+        if base_grade in {"A", "B"} and culture_score is not None and culture_score <= 2:
+            warning = "High technical fit, unconfirmed/poor culture fit - verify before applying."
+
+    return {
+        "base_grade": base_grade,
+        "capped_grade": capped_grade,
+        "cap_reason": cap_reason,
+        "display_grade": capped_grade,
+        "warning": warning,
+        "is_capped": cap_reason is not None and capped_grade != base_grade,
+    }
+
+
+def apply_grade_to_assessment(
+    match_score: float,
+    assessment: dict[str, Any] | None,
+    *,
+    effective_decision: str | None = None,
+    has_blockers: bool = False,
+    confidence: str | None = None,
+    decision_reason: str | None = None,
+) -> dict[str, Any]:
+    grade = derive_grade(
+        match_score,
+        assessment,
+        effective_decision=effective_decision,
+        has_blockers=has_blockers,
+        confidence=confidence,
+        decision_reason=decision_reason,
+    )
+    if not isinstance(assessment, dict):
+        return grade
+    assessment["base_grade"] = grade["base_grade"]
+    assessment["capped_grade"] = grade["capped_grade"]
+    assessment["cap_reason"] = grade["cap_reason"]
+    assessment["grade_warning"] = grade["warning"]
+    return grade
+
+
 def build_qualitative_prompt(jd_text: str, profile: CandidateProfile) -> str:
     target_roles = [r.strip() for r in getattr(profile, "target_roles", []) if str(r).strip()]
     relevant_skills = _relevant_profile_skills(jd_text, profile)
@@ -81,6 +185,7 @@ Rubrics:
 Rules:
 - {archetype_instruction}
 - Each scored dimension must have: score integer 1-5, evidence array of verbatim JD quotes, reasoning at most 2 sentences.
+- culture_signals may include evidence_contradicts_requirements boolean when the quoted evidence contradicts the role requirements.
 - Evidence quotes must be copied from the JD exactly enough to verify; never fabricate quotes.
 - posting_quality stays outside all scores and never changes a score.
 - posting_quality.tier must be one of: high_confidence, unknown_caution, suspicious.
@@ -222,3 +327,73 @@ def _relevant_profile_skills(jd_text: str, profile: CandidateProfile) -> list[st
         if name and normalize_evidence_text(name) in jd_norm:
             skills.append(name)
     return skills
+
+
+def _dimension_score(value: Any) -> int | None:
+    if not isinstance(value, dict):
+        return None
+    score = value.get("score")
+    if isinstance(score, int):
+        return score
+    if isinstance(score, float) and score.is_integer():
+        return int(score)
+    return None
+
+
+def _culture_contradicts_requirements(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    for key in (
+        "evidence_contradicts_requirements",
+        "evidence_contradicted_requirements",
+        "contradicts_requirements",
+        "contradicting_evidence",
+    ):
+        if value.get(key) is True:
+            return True
+    contradictions = value.get("contradictions")
+    if isinstance(contradictions, list) and contradictions:
+        return True
+    return False
+
+
+def _grade_is_better_than(left: str, right: str) -> bool:
+    return GRADE_ORDER.get(left, 99) < GRADE_ORDER.get(right, 99)
+
+
+def _apply_grade_cap(
+    current_grade: str,
+    current_reason: str | None,
+    cap_grade: str,
+    cap_reason: str,
+) -> tuple[str, str]:
+    if _grade_is_better_than(current_grade, cap_grade):
+        return cap_grade, cap_reason
+    if current_grade == cap_grade and current_reason and cap_reason not in current_reason:
+        return current_grade, f"{current_reason}; {cap_reason}"
+    if current_grade == cap_grade:
+        return current_grade, current_reason or cap_reason
+    return current_grade, current_reason or cap_reason
+
+
+def _decision_grade_cap(
+    effective_decision: str | None,
+    *,
+    has_blockers: bool,
+    confidence: str | None,
+    decision_reason: str | None,
+) -> tuple[str | None, str | None]:
+    if effective_decision not in DECISION_GRADE_CAPS:
+        return None, None
+    if effective_decision == "skip" and has_blockers:
+        reason = "hard blocker"
+        if decision_reason:
+            reason = f"{reason} - {decision_reason}"
+        return "F", reason
+    if effective_decision == "review":
+        if confidence == "low":
+            return "B", "low confidence - needs review"
+        return "B", "decision requires review"
+    if effective_decision == "skip":
+        return "D", "decision requires skip"
+    return "A", None

@@ -692,6 +692,7 @@ def finish_qualitative_assessment(
     job_ref: str,
     *,
     status: str,
+    grade: str | None = None,
     legitimacy_tier: str | None = None,
     culture_flag: str | None = None,
     model: str | None = None,
@@ -705,13 +706,26 @@ def finish_qualitative_assessment(
         conn.execute(
             """UPDATE qualitative_index
                   SET status = ?,
+                      grade = ?,
                       culture_flag = ?,
                       legitimacy_tier = ?,
                       model = COALESCE(?, model),
                       prompt_version = COALESCE(?, prompt_version),
                       error_text = ?
                 WHERE job_ref = ?""",
-            (status, culture_flag, legitimacy_tier, model, prompt_version, error_text, job_ref),
+            (status, grade, culture_flag, legitimacy_tier, model, prompt_version, error_text, job_ref),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_qualitative_grade(db_path: Path, job_ref: str, grade: str | None) -> None:
+    conn = open_db(db_path)
+    try:
+        conn.execute(
+            "UPDATE qualitative_index SET grade = ? WHERE job_ref = ?",
+            (grade, job_ref),
         )
         conn.commit()
     finally:

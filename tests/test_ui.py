@@ -29,8 +29,14 @@ from src.job_hunt_storage import (
     load_raw_input,
     load_reviewed_job,
     save_application_outcome,
+    save_qualitative_assessment,
 )
-from src.job_hunt_index import get_qualitative_index_row, incr_rpd_counter
+from src.job_hunt_index import (
+    claim_qualitative_assessment,
+    finish_qualitative_assessment,
+    get_qualitative_index_row,
+    incr_rpd_counter,
+)
 from src.job_hunt_scheduler import rpd_date_key
 from src.ui_state import UIServerConfig
 from src.ui_routes import _build_handler
@@ -45,6 +51,7 @@ from src.ui_handlers import (
     handle_qualitative_assess,
     load_recent_job_history,
     raw_input_payload_from_form,
+    render_job,
 )
 from src.job_hunt_orchestrator import run_local_evaluation_flow_from_payload
 from src.job_hunt_outcomes import create_outcome_record, update_outcome
@@ -301,6 +308,25 @@ def _qualitative_llm_payload() -> str:
     })
 
 
+def _low_culture_llm_payload() -> str:
+    payload = json.loads(_qualitative_llm_payload())
+    payload["dimensions"]["culture_signals"]["score"] = 2
+    payload["dimensions"]["culture_signals"]["evidence_contradicts_requirements"] = True
+    payload["dimensions"]["culture_signals"]["reasoning"] = "The culture evidence contradicts the role requirements."
+    return json.dumps(payload)
+
+
+def _low_culture_assessment() -> dict:
+    payload = json.loads(_low_culture_llm_payload())
+    payload.update({
+        "job_id": "job-grade",
+        "model": "gemini-test",
+        "prompt_version": "qualitative-v1",
+        "created_at": "2026-07-09T10:00:00+00:00",
+    })
+    return payload
+
+
 
 
 def _first_reed_select_form(body: str) -> dict[str, str]:
@@ -366,6 +392,7 @@ def test_post_qualitative_assess_uses_mocked_llm_and_renders_panel(tmp_path: Pat
 
     handle_qualitative_assess(req, config, responder, "job-qual-001")
     stored = load_qualitative_assessment("job-qual-001", config.state_root)
+    row = get_qualitative_index_row(config.state_root / "job_hunt_index.db", "job-qual-001")
 
     assert len(calls) == 1
     assert "raw CV" not in calls[0]
@@ -373,6 +400,154 @@ def test_post_qualitative_assess_uses_mocked_llm_and_renders_panel(tmp_path: Pat
     assert "Seniority fit" in responder.body
     assert stored["model"] == "gemini-test"
     assert stored["posting_quality"]["tier"] == "unknown_caution"
+    assert stored["base_grade"] == "A"
+    assert stored["capped_grade"] == "A"
+    assert row is not None
+    assert row["grade"] == "A"
+
+
+def test_qualitative_badge_shows_capped_base_and_warning(tmp_path: Path, monkeypatch) -> None:
+    def fake_reasoning(prompt: str, *, before_attempt=None):
+        if before_attempt:
+            before_attempt("gemini-test")
+        return _low_culture_llm_payload(), None, "gemini-test", False
+
+    monkeypatch.setattr("src.job_hunt_llm._call_gemini_reasoning", fake_reasoning)
+    config = _ui_config(tmp_path)
+    _save_evaluated_job(tmp_path, config, job_id="job-qual-capped")
+    req = types.SimpleNamespace(path="/job/job-qual-capped/qualitative-assess", form={}, json_body=None)
+    responder = _FakeResponder()
+
+    handle_qualitative_assess(req, config, responder, "job-qual-capped")
+    row = get_qualitative_index_row(config.state_root / "job_hunt_index.db", "job-qual-capped")
+
+    assert row is not None
+    assert row["grade"] == "C"
+    assert "Base grade A -&gt; capped C: culture evidence contradicts requirements" in responder.body
+    assert "High technical fit, unconfirmed/poor culture fit - verify before applying." in responder.body
+
+
+def test_qualitative_badge_caps_blocker_skip_at_f_and_persists_final_grade(tmp_path: Path, monkeypatch) -> None:
+    def fake_reasoning(prompt: str, *, before_attempt=None):
+        if before_attempt:
+            before_attempt("gemini-test")
+        return _qualitative_llm_payload(), None, "gemini-test", False
+
+    monkeypatch.setattr("src.job_hunt_llm._call_gemini_reasoning", fake_reasoning)
+    config = _ui_config(tmp_path)
+    job_id = "job-qual-blocker-skip"
+    _save_evaluated_job(tmp_path, config, job_id=job_id)
+    analysis_path = config.state_root / "analyses" / f"{job_id}.json"
+    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    analysis["decision"] = "skip"
+    analysis["decision_reason"] = "Skipped because blocker rules were triggered: Salary below floor"
+    analysis["blockers"] = [
+        {
+            "code": "salary-below-floor",
+            "label": "Salary below floor",
+            "reason": "Salary is below the candidate floor.",
+            "severity": "critical",
+        }
+    ]
+    analysis_path.write_text(json.dumps(analysis, indent=2), encoding="utf-8")
+    req = types.SimpleNamespace(path=f"/job/{job_id}/qualitative-assess", form={}, json_body=None)
+    responder = _FakeResponder()
+
+    handle_qualitative_assess(req, config, responder, job_id)
+    row = get_qualitative_index_row(config.state_root / "job_hunt_index.db", job_id)
+    stored = load_qualitative_assessment(job_id, config.state_root)
+
+    assert row is not None
+    assert row["grade"] == "F"
+    assert stored["base_grade"] == "A"
+    assert stored["capped_grade"] == "F"
+    assert "Base grade A -&gt; capped F: hard blocker" in responder.body
+    assert "Salary below floor" in responder.body
+
+
+def test_qualitative_grade_badge_shows_base_grade_without_assessment(tmp_path: Path) -> None:
+    config = _ui_config(tmp_path)
+    _write_apply_job_state(config.state_root, job_id="job-base-grade")
+    req = types.SimpleNamespace(path="/job/job-base-grade", form={}, json_body=None)
+    responder = _FakeResponder()
+
+    render_job(req, config, responder, "job-base-grade")
+
+    assert "Grade A" in responder.body
+    assert "base grade" in responder.body
+    assert "Base grade A -&gt; capped C" not in responder.body
+
+
+def test_qualitative_grade_badge_respects_user_override_effective_decision(tmp_path: Path) -> None:
+    config = _ui_config(tmp_path)
+    job_id = "job-user-review-grade"
+    _write_apply_job_state(config.state_root, job_id=job_id)
+    analysis_path = config.state_root / "analyses" / f"{job_id}.json"
+    analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+    analysis["user_decision"] = "review"
+    analysis["user_decision_note"] = "Manual review before applying."
+    analysis_path.write_text(json.dumps(analysis, indent=2), encoding="utf-8")
+    req = types.SimpleNamespace(path=f"/job/{job_id}", form={}, json_body=None)
+    responder = _FakeResponder()
+
+    render_job(req, config, responder, job_id)
+
+    assert "Base grade A -&gt; capped B: decision requires review" in responder.body
+
+
+def test_qualitative_stale_grade_backfills_on_render(tmp_path: Path) -> None:
+    config = _ui_config(tmp_path)
+    _write_apply_job_state(config.state_root, job_id="job-grade-backfill")
+    assessment = _low_culture_assessment()
+    assessment["job_id"] = "job-grade-backfill"
+    save_qualitative_assessment("job-grade-backfill", assessment, config.state_root)
+    db_path = config.state_root / "job_hunt_index.db"
+    claim_qualitative_assessment(db_path, "job-grade-backfill", now="2026-07-09T10:00:00")
+    finish_qualitative_assessment(
+        db_path,
+        "job-grade-backfill",
+        status="done",
+        grade="A",
+        legitimacy_tier="unknown_caution",
+        culture_flag="caution",
+    )
+    req = types.SimpleNamespace(path="/job/job-grade-backfill", form={}, json_body=None)
+    responder = _FakeResponder()
+
+    render_job(req, config, responder, "job-grade-backfill")
+    row = get_qualitative_index_row(db_path, "job-grade-backfill")
+    stored = load_qualitative_assessment("job-grade-backfill", config.state_root)
+
+    assert row is not None
+    assert row["grade"] == "C"
+    assert stored["base_grade"] == "A"
+    assert stored["capped_grade"] == "C"
+    assert stored["cap_reason"] == "culture evidence contradicts requirements"
+    assert "Base grade A -&gt; capped C: culture evidence contradicts requirements" in responder.body
+
+
+def test_qualitative_grade_warning_not_rendered_for_c_base_grade(tmp_path: Path) -> None:
+    config = _ui_config(tmp_path)
+    _write_review_job_state(config.state_root, job_id="job-grade-c")
+    assessment = _low_culture_assessment()
+    assessment["job_id"] = "job-grade-c"
+    save_qualitative_assessment("job-grade-c", assessment, config.state_root)
+    db_path = config.state_root / "job_hunt_index.db"
+    claim_qualitative_assessment(db_path, "job-grade-c", now="2026-07-09T10:00:00")
+    finish_qualitative_assessment(
+        db_path,
+        "job-grade-c",
+        status="done",
+        legitimacy_tier="unknown_caution",
+        culture_flag="caution",
+    )
+    req = types.SimpleNamespace(path="/job/job-grade-c", form={}, json_body=None)
+    responder = _FakeResponder()
+
+    render_job(req, config, responder, "job-grade-c")
+
+    assert "Grade C" in responder.body
+    assert "High technical fit, unconfirmed/poor culture fit - verify before applying." not in responder.body
 
 
 def test_post_qualitative_assess_daily_cap_skips_llm_and_marks_error(tmp_path: Path, monkeypatch) -> None:

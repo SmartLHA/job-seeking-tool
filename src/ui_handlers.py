@@ -551,15 +551,71 @@ def render_job(req, config, responder, job_id, *, flash=None, flash_kind='succes
         qualitative_index = get_qualitative_index_row(_index_db_path(config), job_id)
     except Exception:
         qualitative_index = None
+    qualitative_grade = _ensure_qualitative_grade(
+        config,
+        job_id,
+        analysis,
+        qualitative_assessment,
+        qualitative_index,
+    )
+    if (
+        qualitative_index is not None
+        and qualitative_grade is not None
+        and qualitative_index.get("grade") != qualitative_grade.get("display_grade")
+    ):
+        qualitative_index = {**qualitative_index, "grade": qualitative_grade.get("display_grade")}
 
     page = render_job_page(_build_job_page_vm(
         reviewed_job, analysis, outcome,
         qualitative_assessment=qualitative_assessment,
         qualitative_index=qualitative_index,
+        qualitative_grade=qualitative_grade,
         flash=flash, flash_kind=flash_kind, embed=embed,
         model_label=config.model_label,
     ))
     responder.send_html(page)
+
+
+def _ensure_qualitative_grade(config, job_id: str, analysis, qualitative_assessment, qualitative_index):
+    if analysis is None:
+        return None
+    from src.job_hunt_index import update_qualitative_grade
+    from src.job_hunt_qualitative import apply_grade_to_assessment, derive_grade
+
+    if qualitative_assessment is None:
+        return derive_grade(
+            analysis.match_score,
+            effective_decision=effective_decision(analysis),
+            has_blockers=bool(analysis.blockers),
+            confidence=analysis.confidence,
+            decision_reason=analysis.decision_reason,
+        )
+
+    existing = {
+        "base_grade": qualitative_assessment.get("base_grade"),
+        "capped_grade": qualitative_assessment.get("capped_grade"),
+        "cap_reason": qualitative_assessment.get("cap_reason"),
+        "grade_warning": qualitative_assessment.get("grade_warning"),
+    }
+    grade = apply_grade_to_assessment(
+        analysis.match_score,
+        qualitative_assessment,
+        effective_decision=effective_decision(analysis),
+        has_blockers=bool(analysis.blockers),
+        confidence=analysis.confidence,
+        decision_reason=analysis.decision_reason,
+    )
+    changed = (
+        existing["base_grade"] != qualitative_assessment.get("base_grade")
+        or existing["capped_grade"] != qualitative_assessment.get("capped_grade")
+        or existing["cap_reason"] != qualitative_assessment.get("cap_reason")
+        or existing["grade_warning"] != qualitative_assessment.get("grade_warning")
+    )
+    if changed:
+        save_qualitative_assessment(job_id, qualitative_assessment, config.state_root)
+    if qualitative_index is not None and qualitative_index.get("grade") != grade.get("display_grade"):
+        update_qualitative_grade(_index_db_path(config), job_id, grade.get("display_grade"))
+    return grade
 
 
 def handle_evaluate_form(req, config, responder, job_id):
@@ -630,6 +686,7 @@ def handle_qualitative_assess(req, config, responder, job_id):
     from src.job_hunt_qualitative import (
         PROMPT_VERSION,
         QualitativeValidationFailure,
+        apply_grade_to_assessment,
         build_qualitative_prompt,
         parse_and_validate,
     )
@@ -729,11 +786,27 @@ def handle_qualitative_assess(req, config, responder, job_id):
                 "prompt_version": PROMPT_VERSION,
                 "created_at": created_at,
             }
+            try:
+                analysis = load_job_analysis(job_id, config.state_root)
+            except FileNotFoundError:
+                analysis = None
+            grade = (
+                apply_grade_to_assessment(
+                    analysis.match_score,
+                    assessment,
+                    effective_decision=effective_decision(analysis),
+                    has_blockers=bool(analysis.blockers),
+                    confidence=analysis.confidence,
+                    decision_reason=analysis.decision_reason,
+                )
+                if analysis is not None else None
+            )
             save_qualitative_assessment(job_id, assessment, config.state_root)
             culture = assessment["dimensions"].get("culture_signals", {})
             culture_flag = "caution" if isinstance(culture, dict) and culture.get("score") in (1, 2) else None
             finish_qualitative_assessment(
                 db_path, job_id, status="done",
+                grade=grade.get("display_grade") if grade else None,
                 legitimacy_tier=assessment["posting_quality"].get("tier"),
                 culture_flag=culture_flag,
                 model=model_used,
@@ -2335,7 +2408,7 @@ def _keyword_match_vm_fields(reviewed_job, analysis) -> dict:
 
 
 def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash,
-                       qualitative_assessment=None, qualitative_index=None, flash_kind="success",
+                       qualitative_assessment=None, qualitative_index=None, qualitative_grade=None, flash_kind="success",
                        embed=False, model_label="") -> "JobPageViewModel":
     if analysis is not None:
         sb = analysis.score_breakdown
@@ -2389,6 +2462,7 @@ def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash,
         outcome_status_options=allowed_next_statuses(outcome.status if outcome else None),
         qualitative_assessment=qualitative_assessment,
         qualitative_index=qualitative_index,
+        qualitative_grade=qualitative_grade,
         flash=flash, flash_kind=flash_kind, embed=embed, model_label=model_label, **a,
     )
 

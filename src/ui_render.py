@@ -551,6 +551,7 @@ class JobPageViewModel:
     outcome_status_options: list[str]
     qualitative_assessment: dict | None
     qualitative_index: dict | None
+    qualitative_grade: dict | None
     flash: str | None
     flash_kind: str
     embed: bool
@@ -804,6 +805,37 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'border:1px solid var(--line);white-space:nowrap;">{escape(text)}</span>'
         )
 
+    def _grade_badge() -> str:
+        grade = vm.qualitative_grade or {}
+        base = grade.get("base_grade")
+        capped = grade.get("capped_grade") or base
+        reason = grade.get("cap_reason")
+        if not base:
+            return ""
+        if reason and capped != base:
+            text = f"Base grade {base} -> capped {capped}: {reason}"
+        elif vm.qualitative_assessment is None:
+            text = f"Grade {base} · base grade"
+        else:
+            text = f"Grade {capped} · qualitative advisory"
+        return (
+            f'<span style="display:inline-flex;align-items:center;gap:6px;margin-left:10px;vertical-align:middle;'
+            f'padding:7px 11px;border-radius:100px;border:1px solid var(--line);background:var(--surface);'
+            f'color:var(--ink-soft);font-size:12px;font-weight:700;box-shadow:var(--shadow-sm);">'
+            f'{escape(text)}</span>'
+        )
+
+    def _grade_warning_banner() -> str:
+        grade = vm.qualitative_grade or {}
+        warning = grade.get("warning")
+        if not warning:
+            return ""
+        return (
+            f'<div style="margin-top:14px;padding:10px 12px;border-radius:var(--r-md);'
+            f'border:1px solid var(--review-line);background:var(--review-bg);color:var(--review);'
+            f'font-size:13px;font-weight:700;line-height:1.45;">{escape(warning)}</div>'
+        )
+
     def _render_qualitative_panel() -> str:
         assessment = vm.qualitative_assessment
         qrow = vm.qualitative_index or {}
@@ -932,6 +964,8 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             'border:1px solid var(--review-line);margin-left:8px;">Overridden</span>'
             if is_overridden else ""
         )
+        grade_badge = _grade_badge()
+        grade_warning = _grade_warning_banner()
 
         verdict_card_html = (
             f'<div style="margin-top:22px;background:var(--surface);border:1px solid var(--line);'
@@ -943,7 +977,8 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'<div>'
             f'<div style="font-size:11.5px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;'
             f'color:var(--ink-faint);margin-bottom:10px;">Recommended decision</div>'
-            f'{_decision_chip(eff_decision, large=True)}{overridden_badge}'
+            f'{_decision_chip(eff_decision, large=True)}{overridden_badge}{grade_badge}'
+            f'{grade_warning}'
             f'<div style="display:flex;align-items:center;gap:28px;margin-top:18px;flex-wrap:wrap;">'
             f'<div>'
             f'<div style="font-size:11px;color:var(--ink-faint);margin-bottom:5px;font-weight:600;">'
