@@ -34,6 +34,7 @@ from src.ui_handlers import (
     handle_sources,
     handle_parse_cv,
     handle_save_profile,
+    handle_set_scoring_preset,
     handle_job_explain,
     handle_qualitative_assess,
     handle_evaluate_form,
@@ -324,6 +325,9 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/saved-searches":
                 handle_saved_searches_create(req, config, responder)
+                return
+            if parsed.path == "/scoring-preset":
+                handle_set_scoring_preset(req, config, responder)
                 return
             if parsed.path == "/digest/mark-seen":
                 handle_digest_mark_seen(req, config, responder)

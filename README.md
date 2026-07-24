@@ -5,8 +5,9 @@ Local-first UK job-search decision support and application preparation. It score
 ## Current implementation
 
 - Split local UI: `src/job_hunt_ui.py` is a 19-line entry point over `ui_routes`, `ui_handlers`, `ui_render`, `ui_utils`, and `ui_state`.
-- Generic source registry with Reed, Adzuna, and LinkedIn currently enabled. Reed (search, result selection, audit snapshots, full-detail enrichment, deduplication), Adzuna (search, selection, normalisation), and LinkedIn (public search scrape, SQLite cache, blocked-page detection, XSS-safe rendering) are wired end-to-end; batch evaluation and the review queue work across all sources.
-- Deterministic Apply / Review / Skip decisions with seven weighted score components and categorical confidence.
+- Generic source registry with Reed, Adzuna, and LinkedIn currently enabled. Reed (search, result selection, audit snapshots, full-detail enrichment), Adzuna (search, selection, normalisation), and LinkedIn (public search scrape, SQLite cache, blocked-page detection, XSS-safe rendering) are wired end-to-end; batch evaluation and the review queue work across all sources.
+- Search improvements (2026-07-22): a local relevance filter buckets clearly-unrelated titles into a collapsed "Other results" section (never drops them); results are deduplicated live, including across "Show more" pages; the keyword field accepts multiple comma-separated terms via chip/tag entry (one location + radius, capped at 6 sub-searches to protect free-tier rate limits).
+- Deterministic Apply / Review / Skip decisions with seven weighted score components (switchable between 3 named presets — Balanced/Salary-focused/Skills-focused, persisted across restart) and categorical confidence.
 - Source-quality gates, ATS readiness, and F1 per-job keyword coverage. Keyword coverage is advisory only and includes missing-keyword and anti-stuffing signals.
 - Structured skills, safe URL ingestion, decision overrides, local JSON state, SQLite jobs/board index, board view, and outcome tracking.
 - Decision-gated Tailor CV and Cover Letter actions on job detail pages. Output is markdown/text; DOCX/PDF export is not implemented.
@@ -38,7 +39,7 @@ Required source credentials are read from the environment. Reed needs `REED_API_
 | Job actions | `POST /job/<id>/decision`, `POST /job/<id>/add-gap-skills`, `POST /job/<id>/ai-review-cv`, `POST /job/<id>/ats-recheck`, `POST /tailor`, `POST /cover-letter`, `POST /job/<id>/qualitative-assess` |
 | Batch qualitative assessment | `POST /jobs/batch-assess`, `GET /batch/<batch_id>`, `POST /batch/<batch_id>/cancel` |
 | Board/outcomes | `GET /jobs`, `GET /board`, `GET /board/view`, `POST /jobs/save`, `POST /outcome` |
-| Profile | `GET /profile`, `POST /profile/parse-cv`, `POST /profile/save` |
+| Profile | `GET /profile`, `POST /profile/parse-cv`, `POST /profile/save`, `POST /scoring-preset` |
 | Saved searches | `GET /saved-searches`, `POST /saved-searches`, `POST /saved-searches/{id}/delete`, `POST /saved-searches/{id}/toggle`, `POST /saved-searches/{id}/run-now` |
 | Daily Digest | `GET /digest`, `GET /digest/count`, `POST /digest/mark-seen`, `POST /digest/reevaluate`, `GET /scheduler/status`, `POST /digest/run-llm-batch`, `GET /digest/llm-queue` |
 

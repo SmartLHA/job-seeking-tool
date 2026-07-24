@@ -1762,6 +1762,7 @@ def render_profile_page(
     flash: str | None = None,
     model_label: str = "",
     enabled_sources: list[str] | None = None,
+    active_scoring_preset: str = "balanced",
 ) -> str:
     """Render the My Profile tab page."""
     # Saved Searches (Daily Job Digest — D1). Source options come from the
@@ -1787,6 +1788,29 @@ def render_profile_page(
         + '<span id="ss-status" style="margin-left:12px;color:#475569;font-size:0.85rem;"></span>'
         + '</div>'
         + '<div id="saved-searches-list" style="margin-top:14px;">Loading…</div>'
+        + '</section>'
+    )
+
+    # Scoring weight presets (Slice C, 2026-07-21 search/score/filter plan).
+    # Plain HTML form (no JS required) so it degrades gracefully; imported
+    # lazily to keep the render layer free of a module-load-order dependency
+    # on the scoring-presets module.
+    from src.job_hunt_scoring_presets import PRESET_LABELS
+
+    _preset_options = "".join(
+        f'<option value="{escape(name)}"' + (' selected' if name == active_scoring_preset else '') + f'>{escape(label)}</option>'
+        for name, label in PRESET_LABELS.items()
+    )
+    scoring_preset_section = (
+        '<section class="panel" id="scoring-preset-panel">'
+        + '<h2>Scoring weights</h2>'
+        + '<p>Pick which named preset the 7-component match score uses. Persists across restart; '
+        + 'existing listed jobs recompute the next time they are (re-)evaluated.</p>'
+        + f'<form method="post" action="/scoring-preset">'
+        + f'<input type="hidden" name="profile_id" value="{escape(profile_id)}">'
+        + '<label><span>Preset</span><select name="preset">' + _preset_options + '</select></label>'
+        + '<div style="margin-top:10px;"><button type="submit">Save preset</button></div>'
+        + '</form>'
         + '</section>'
     )
 
@@ -2029,6 +2053,7 @@ def render_profile_page(
         + '</form>'
         + '</section>'
         + saved_searches_section
+        + scoring_preset_section
         + '</div>'
         + '<script>'
         + '(function () {'

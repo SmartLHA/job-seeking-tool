@@ -1,6 +1,6 @@
 # Product Specification
 
-**Updated: 2026-07-09 (career-ops absorption — qualitative assessment, A-F grade, batch queue).** Source code in `src/` is authoritative. This document describes the recovered split UI and F1 keyword-match implementation, not the earlier monolithic checkout.
+**Updated: 2026-07-22 (search/score/filter improvements — relevance filter, live-search dedup, scoring presets, multi-keyword search).** Source code in `src/` is authoritative. This document describes the recovered split UI and F1 keyword-match implementation, not the earlier monolithic checkout.
 
 ## Product
 
@@ -21,10 +21,10 @@ A local-first UK job-search copilot that helps a candidate discover roles, revie
 | UI architecture | `job_hunt_ui.py` is a thin entry point over `ui_routes`, `ui_handlers`, `ui_render`, `ui_utils`, and `ui_state`. |
 | Sources | Generic registry; Reed, Adzuna, and LinkedIn adapters are enabled (live). |
 | Ingestion | Reed search/select/detail enrichment, manual paste/URL prefill, field-review provenance, safe canonical URL parsing. |
-| Search triage | Results are triaged page-by-page: cards start unticked (tick = shortlist for evaluation only); per-card ✕ or "Hide unticked on this page" marks jobs not-interested — persisted and filtered from all future searches, with a 10s undo and a "Hidden jobs" overlay to unhide; "Next page" replaces the list (forward-only) and shortlisted jobs survive page changes. |
-| Evaluation | Seven weights: required skills 35, preferred skills 5, experience 20, location/salary/domain/work mode 10 each. Confidence is `low`/`medium`/`high`. |
-| Quality and ATS | Source-quality gate, ATS readiness score, and F1 per-job keyword match with missing-keyword and stuffing signals. F1 v2 adds a re-check (`POST /job/<id>/ats-recheck`) that re-scores against the latest tailored CV and shows `was X% → now Y%`. F1 is advisory only. |
-| Decisions | Apply/Review/Skip with persisted user override and effective-decision handling. |
+| Search triage | Results are triaged page-by-page: cards start unticked (tick = shortlist for evaluation only); per-card ✕ or "Hide unticked on this page" marks jobs not-interested — persisted and filtered from all future searches, with a 10s undo and a "Hidden jobs" overlay to unhide; "Next page" replaces the list (forward-only) and shortlisted jobs survive page changes. Since 2026-07-22: results are also relevance-bucketed (non-matching titles collapsed into "Other results", never dropped) and deduplicated live (including across "Show more" pages); the keyword field accepts multiple comma-separated terms via chip entry (one location + radius, capped at 6 sub-searches). |
+| Evaluation | Seven weights: required skills 35, preferred skills 5, experience 20, location/salary/domain/work mode 10 each (the "Balanced" preset). Confidence is `low`/`medium`/`high`. Since 2026-07-22, 3 named presets (Balanced/Salary-focused/Skills-focused) are selectable from My Profile and persist across restart; no free-form weight editor in v1. |
+| Quality and ATS | Source-quality gate (score <40 → Skip blocker; ≥40 and <70 → force Review), ATS readiness score, and F1 per-job keyword match with missing-keyword and stuffing signals. F1 v2 adds a re-check (`POST /job/<id>/ats-recheck`) that re-scores against the latest tailored CV and shows `was X% → now Y%`. F1 is advisory only. |
+| Decisions | Apply/Review/Skip with persisted user override and effective-decision handling. Thresholds: match_score ≥ 80 → Apply; ≥65 and <80 → Review; <65 → Skip. Any blocker forces Skip; a critical risk suppresses Apply and forces Review regardless of score. |
 | CV and letter | Truth-validated `POST /tailor` and grounded `POST /cover-letter`, exposed from the job-detail experience. |
 | Board and outcome | SQLite jobs index, JSON board, board HTML view, saved-job path, legal outcome transitions, and review queue. A bookmarked (saved-but-unevaluated) job can be reloaded into the Evaluate form via `GET /job/<id>/evaluate-form` and scored in place; evaluated jobs offer a Re-evaluate link to the same route. The job page's outcome form offers only legal next statuses, shows an allowed-next / final-status hint, and gives inline success/error feedback in the card (2026-07-07). |
 | Profile | Structured `Skill(name, level, years, evidence_type)`, CV parsing, and local profile save. |

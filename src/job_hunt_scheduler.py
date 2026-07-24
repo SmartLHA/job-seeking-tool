@@ -49,6 +49,7 @@ from src.job_hunt_index import (
     LLMQuotaExhausted,
 )
 from src.job_hunt_evaluation import evaluate_reviewed_job
+from src.job_hunt_scoring_presets import get_active_scoring_policy
 from src.job_hunt_parsing import extract_skills_from_text
 from src.job_hunt_reviewed_input import reviewed_job_from_dict
 from src.job_hunt_storage import (
@@ -162,6 +163,9 @@ def _run_digest_pipeline_locked(
     jobs_llm_queued = jobs_skipped = jobs_already_seen = 0
     newly_queued = 0                                 # global cap counter (across searches)
     errors: list[str] = []
+    # Slice C (2026-07-21 plan): score with whichever named weight preset is
+    # currently persisted, computed once per run (not per-job).
+    _scoring_policy = get_active_scoring_policy(state_root=state_root)
 
     for ss in saved_searches:
         if not getattr(ss, "enabled", True):
@@ -220,7 +224,7 @@ def _run_digest_pipeline_locked(
                 payload["required_skills"] = required
                 payload["preferred_skills"] = preferred
                 job = reviewed_job_from_dict(payload)
-                analysis = evaluate_reviewed_job(profile, job)
+                analysis = evaluate_reviewed_job(profile, job, scoring_policy=_scoring_policy)
             except Exception as exc:
                 _log_skipped(state_root, run_date, source=source_id,
                              saved_search_id=ss.search_id, reason="evaluation_error",
@@ -348,6 +352,10 @@ def _reevaluate_digest_jobs_locked(*, config: Any, profile: Any, db_path: Path) 
     examined = rescored = resurfaced = llm_requeued = dequeued = missing = errored = 0
     requeued = 0   # counts ACTUAL CAS successes against the cap (not stale snapshots)
     errors: list[str] = []
+    # Slice C (2026-07-21 plan): re-score with whichever named weight preset
+    # is currently persisted, so switching presets then clicking "Re-evaluate
+    # all" recomputes every listed job's score under the new weights.
+    _scoring_policy = get_active_scoring_policy(state_root=config.state_root)
 
     for row in rows:
         examined += 1
@@ -361,7 +369,7 @@ def _reevaluate_digest_jobs_locked(*, config: Any, profile: Any, db_path: Path) 
             missing += 1
             continue
         try:
-            analysis = evaluate_reviewed_job(profile, reviewed)
+            analysis = evaluate_reviewed_job(profile, reviewed, scoring_policy=_scoring_policy)
         except Exception as exc:
             errored += 1
             errors.append(f"{job_id}: re-score failed: {exc}")

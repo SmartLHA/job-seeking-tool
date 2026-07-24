@@ -207,6 +207,7 @@ def render_profile(req, config, responder, profile_id, *, parsed_cv_text=None, p
         else:
             profile_obj = None
 
+    from src.job_hunt_scoring_presets import load_preset_name
     page = render_profile_page(
         profile_id=profile_id,
         vm=_build_profile_page_vm(profile_obj),
@@ -217,8 +218,27 @@ def render_profile(req, config, responder, profile_id, *, parsed_cv_text=None, p
         flash=flash,
         model_label=config.model_label,
         enabled_sources=get_enabled_sources(),
+        active_scoring_preset=load_preset_name(state_root=config.state_root),
     )
     responder.send_html(page)
+
+
+def handle_set_scoring_preset(req, config, responder):
+    """POST /scoring-preset — persist the selected named scoring-weight
+    preset (Slice C, 2026-07-21 search/score/filter plan). Plain HTML form
+    submit (no JS required); redirects back to My Profile with a flash."""
+    from urllib.parse import quote as _quote
+    from src.job_hunt_scoring_presets import PRESET_LABELS, PRESET_WEIGHTS, save_preset_name
+
+    form = req.form
+    preset = (form.get("preset") or "").strip()
+    profile_id = (form.get("profile_id") or config.profile_path.stem).strip()
+    if preset not in PRESET_WEIGHTS:
+        flash_msg = f"Unknown scoring preset: {preset!r}. No change made."
+    else:
+        save_preset_name(preset, state_root=config.state_root)
+        flash_msg = f"Scoring preset set to {PRESET_LABELS[preset]}. Scores recompute on next evaluation."
+    responder.redirect(f"/profile?profile_id={_quote(profile_id)}&flash={_quote(flash_msg)}")
 
 
 def handle_parse_cv(req, config, responder):
@@ -488,7 +508,7 @@ def parse_multipart_form(req):
     return result
 
 
-def render_home(req, config, responder, *, values=None, error=None, tab='search', search_values=None, reed_results=None, reed_error=None, evaluate_notice=None):
+def render_home(req, config, responder, *, values=None, error=None, tab='search', search_values=None, reed_results=None, reed_error=None, evaluate_notice=None, reed_other_results=None):
     tab = _normalize_home_tab(tab)
     profile = load_candidate_profile(config.profile_path)
     history = load_recent_job_history(config.state_root)
@@ -499,6 +519,7 @@ def render_home(req, config, responder, *, values=None, error=None, tab='search'
         reed_results=reed_results,
         reed_error=reed_error,
         reed_select_nonce=search_nonce,
+        reed_other_results=reed_other_results,
     )
     page = render_home_page(
         profile_name=profile.name or profile.candidate_id,
@@ -787,6 +808,69 @@ def _parse_exclude_terms(raw: str) -> list[str]:
     return terms
 
 
+# Slice D (2026-07-21 search/score/filter plan): multi-keyword search. ONE
+# location + radius only (no multi-location cross-product, per Mike's locked
+# decision) — a hard cap on the NUMBER of keyword sub-searches protects the
+# free-tier Reed/Adzuna rate limits (R1 in the plan).
+_MAX_KEYWORD_SEARCHES = 6
+
+
+def _parse_keyword_terms(raw: str) -> list[str]:
+    """Split the chip-entered keywords field into individual search terms.
+
+    Accepts a comma-separated string (the chip UI's no-JS hidden-field
+    fallback); each term is whitespace-squashed (case preserved, since it's
+    fed straight to a source's search API), blanks dropped, duplicates
+    removed case-insensitively while preserving first-occurrence order."""
+    seen: set[str] = set()
+    terms: list[str] = []
+    for part in (raw or "").split(","):
+        term = " ".join(part.split())
+        key = term.casefold()
+        if term and key not in seen:
+            seen.add(key)
+            terms.append(term)
+    return terms
+
+
+def _run_multi_keyword_search(source, search_values: dict, keyword_terms: list[str]):
+    """Run one search per keyword term (same location/radius/other criteria
+    from `search_values`), merge the raw results. Never a cross-product with
+    locations — `search_values` carries exactly one location.
+
+    Returns (merged_results, any_page_full, sub_errors):
+    - `any_page_full` is True if ANY keyword's sub-search returned a full
+      page (>= take), used instead of a raw merged count to decide whether
+      a "Show more" page is offered.
+    - `sub_errors` collects per-keyword failures without aborting the other
+      keyword searches (partial failure never blanks out the whole page)."""
+    take_key, _skip_key = _take_skip_param_keys(search_values)
+    try:
+        take = int(search_values.get(take_key, "10") or "10")
+    except (TypeError, ValueError):
+        take = 10
+    terms = keyword_terms or [""]
+    merged: list[dict[str, Any]] = []
+    any_full = False
+    sub_errors: list[str] = []
+    for term in terms:
+        variant = dict(search_values)
+        variant["keywords"] = term
+        try:
+            sub_results = source.search_handler(variant)
+        except Exception as exc:
+            # Single-keyword search (the common case, and every pre-Slice-D
+            # caller): keep the exact plain message so existing failure UX
+            # text is unchanged. Only prefix with the keyword when there is
+            # more than one, so a partial multi-keyword failure is legible.
+            sub_errors.append(str(exc) if len(terms) == 1 else f"{term!r}: {exc}")
+            continue
+        if take > 0 and len(sub_results) >= take:
+            any_full = True
+        merged.extend(sub_results)
+    return merged, any_full, sub_errors
+
+
 def _apply_exclude_filter(results, raw_exclude: str):
     """Drop results whose job title contains any excluded term (substring, case-
     insensitive). Returns (kept_results, excluded_count). Matches title only so a
@@ -823,28 +907,87 @@ def handle_source_search(req, config, responder, source_id):
     exclude_raw = (params.get("excludeKeywords") or "").strip()
     if exclude_raw:
         search_values["excludeKeywords"] = exclude_raw
+    # Multi-keyword (Slice D): parse chip-entered keywords from the RAW query
+    # field — the source normaliser only squashes/truncates one string, it
+    # doesn't split on commas. ONE location + radius only (search_values
+    # already carries exactly one locationName from the shared form).
+    raw_keywords = (params.get("keywords") or "").strip()
+    keyword_terms = _parse_keyword_terms(raw_keywords)
+    _keyword_capped = False
+    if len(keyword_terms) > _MAX_KEYWORD_SEARCHES:
+        keyword_terms = keyword_terms[:_MAX_KEYWORD_SEARCHES]
+        _keyword_capped = True
+    # Carry back exactly what was searched (post-cap) so the form/chip field
+    # and "Show more" URL reflect reality, not the untrimmed input.
+    search_values["keywords"] = ", ".join(keyword_terms)
+    if _keyword_capped:
+        search_values["_keyword_capped"] = str(_MAX_KEYWORD_SEARCHES)
     error: str | None = None
     results: list[dict[str, Any]] = []
     try:
-        results = source.search_handler(search_values)
+        results, _any_full_page, _kw_sub_errors = _run_multi_keyword_search(source, search_values, keyword_terms)
+        if _kw_sub_errors:
+            if not results:
+                error = f"{source.display_name} search failed: {'; '.join(_kw_sub_errors)}. Manual fallback is still available."
+            else:
+                search_values["_partial_error_count"] = str(len(_kw_sub_errors))
     except Exception as exc:
         error = f"{source.display_name} search failed: {exc}. Manual fallback is still available."
+        _any_full_page = False
     # Filter out not-interested jobs (display-only: paging math below stays on
     # the RAW count so the skip cursor still advances one full source page).
     _raw_count = len(results)
+    # Relevance-bucket (Slice A, 2026-07-21 plan): split into title-matching
+    # "main" results and a non-matching "Other results" bucket BEFORE dedup,
+    # per the pipeline order (fetch -> normalise -> relevance-bucket -> dedup
+    # -> score -> sort -> paginate). Never hard-drops a job.
+    other_results: list[dict[str, Any]] = []
     if not error and results:
+        from src.job_sources.relevance import bucket_jobs_by_relevance
+        results, other_results = bucket_jobs_by_relevance(results, search_values.get("keywords", ""))
+    # Dedup (Slice B): collapse duplicate cards within each bucket before any
+    # other display-only filter runs. Display-only like the filters below —
+    # paging math stays on _raw_count above so the skip cursor still advances
+    # a full source page.
+    if not error and results:
+        from src.job_sources.dedup import deduplicate_jobs
+        results = deduplicate_jobs(results)
+    if not error and other_results:
+        from src.job_sources.dedup import deduplicate_jobs
+        other_results = deduplicate_jobs(other_results)
+    if not error and (results or other_results):
         try:
             from src.job_hunt_not_interested import filter_results as _filter_ni
-            results, _hidden_ct = _filter_ni(results, state_root=config.state_root)
-            if _hidden_ct:
-                search_values["_hidden_count"] = str(_hidden_ct)
+            _hidden_ct_total = 0
+            if results:
+                results, _hidden_ct = _filter_ni(results, state_root=config.state_root)
+                _hidden_ct_total += _hidden_ct
+            if other_results:
+                other_results, _hidden_ct = _filter_ni(other_results, state_root=config.state_root)
+                _hidden_ct_total += _hidden_ct
+            if _hidden_ct_total:
+                search_values["_hidden_count"] = str(_hidden_ct_total)
         except Exception as exc:  # never let the hide-store break search
             logger.warning("not-interested filter failed: %s", exc)
     # Exclude-keyword title filter (display-only, same as the hide filter).
-    if not error and results:
-        results, _excl_ct = _apply_exclude_filter(results, exclude_raw)
-        if _excl_ct:
-            search_values["_excluded_count"] = str(_excl_ct)
+    if not error and (results or other_results):
+        _excl_ct_total = 0
+        if results:
+            results, _excl_ct = _apply_exclude_filter(results, exclude_raw)
+            _excl_ct_total += _excl_ct
+        if other_results:
+            other_results, _excl_ct = _apply_exclude_filter(other_results, exclude_raw)
+            _excl_ct_total += _excl_ct
+        if _excl_ct_total:
+            search_values["_excluded_count"] = str(_excl_ct_total)
+    if other_results:
+        search_values["_other_count"] = str(len(other_results))
+    # New search (Slice B): mint a fresh search-id and seed its "seen" set
+    # with everything shown on this first page, so "Show more" can drop
+    # already-shown cards without a global (cross-search) seen-set. Only the
+    # main bucket is tracked — "Other results" isn't paginated via Show more.
+    from src.job_sources.search_state import start_search
+    _search_id = start_search(results)
     # Build "More jobs" URL for ANY source: same params, skip cursor advanced by
     # one page. Sources differ in param naming (Reed/Adzuna use camelCase
     # resultsToTake/resultsSkip; LinkedIn uses snake_case results_to_take/
@@ -854,7 +997,11 @@ def handle_source_search(req, config, responder, source_id):
         _take = int(search_values.get(take_key, "10") or "10")
     except (TypeError, ValueError):
         _take = 10
-    if not error and _take > 0 and _raw_count >= _take:
+    # Slice D: with multiple keyword sub-searches merged together, the merged
+    # raw count no longer reliably signals "there's another page" (many
+    # keywords each returning a partial page could still sum past `_take`) —
+    # use _any_full_page (did ANY sub-search return a full page) instead.
+    if not error and _take > 0 and _any_full_page:
         try:
             _cur_skip = int(search_values.get(skip_key, "0") or "0")
         except (TypeError, ValueError):
@@ -864,8 +1011,9 @@ def handle_source_search(req, config, responder, source_id):
             if not str(k).startswith("_") and k != skip_key
         }
         _more_params[skip_key] = str(_cur_skip + _take)
+        _more_params["searchId"] = _search_id
         search_values["_more_url"] = f"/search/{source_id}/more?" + _urlencode_ss(_more_params)
-    render_home(req, config, responder, tab="search", search_values=search_values, reed_results=results, reed_error=error)
+    render_home(req, config, responder, tab="search", search_values=search_values, reed_results=results, reed_error=error, reed_other_results=other_results)
 
 
 def handle_source_select(req, config, responder, source_id):
@@ -1404,15 +1552,28 @@ def handle_source_search_more(req, config, responder, source_id):
         skip = int(search_values.get(skip_key, "0") or "0")
     except (TypeError, ValueError):
         skip = 0
+    # Multi-keyword (Slice D): same chip list as the initial search, capped
+    # the same way — re-parsed from the (already comma-joined) "keywords"
+    # field the normaliser carried through. Same shared skip cursor is used
+    # for every keyword sub-search (one location, no per-keyword cursors).
+    keyword_terms = _parse_keyword_terms(search_values.get("keywords", ""))[:_MAX_KEYWORD_SEARCHES]
     try:
-        results = source.search_handler(search_values)
+        results, any_full_page, _kw_sub_errors = _run_multi_keyword_search(source, search_values, keyword_terms)
     except Exception as exc:
         responder.send_json({"ok": False, "error": str(exc)})
         return
-    # Display-only not-interested filter; has_more / next skip stay on the RAW
-    # count so the cursor still advances one full source page.
+    if _kw_sub_errors and not results:
+        responder.send_json({"ok": False, "error": "; ".join(_kw_sub_errors)})
+        return
+    # Display-only not-interested filter; has_more / next skip stay on
+    # any_full_page so the cursor still advances a full source page.
     raw_count = len(results)
     hidden_count = 0
+    # Dedup (Slice B): collapse duplicate cards within this one page first, same
+    # as handle_source_search — before the not-interested/exclude filters.
+    if results:
+        from src.job_sources.dedup import deduplicate_jobs
+        results = deduplicate_jobs(results)
     if results:
         try:
             from src.job_hunt_not_interested import filter_results as _filter_ni
@@ -1424,9 +1585,17 @@ def handle_source_search_more(req, config, responder, source_id):
     if results and exclude_raw:
         results, _excl_ct = _apply_exclude_filter(results, exclude_raw)
         hidden_count += _excl_ct
+    # Cross-page dedup (Slice B): drop cards already shown for this search-id
+    # (search-id-keyed seen-set, not global — see job_sources.search_state).
+    search_id = (req.query.get("searchId") or "").strip() or None
+    if results:
+        from src.job_sources.search_state import filter_new_page
+        _before_cross_page = len(results)
+        results = filter_new_page(search_id, results)
+        hidden_count += _before_cross_page - len(results)
     nonce = create_select_nonce()
     cards_html = source.render_cards_fragment(results, skip=skip, nonce=nonce)
-    has_more = take > 0 and raw_count >= take
+    has_more = take > 0 and any_full_page
     next_params = {
         str(k): str(v) for k, v in search_values.items()
         if not str(k).startswith("_") and k != skip_key
@@ -1434,6 +1603,8 @@ def handle_source_search_more(req, config, responder, source_id):
     if exclude_raw:
         next_params["excludeKeywords"] = exclude_raw
     next_params[skip_key] = str(skip + take)
+    if search_id:
+        next_params["searchId"] = search_id
     next_url = f"/search/{source_id}/more?" + _urlencode(next_params)
     responder.send_json({
         "ok": True,
@@ -2338,14 +2509,43 @@ def _render_shared_search_form(values: dict[str, str], buttons_html: str) -> str
     submit button (rendered into ``buttons_html``) that posts these same fields to
     its ``/search/{source_id}`` endpoint via the button's ``formaction``. All
     registered sources normalise this identical field set, so the criteria only
-    need to be entered once."""
+    need to be entered once.
+
+    Keywords/exclude-keywords/location use the chip/tag widget (Slice D,
+    2026-07-21 plan) — vanilla JS progressive enhancement over the same plain
+    ``<input name=...>`` fields, so a no-JS submission is unaffected."""
+    from src.ui_chip_field import CHIP_FIELD_JS, render_chip_field
+
+    keywords_field = render_chip_field(
+        name="keywords",
+        label="Keywords / job title",
+        value=values.get("keywords", ""),
+        placeholder="Business Analyst",
+        max_chips=_MAX_KEYWORD_SEARCHES,
+        help_text=f"(up to {_MAX_KEYWORD_SEARCHES}; runs one search per keyword, merged)",
+    )
+    exclude_field = render_chip_field(
+        name="excludeKeywords",
+        label="Exclude keywords",
+        value=values.get("excludeKeywords", ""),
+        placeholder="trainee, junior, graduate",
+        help_text="(title match)",
+    )
+    location_field = render_chip_field(
+        name="locationName",
+        label="Location",
+        value=values.get("locationName", ""),
+        placeholder="London",
+        max_chips=1,
+        help_text="(one location + radius only — no multi-location search)",
+    )
     return f"""
     <form method="get" action="/search/reed" id="job-search-form" class="panel subtle">
       <h3>Search criteria</h3>
       <div class="grid two-col">
-        <label><span>Keywords / job title</span><input name="keywords" value="{escape(values.get('keywords', ''))}" placeholder="Business Analyst"></label>
-        <label><span>Exclude keywords <small style="color:var(--ink-faint);font-weight:400;">(comma-separated; title match)</small></span><input name="excludeKeywords" value="{escape(values.get('excludeKeywords', ''))}" placeholder="trainee, junior, graduate"></label>
-        <label><span>Location</span><input name="locationName" value="{escape(values.get('locationName', ''))}" placeholder="London"></label>
+        {keywords_field}
+        {exclude_field}
+        {location_field}
         <label><span>Minimum salary</span><input name="minimumSalary" inputmode="numeric" value="{escape(values.get('minimumSalary', ''))}" placeholder="50000"></label>
         <label><span>Results to take</span><input name="resultsToTake" inputmode="numeric" value="{escape(values.get('resultsToTake', '10'))}" placeholder="10"></label>
         <label><span>Work mode</span><select name="workMode">{render_select_options(['any', 'remote', 'hybrid', 'onsite'], values.get('workMode', 'any'))}</select></label>
@@ -2358,6 +2558,7 @@ def _render_shared_search_form(values: dict[str, str], buttons_html: str) -> str
         <a href="/?tab=evaluate" class="tab-link">Evaluate existing details</a>
       </div>
     </form>
+    {CHIP_FIELD_JS}
     """
 
 
@@ -2367,6 +2568,7 @@ def _render_search_jobs_tab(
     reed_results: list[dict[str, Any]] | None = None,
     reed_error: str | None = None,
     reed_select_nonce: str | None = None,
+    reed_other_results: list[dict[str, Any]] | None = None,
 ) -> str:
     from src.job_sources.source_registry import all_sources
     enabled_sources = [s.lower() for s in get_enabled_sources()]
@@ -2415,6 +2617,29 @@ def _render_search_jobs_tab(
                 search_values.get("_more_url") if search_values else None,
             )
 
+    # Other results (Slice A, 2026-07-21 plan): collapsed bucket of jobs whose
+    # title didn't closely match the search query's role-family terms.
+    # Never dropped outright — reuses the source's own render_cards_fragment
+    # (already used for AJAX "Show more") instead of a second card renderer.
+    # IDs are offset past the main list's so they never collide in the DOM.
+    other_results_html = ""
+    if active_search_source and reed_other_results:
+        for source in sources:
+            if source.source_id == active_search_source and source.render_cards_fragment:
+                _other_cards_html = source.render_cards_fragment(
+                    reed_other_results, skip=len(reed_results or []), nonce=reed_select_nonce
+                )
+                other_results_html = (
+                    '<details style="margin-top:18px;border:1px dashed var(--line);'
+                    'border-radius:var(--r-md);padding:10px 14px;">'
+                    f'<summary style="cursor:pointer;font-size:13px;color:var(--ink-faint);">'
+                    f'Other results ({len(reed_other_results)}) &mdash; titles that did not closely '
+                    'match your search terms</summary>'
+                    f'<div style="margin-top:12px;">{_other_cards_html}</div>'
+                    '</details>'
+                )
+                break
+
     # Not-interested note: explains short (or fully empty) pages caused by the
     # server-side hide filter, so a filtered page never looks broken.
     hidden_note_html = ""
@@ -2444,6 +2669,18 @@ def _render_search_jobs_tab(
             f'{escape(_excl_ct)} job(s) on this page hidden by exclude keywords ({_excl_terms}).</div>'
         )
 
+    # Keyword-cap note (Slice D): explains when more chips were entered than
+    # the search actually ran (rate-limit protection, R1 in the plan).
+    capped_note_html = ""
+    _cap_ct = (search_values or {}).get("_keyword_capped")
+    if active_search_source and _cap_ct:
+        capped_note_html = (
+            '<div style="margin-top:14px;padding:10px 14px;border:1px dashed var(--line);'
+            'border-radius:var(--r-md);font-size:12.5px;color:var(--ink-faint);">'
+            f'Only the first {escape(_cap_ct)} keywords were searched (cap protects search-provider rate limits) — '
+            f'the rest were skipped.</div>'
+        )
+
     return f"""
     <section class="panel">
       <h2>Search Jobs</h2>
@@ -2451,7 +2688,9 @@ def _render_search_jobs_tab(
       {form_html}
       {hidden_note_html}
       {excluded_note_html}
+      {capped_note_html}
       {source_results_html}
+      {other_results_html}
     </section>
     """
 
