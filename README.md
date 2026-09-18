@@ -9,8 +9,10 @@ Local-first UK job-search decision support and application preparation. It score
 - Search improvements (2026-07-22): a local relevance filter buckets clearly-unrelated titles into a collapsed "Other results" section (never drops them); results are deduplicated live, including across "Show more" pages; the keyword field accepts multiple comma-separated terms via chip/tag entry (one location + radius, capped at 6 sub-searches to protect free-tier rate limits).
 - Deterministic Apply / Review / Skip decisions with seven weighted score components (switchable between 3 named presets — Balanced/Salary-focused/Skills-focused, persisted across restart) and categorical confidence.
 - Source-quality gates, ATS readiness, and F1 per-job keyword coverage. Keyword coverage is advisory only and includes missing-keyword and anti-stuffing signals.
-- Structured skills, safe URL ingestion, decision overrides, local JSON state, SQLite jobs/board index, board view, and outcome tracking.
-- Decision-gated Tailor CV and Cover Letter actions on job detail pages. Output is markdown/text; DOCX/PDF export is not implemented.
+- Structured skills, safe URL ingestion, decision overrides, local JSON state, SQLite jobs/board index, an accessible stage-based Board View, and outcome tracking. The local UI binds only to loopback hosts and validates browser POST origins.
+- New manual jobs follow one guided **Add & Evaluate** journey (paste or URL → review → save and score). The separate Advanced Review screen is retained for already-reviewed or amended job data; both routes use the same persistence/scoring pipeline.
+- Decision-gated Tailor CV and Cover Letter actions on job detail pages. Tailored `Achievement:` claims must match a declared profile achievement; output is markdown/text and DOCX/PDF export is not implemented.
+- Profile separates job-search preferences, evidence, CV upload, scoring, and digest settings. Local CV filesystem paths are never rendered in the browser.
 - Optional Gemini job explanation is manually triggered and cannot alter score or decision.
 - Career-ops absorption (2026-07-08/09): on-demand, LLM-judged qualitative assessment (culture fit, archetype alignment, red flags, posting-quality signals — advisory only), a deterministic A-F grade over the existing score (capped by the effective decision and by qualitative evidence, never raised), and a persisted batch-assessment queue for review-queue selections sharing the existing paced Gemini worker.
 
@@ -64,6 +66,9 @@ python3 -m pytest tests/test_keyword_match.py tests/test_evaluation.py tests/tes
 
 After the recovery merge and original-posting-link update, the combined UI,
 F1/evaluation, and storage regression set passed **99 tests** on 2026-06-22.
+
+The Critical audit regression suite passed **167 tests** on 2026-07-27, including
+live-browser Add Job and mobile viewport checks.
 
 ## Documentation
 

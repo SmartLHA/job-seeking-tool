@@ -1,8 +1,9 @@
 # Plan — Search / Score / Filter improvements (2026-07-21)
 
 <!-- STATUS -->
-**Implementation status: ✅ Implemented 2026-07-22.** All four slices built as
-locked below; no divergences from the locked decisions.
+**Implementation status: ✅ Implemented and pagination-complete 2026-08-10.**
+All four slices are built; later-page relevance bucketing and independent
+multi-keyword cursor continuation close the former pagination follow-ups.
 - Key functions: `src/job_sources/relevance.py` (`bucket_jobs_by_relevance`,
   `is_relevant_title`, `is_relevant_description`); `src/job_sources/dedup.py`
   (generalized `_identity_fields`/`is_duplicate_job`/`deduplicate_jobs`);
@@ -11,17 +12,22 @@ locked below; no divergences from the locked decisions.
   `load_preset_name`, `save_preset_name`, `get_active_scoring_policy`);
   `src/ui_chip_field.py` (`render_chip_field`, `CHIP_FIELD_JS`);
   `src/ui_handlers.py` (`_parse_keyword_terms`, `_run_multi_keyword_search`,
-  `handle_set_scoring_preset`, wiring in `handle_source_search` /
+  `handle_set_scoring_preset`, `_encode_keyword_cursors`,
+  `_parse_keyword_cursors`, and wiring in `handle_source_search` /
   `handle_source_search_more`).
 - Routes: new `POST /scoring-preset`; existing `GET /search/{source}`,
   `GET /search/{source}/more` gained relevance-bucketing, dedup, and
-  multi-keyword search behind the same URLs.
+  multi-keyword search behind the same URLs. Continuations preserve the
+  Other-results bucket and carry one bounded cursor per keyword term. When a
+  requested page is fully hidden/excluded, the continuation checks no more than
+  three additional source pages before returning or stopping.
 - Tests: `tests/test_search_dedup.py` (5), `tests/test_relevance.py` (8),
-  `tests/test_relevance_ui.py` (2), `tests/test_scoring_presets.py` (9),
+  `tests/test_relevance_ui.py` (3), `tests/test_scoring_presets.py` (9),
   `tests/test_scoring_preset_ui.py` (3), `tests/test_multi_keyword_search.py`
-  (6) — all green. Full suite (project venv): 1005 passed, 2 failed (both
-  pre-existing/unrelated — digest run-now route test and the known
-  tailor-CV test), 1 skipped.
+  (7), plus a real-browser chip add/remove/Backspace smoke test in
+  `tests/test_ui.py` — all green. Focused search suites: 15 passed; the
+  browser smoke passed in the system browser runtime. Full suite baseline is
+  recorded in `PROJECT_LOG.md`.
 <!-- /STATUS -->
 
 Design-council planning doc. NOT approved for build. Four slices.

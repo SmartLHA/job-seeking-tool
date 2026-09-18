@@ -1,3 +1,54 @@
+## 2026-08-10
+
+### Outcome recovery, hidden-result paging, and test reliability
+- **Status:** ✅ COMPLETE — mistaken terminal outcomes can be safely recovered, triage no longer stalls on a fully hidden source page, and test assertions now verify observable behaviour.
+- **Changes:** `reset_terminal_outcome()` preserves the terminal event and appends an auditable `not_applied` reset; `POST /outcome/reset` adds a confirmed Job Detail control. Pagination looks ahead through at most three additional pages only after user-hidden/excluded results remove an entire page; Hidden Jobs now filters title/company locally with a count and empty state.
+- **Tests:** 12 focused pagination/cursor tests passed; 13 hidden-store/UI-contract tests passed; 94 test-quality suites passed; real-browser Hidden Jobs filter smoke passed (1 test, no page errors). Full local suite: **1020 passed, 5 skipped**.
+- **Coverage:** Added test-only `coverage>=7,<8` to `requirements-dev.txt` and generated a fresh full-suite baseline: **81%** across the checkout. The low aggregate is dominated by the separate `viewer/` application; the historical 14-function Job Seeking Tool snapshot is superseded. Added default-reset-reason coverage for the new outcome recovery path.
+
+## 2026-07-29
+
+### SSF-F3 — real-browser chip interaction coverage
+- **Status:** ✅ COMPLETE — the search keyword chip widget was exercised in a real headless browser.
+- **Changes:** `tests/test_ui.py` now verifies adding chips with Enter and comma, removing a chip with its remove button, and Backspace removal from an empty entry. Each step asserts the hidden submitted `keywords` input remains synchronized.
+- **Key facts:** The browser test passed under the system Python browser runtime with no page errors. The project virtual environment still skips browser tests when Playwright is unavailable, while its full non-browser baseline remains green.
+
+## 2026-07-28
+
+### Search pagination correctness — Other results and per-keyword cursors
+- **Status:** ✅ COMPLETE — later pages preserve relevance buckets and paginate each keyword independently.
+- **Changes:** `handle_source_search_more()` now repeats the initial relevance/dedup/filter pipeline for both main and Other results. Multi-keyword continuation carries a bounded cursor vector, stops querying exhausted terms, and keeps failed terms retryable. Shared pagination JavaScript replaces both result buckets while preserving selected cards.
+- **Tests:** Added later-page Other-results and uneven multi-keyword cursor regressions; the focused search suites passed **15 tests**.
+
+### Clean full-test baseline restored
+- **Status:** ✅ COMPLETE — **1010 passed, 3 skipped** using the project virtual environment with loopback enabled.
+- **Motivation:** The prior baseline was blocked by a stale digest route fixture, while system Python and the restricted sandbox created misleading dependency and socket failures.
+- **Changes:** `tests/test_digest_pipeline.py` now marks its registered `stub` source as enabled only within the route test before it persists the fixture saved search. Production source validation remains unchanged.
+- **Key facts:** Use `PYTHONDONTWRITEBYTECODE=1 venv/bin/python -m pytest tests -q -p no:cacheprovider` for the authoritative local baseline; the system interpreter lacks declared test dependencies and the restricted sandbox cannot bind loopback sockets.
+
+## 2026-07-27
+
+### Documentation reconciliation after Critical remediation
+- **Status:** ✅ COMPLETE — product, flow, tailoring, cover-letter, and Board View specifications now reflect the verified implementation.
+- **Changes:** Documented the shared Add & Evaluate/Advanced Review intake pipeline, read-only Board View, achievement grounding, safe output job IDs, filename-only responses, and server-side CV path handling.
+- **Key facts:** Documentation records current behaviour; historical design context is explicitly labelled where retained.
+
+### Guided manual intake and sectioned Profile follow-up
+- **Status:** ✅ COMPLETE — UI suite passed with the local loopback server; handler/security/tailoring focused suites also green.
+- **Changes:** `src/ui_handlers.py` now centralises Add Job and Advanced Review in `_run_intake_evaluation()`; `src/ui_render.py` presents the guided Add & Evaluate labels and Profile preference/evidence sections, and keeps CV filesystem references server-side. `tests/test_ui.py` submits the browser Add Job journey and verifies the reviewed job plus analysis were persisted.
+- **Key facts:** `POST /job-submit` and `POST /evaluate` remain supported for compatibility; neither changes the scoring or stored-job contract.
+
+### Critical audit remediation — UI flow, truth validation, local security, and board view
+- **Status:** ✅ COMPLETE — exact-current Critical regression suite: **167 passed**.
+- **Motivation:** The audit found blockers in the Add Job flow and router startup, a CV-claim validation gap, exposed local-server assumptions, mobile layout defects, and an under-specified Board View.
+- **Changes:**
+  - `src/ui_render.py` — restored Add Job tab activation; added responsive small-screen layout rules; added `render_board_page()` with escaped job cards, stage columns, counts, empty states, and accessible links.
+  - `src/job_hunt_tailoring.py` — `Achievement:` claims now fail closed unless they normalise to a declared `CandidateProfile.achievements` entry.
+  - `src/ui_routes.py` — local server accepts loopback hosts only; enforces a 1 MiB POST cap before body reads; browser POSTs require same loopback host/port Origin or Referer; errors are generic to clients; IPv6 URLs are bracketed.
+  - `viewer/swarm_router.py` / `viewer/viewer_server.py` — replaced import-time router setup with idempotent `initialize_swarm_router()` called in server startup before binding.
+  - Tests — added browser smoke coverage for Add Job plus mobile tabs, and focused security, board, route, tailoring, and router-startup regressions (`test_ui_security.py`, `test_ui_routes_uncovered.py`, `test_ui_handlers_uncovered.py`).
+- **Key facts:** Full suite result: **1024 passed, 1 skipped, 10 failed**. The failures are unrelated environment/pre-existing issues: missing `beautifulsoup4`, missing `python-dotenv`, and an unregistered digest test `stub` source. The chip add/remove click interaction remains an explicit open follow-up (`SSF-F3`).
+
 ## 2026-07-22
 
 ### Search/Score/Filter improvements — relevance filter, live-search dedup, scoring presets, multi-keyword search

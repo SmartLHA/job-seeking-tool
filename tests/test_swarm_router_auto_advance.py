@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
 import sqlite3
+import subprocess
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +16,88 @@ for path in (SRC_DIR, VIEWER_DIR):
 
 import swarm_router
 import shared_bus
+
+
+def test_import_is_side_effect_free_with_unwritable_home(tmp_path: Path) -> None:
+    home = tmp_path / "unwritable-home"
+    home.mkdir()
+    home.chmod(0o500)
+    env = os.environ.copy()
+    env["HOME"] = str(home)
+    env["PYTHONPATH"] = os.pathsep.join((str(VIEWER_DIR), str(REPO_ROOT)))
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", "import swarm_router"],
+            cwd=REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    finally:
+        home.chmod(0o700)
+
+    assert result.returncode == 0, result.stderr
+    assert not (home / ".openclaw").exists()
+
+
+def test_initializer_is_idempotent(tmp_path: Path, monkeypatch) -> None:
+    calls: list[str] = []
+    fake_shared_bus = SimpleNamespace(add_swarm_tables=lambda: calls.append("migrate"))
+
+    monkeypatch.setattr(swarm_router, "LOG_DIR", tmp_path / "logs")
+    monkeypatch.setattr(swarm_router, "_SWARM_LOG", tmp_path / "logs" / "swarm.log")
+    monkeypatch.setattr(swarm_router, "_sb", fake_shared_bus)
+    monkeypatch.setattr(swarm_router, "recover_orphaned_pipelines", lambda: calls.append("recover"))
+    monkeypatch.setattr(swarm_router, "_initialized", False)
+    monkeypatch.setattr(swarm_router, "_hdlr", None)
+
+    swarm_router.initialize_swarm_router()
+    swarm_router.initialize_swarm_router()
+
+    handler = swarm_router._hdlr
+    try:
+        assert calls == ["migrate", "recover"]
+        assert handler is not None
+        assert (tmp_path / "logs" / "swarm.log").is_file()
+        assert sum(item is handler for item in swarm_router._log.handlers) == 1
+    finally:
+        if handler is not None:
+            swarm_router._log.removeHandler(handler)
+            handler.close()
+
+
+def test_viewer_startup_initializes_router_before_listening(monkeypatch) -> None:
+    import viewer_server
+
+    events: list[str] = []
+    fake_router = SimpleNamespace(
+        initialize_swarm_router=lambda: events.append("initialize"),
+    )
+
+    class FakeSocket:
+        def setsockopt(self, *_args) -> None:
+            pass
+
+        def bind(self, *_args) -> None:
+            events.append("bind")
+
+        def listen(self, *_args) -> None:
+            events.append("listen")
+
+        def accept(self):
+            events.append("accept")
+            raise KeyboardInterrupt
+
+    monkeypatch.setitem(sys.modules, "swarm_router", fake_router)
+    monkeypatch.setattr(viewer_server, "_ensure_multi_chat_dirs", lambda: None)
+    monkeypatch.setattr(viewer_server.socket, "socket", lambda *_args: FakeSocket())
+
+    viewer_server.main()
+
+    assert events == ["initialize", "bind", "listen", "accept"]
 
 
 def _make_db(db_path: Path, *, current_stage: str) -> None:

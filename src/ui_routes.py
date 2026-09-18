@@ -9,8 +9,10 @@ imported here purely for their registration side effect.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import logging
 import re
+import socket
 import sys
 import json
 from http import HTTPStatus
@@ -22,8 +24,17 @@ from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
 
+# Global request-body limit for every UI POST. The local UI accepts form and JSON
+# payloads only; 1 MiB leaves ample room for CV text while bounding memory use.
+MAX_REQUEST_BODY_BYTES = 1_048_576
+
+
+class _IPv6ThreadingHTTPServer(ThreadingHTTPServer):
+    address_family = socket.AF_INET6
+
+
 from src.ui_state import UIServerConfig
-from src.ui_utils import escape, job_id_from_request_path
+from src.ui_utils import job_id_from_request_path
 from src.ui_render import render_page
 from src.job_hunt_profile import load_candidate_profile
 from src.job_hunt_storage import ensure_storage_layout
@@ -44,6 +55,7 @@ from src.ui_handlers import (
     handle_prefill,
     handle_job_submit,
     handle_outcome,
+    handle_outcome_reset,
     handle_decision_override,
     handle_add_gap_skills,
     handle_ai_review_cv,
@@ -84,6 +96,40 @@ from src.job_sources import adzuna_source as _adzuna_src  # noqa: F401  (registr
 from src.job_sources import linkedin_source as _linkedin_src  # noqa: F401  (registration side effect)
 
 
+def _loopback_host(value: str) -> str:
+    """Return *value* when it is an explicit loopback bind, otherwise reject it."""
+    host = value.strip()
+    if host.lower() == "localhost":
+        return host
+    try:
+        if ipaddress.ip_address(host).is_loopback:
+            return host
+    except ValueError:
+        pass
+    raise argparse.ArgumentTypeError(
+        "--host must be a loopback address (127.0.0.1, ::1, or localhost)"
+    )
+
+
+def _server_class_for_host(host: str) -> type[ThreadingHTTPServer]:
+    """Select an IPv6-capable server when binding the IPv6 loopback address."""
+    try:
+        if ipaddress.ip_address(host).version == 6:
+            return _IPv6ThreadingHTTPServer
+    except ValueError:
+        pass
+    return ThreadingHTTPServer
+
+
+def _http_url(host: str, port: int) -> str:
+    """Build a browser URL, bracketing IPv6 literals as URL syntax requires."""
+    try:
+        display_host = f"[{host}]" if ipaddress.ip_address(host).version == 6 else host
+    except ValueError:
+        display_host = host
+    return f"http://{display_host}:{port}"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run the minimal local browser UI for one-job evaluation.",
@@ -99,7 +145,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="output/reports",
         help="Directory for JSON/CSV report exports (default: output/reports)",
     )
-    parser.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
+    parser.add_argument(
+        "--host",
+        type=_loopback_host,
+        default="127.0.0.1",
+        help="Loopback bind host only (default: 127.0.0.1)",
+    )
     parser.add_argument("--port", type=int, default=9000, help="Bind port (default: 9000)")
     return parser
 
@@ -136,8 +187,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    server = ThreadingHTTPServer((config.host, config.port), _build_handler(config))
-    url = f"http://{config.host}:{config.port}"
+    server_type = _server_class_for_host(config.host)
+    server = server_type((config.host, config.port), _build_handler(config))
+    url = _http_url(config.host, server.server_address[1])
 
     # D5/D6 daemons: auto-start, each no-ops while its profile toggle is off (and the
     # LLM worker also no-ops without a Gemini key). get_profile re-reads fresh each cycle.
@@ -196,7 +248,14 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             except Exception as exc:
                 logger.exception("Unhandled error in do_GET: %s", exc)
                 try:
-                    UIResponder(self).send_html(render_page("Server error", f"<p>Internal error: {escape(str(exc))}</p>", model_label=config.model_label), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                    UIResponder(self).send_html(
+                        render_page(
+                            "Server error",
+                            "<p>Internal server error.</p>",
+                            model_label=config.model_label,
+                        ),
+                        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                    )
                 except Exception:
                     pass
 
@@ -273,14 +332,23 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:  # noqa: N802
             try:
                 self._do_POST_inner()
+            except RequestValidationError as exc:
+                UIResponder(self).send_json(
+                    {"ok": False, "error": exc.message},
+                    status=exc.status,
+                )
             except Exception as exc:
                 logger.exception("Unhandled error in do_POST: %s", exc)
                 try:
-                    UIResponder(self).send_json({"ok": False, "error": f"Internal server error: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                    UIResponder(self).send_json(
+                        {"ok": False, "error": "Internal server error."},
+                        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                    )
                 except Exception:
                     pass
 
         def _do_POST_inner(self) -> None:
+            _validate_browser_origin(self)
             req = _parse_request(self)
             responder = UIResponder(self)
             parsed = urlparse(self.path)
@@ -375,6 +443,9 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             if parsed.path == "/outcome":
                 handle_outcome(req, config, responder)
                 return
+            if parsed.path == "/outcome/reset":
+                handle_outcome_reset(req, config, responder)
+                return
             if parsed.path == "/profile/save":
                 handle_save_profile(req, config, responder)
                 return
@@ -424,6 +495,95 @@ class UIRequest:
     content_type: str
 
 
+class RequestValidationError(ValueError):
+    """A safe client error detected before request dispatch."""
+
+    def __init__(self, status: HTTPStatus, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+def _validate_browser_origin(handler: Any) -> None:
+    """Reject cross-origin browser POSTs while allowing headerless local clients."""
+    browser_sources = [
+        source
+        for header_name in ("Origin", "Referer")
+        if (source := handler.headers.get(header_name))
+    ]
+    if not browser_sources:
+        return
+
+    host = handler.headers.get("Host")
+    if not host:
+        raise RequestValidationError(
+            HTTPStatus.FORBIDDEN,
+            "Cross-origin requests are not allowed.",
+        )
+    host_url = urlparse(f"//{host}")
+    try:
+        host_port = host_url.port or 80
+        listener_port = int(handler.server.server_address[1])
+        hostname = host_url.hostname
+        is_loopback = hostname is not None and (
+            hostname.lower() == "localhost"
+            or ipaddress.ip_address(hostname).is_loopback
+        )
+    except (TypeError, ValueError):
+        is_loopback = False
+        host_port = listener_port = None
+        hostname = None
+    if (
+        not is_loopback
+        or host_port != listener_port
+        or host_url.username is not None
+        or host_url.password is not None
+        or host_url.path
+        or host_url.query
+        or host_url.fragment
+    ):
+        raise RequestValidationError(
+            HTTPStatus.FORBIDDEN,
+            "Cross-origin requests are not allowed.",
+        )
+
+    for source in browser_sources:
+        source_url = urlparse(source)
+        try:
+            source_port = source_url.port or (80 if source_url.scheme == "http" else 443)
+        except ValueError:
+            source_port = None
+        if (
+            source_url.scheme != "http"
+            or source_url.hostname is None
+            or source_url.hostname.lower() != hostname.lower()
+            or source_port != listener_port
+        ):
+            raise RequestValidationError(
+                HTTPStatus.FORBIDDEN,
+                "Cross-origin requests are not allowed.",
+            )
+
+
+def _content_length(headers: Any) -> int:
+    """Validate Content-Length and enforce MAX_REQUEST_BODY_BYTES before reading."""
+    raw_length = headers.get("Content-Length")
+    if raw_length is None:
+        return 0
+    if re.fullmatch(r"[0-9]+", raw_length) is None:
+        raise RequestValidationError(
+            HTTPStatus.BAD_REQUEST,
+            "Invalid Content-Length header.",
+        )
+    length = int(raw_length)
+    if length > MAX_REQUEST_BODY_BYTES:
+        raise RequestValidationError(
+            HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+            f"Request body exceeds the {MAX_REQUEST_BODY_BYTES}-byte limit.",
+        )
+    return length
+
+
 def _parse_request(handler) -> "UIRequest":
     parsed = urlparse(handler.path)
     query = {k: v[-1] for k, v in parse_qs(parsed.query, keep_blank_values=True).items()}
@@ -431,7 +591,7 @@ def _parse_request(handler) -> "UIRequest":
     content_type = headers.get("Content-Type", "") or ""
     raw_body = b""
     if handler.command == "POST":
-        length = int(headers.get("Content-Length", "0") or "0")
+        length = _content_length(headers)
         if length:
             raw_body = handler.rfile.read(length)
     form: dict = {}

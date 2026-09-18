@@ -2,7 +2,7 @@
 
 **Status:** ✅ IMPLEMENTED 2026-06-16 — 236/236 tests green
 **Date:** 2026-06-16
-**Decision:** Implement `source_quality_score` as a decision-path input: <40 = skip blocker, 40–70 = force Review
+**Decision:** Implement `source_quality_score` as a decision-path input: <40 = skip blocker, ≥40 and <70 = force Review
 
 ---
 

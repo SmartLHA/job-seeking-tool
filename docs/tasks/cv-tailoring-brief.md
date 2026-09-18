@@ -1,7 +1,7 @@
 # CV Tailoring — Design Spec v2
 
-**Status:** ✅ IMPLEMENTED 2026-06-16 — 278/278 tests green
-**Updated:** 2026-06-16 — enriched backend return type (GAP-F decision) + POST /tailor route
+**Status:** ✅ IMPLEMENTED 2026-06-16; truth-validation hardening 2026-07-27 — 167 Critical regression tests green
+**Updated:** 2026-07-27 — `Achievement:` claims are normalised and accepted only when they match `CandidateProfile.achievements`; unsupported claims fail closed.
 **Prior version:** v1 described markdown-only output; UI now requires structured enrichment
 
 ---

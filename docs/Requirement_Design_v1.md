@@ -373,7 +373,7 @@ Decision thresholds:
 
   - Decision | Score | Condition
   - Apply | \>=80 | No critical red flags.
-  - Review | 65-79 | Potential fit but needs user review.
+  - Review | \>=65 and \<80 | Potential fit but needs user review.
   - Note: Watchlist decision is deferred beyond MVP.
   - Skip | \<65 | Poor fit, hard blocker, or suspicious job.
 
@@ -402,7 +402,7 @@ Logic:
   - If Truth Guard has unsupported claims, decision cannot be Ready to Apply.
   - If right-to-work or sponsorship answer is unknown, require user input.
   - If score \>=80 and no blocking issues, recommend Apply.
-  - If score is 65-79, recommend Review.
+  - If score is \>=65 and \<80, recommend Review.
   - If score is \<65, recommend Skip.  
     Confidence does not change the decision. Confidence only creates warning flags, explanation quality notes, or export-review requirements. Example: score 82 + low confidence = decision Apply with required user-review warning.
 
@@ -928,7 +928,7 @@ Copy this prompt into OpenClaw:
 ### 13.1 Scoring Tests
 
   - High-fit job with strong skill evidence should score \>=80.
-  - Medium-fit job should score 65-79.
+  - Medium-fit job should score \>=65 and \<80.
   - Low-fit job should score \<50.
   - Suspicious job should not produce Apply even with strong skill match.
   - Missing evidence should reduce confidence.

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 from src.ui_utils import escape, format_salary_range
 from src.ui_state import _HOME_TABS, _PAGE_UPDATED
@@ -20,6 +21,155 @@ def _normalize_home_tab(tab: str | None) -> str:
     if tab in _HOME_TABS:
         return tab
     return "search"
+
+
+_BOARD_COLUMNS = (
+    ("not_applied", "Not applied"),
+    ("applied", "Applied"),
+    ("interview", "Interview"),
+    ("offer", "Offer"),
+    ("rejected", "Rejected"),
+    ("withdrawn", "Withdrawn"),
+)
+
+
+_BOARD_CSS = """
+<style>
+  .board-page { max-width: none; }
+  .board-header { display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap; }
+  .board-header p { margin-bottom:0; }
+  .board-stats {
+    display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:12px;margin:18px 0;
+  }
+  .board-stat {
+    background:var(--surface-sunk);border:1px solid var(--line);border-radius:var(--r-md);padding:12px 14px;
+  }
+  .board-stat-value { display:block;font-size:20px;font-weight:800;color:var(--ink);line-height:1.2; }
+  .board-stat-label { display:block;margin-top:3px;font-size:11px;font-weight:700;letter-spacing:.07em;
+                      text-transform:uppercase;color:var(--ink-faint); }
+  .board-scroll {
+    width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;padding-bottom:8px;
+    -webkit-overflow-scrolling:touch;overscroll-behavior-inline:contain;
+  }
+  .board-grid {
+    display:grid;grid-template-columns:repeat(6,minmax(230px,1fr));gap:12px;min-width:1450px;
+  }
+  .board-column {
+    min-width:0;background:var(--surface-sunk);border:1px solid var(--line);
+    border-radius:var(--r-lg);padding:12px;
+  }
+  .board-column-heading {
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    margin:0 0 12px;font-size:13px;
+  }
+  .board-column-count {
+    display:inline-flex;align-items:center;justify-content:center;min-width:25px;height:25px;padding:0 7px;
+    border:1px solid var(--line);border-radius:999px;background:var(--surface-2);
+    color:var(--ink-soft);font-size:11px;font-weight:700;
+  }
+  .board-card {
+    margin-bottom:10px;background:var(--surface-2);border:1px solid var(--line);
+    border-radius:var(--r-md);box-shadow:var(--shadow-sm);
+  }
+  .board-card:last-child { margin-bottom:0; }
+  .board-card-link { display:block;padding:13px;color:inherit;text-decoration:none; }
+  .board-card-link:hover { text-decoration:none;border-radius:inherit;background:var(--surface); }
+  .board-card-title { margin:0 0 6px;font-size:14px;line-height:1.35;color:var(--ink);overflow-wrap:anywhere; }
+  .board-card-company { margin:0;color:var(--ink-soft);font-size:12.5px;line-height:1.4;overflow-wrap:anywhere; }
+  .board-card-meta { display:flex;gap:6px;flex-wrap:wrap;margin-top:10px; }
+  .board-card-meta .badge { max-width:100%;overflow-wrap:anywhere;white-space:normal; }
+  .board-empty {
+    min-height:96px;display:flex;align-items:center;justify-content:center;text-align:center;
+    border:1px dashed var(--line);border-radius:var(--r-md);padding:14px;
+    color:var(--ink-faint);font-size:12.5px;line-height:1.45;
+  }
+  @media (max-width: 640px) {
+    .board-page { padding-left:12px;padding-right:12px; }
+    .board-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .board-scroll { max-width:calc(100vw - 24px); }
+  }
+</style>
+"""
+
+
+def render_board_page(board: dict[str, Any], *, model_label: str = "") -> str:
+    """Render the board payload as a read-only, accessible kanban page."""
+    columns = board.get("columns") if isinstance(board, dict) else {}
+    columns = columns if isinstance(columns, dict) else {}
+    stats = board.get("stats") if isinstance(board, dict) else {}
+    stats = stats if isinstance(stats, dict) else {}
+
+    stat_items = (
+        ("Active", stats.get("active", 0)),
+        ("Interviews", stats.get("interviews", 0)),
+        ("Offers", stats.get("offers", 0)),
+        ("Response rate", f"{float(stats.get('response_rate', 0) or 0) * 100:.0f}%"),
+    )
+    stats_html = "".join(
+        '<div class="board-stat">'
+        f'<span class="board-stat-value">{escape(value)}</span>'
+        f'<span class="board-stat-label">{escape(label)}</span>'
+        "</div>"
+        for label, value in stat_items
+    )
+
+    column_html: list[str] = []
+    for status, label in _BOARD_COLUMNS:
+        jobs = columns.get(status, [])
+        jobs = jobs if isinstance(jobs, list) else []
+        cards: list[str] = []
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            job_id = str(job.get("job_id") or "")
+            title = job.get("job_title") or "Untitled job"
+            company = job.get("company") or "Company not provided"
+            location = job.get("location")
+            score = job.get("match_score")
+            metadata = ""
+            if location not in (None, ""):
+                metadata += f'<span class="badge">{escape(location)}</span>'
+            if score not in (None, ""):
+                metadata += f'<span class="badge mono">Score {escape(score)}</span>'
+            meta_html = f'<div class="board-card-meta">{metadata}</div>' if metadata else ""
+            cards.append(
+                '<article class="board-card">'
+                f'<a class="board-card-link" href="/job/{quote(job_id, safe="")}">'
+                f'<h3 class="board-card-title">{escape(title)}</h3>'
+                f'<p class="board-card-company">{escape(company)}</p>'
+                f"{meta_html}"
+                "</a></article>"
+            )
+        cards_html = "".join(cards)
+        if not cards_html:
+            cards_html = f'<div class="board-empty">No jobs in {escape(label.lower())}.</div>'
+        heading_id = f"board-column-{status}-title"
+        column_html.append(
+            f'<section class="board-column" data-status="{status}" aria-labelledby="{heading_id}">'
+            f'<h2 class="board-column-heading" id="{heading_id}">'
+            f"<span>{escape(label)}</span>"
+            f'<span class="board-column-count" aria-label="{len(cards)} jobs">{len(cards)}</span>'
+            "</h2>"
+            f"{cards_html}"
+            "</section>"
+        )
+
+    body = (
+        '<div class="app-shell">'
+        f'{_render_sidebar("board")}'
+        '<main class="main-content">'
+        '<div class="content-inner board-page">'
+        '<section class="panel">'
+        '<div class="board-header"><div>'
+        '<h1>Board View</h1>'
+        '<p>Track application progress. Update status from each job detail page.</p>'
+        "</div></div>"
+        f'<section class="board-stats" aria-label="Board summary">{stats_html}</section>'
+        '<div class="board-scroll" role="region" aria-label="Application board" tabindex="0">'
+        f'<div class="board-grid">{"".join(column_html)}</div>'
+        "</div></section></div></main></div>"
+    )
+    return render_page("Board View — Job Seeking Tool", _BOARD_CSS + body, model_label=model_label)
 
 
 def render_home_page(
@@ -61,8 +211,8 @@ def render_home_page(
           <div id="tab-evaluate" class="tab-content"{' hidden' if tab != 'evaluate' else ''}>
             {evaluate_notice_html}
             <section class="panel">
-              <h2>Evaluate a job</h2>
-              <p>Fill in the fields below to save and score a job against your profile. <strong>Reviewed description</strong> is the version used for scoring.</p>
+              <h2>Advanced review</h2>
+              <p>Use this for an already-reviewed job or to amend saved intake data. New jobs should start in <strong>Add &amp; Evaluate</strong>; both paths use the same save-and-score pipeline.</p>
               <form method="post" action="/evaluate" id="job-form">
                 {render_input_form(values)}
                 <div class="actions"><button type="submit">Evaluate and save</button></div>
@@ -246,8 +396,8 @@ def _render_profile_tab_section(current_tab: str) -> str:
 def _render_add_job_tab(values: dict[str, str]) -> str:
     return f"""
     <section class="panel">
-      <h2>Add a new job</h2>
-      <p>Paste a job advert or enter a posting URL to prefill the form automatically.</p>
+      <h2>Add &amp; Evaluate a job</h2>
+      <p><strong>1. Add:</strong> paste a job advert or enter a posting URL. <strong>2. Review:</strong> check the extracted fields. <strong>3. Evaluate:</strong> save and score it against your profile.</p>
       <div id="add-job-input-step">
         <div class="tab-row" role="tablist" aria-label="Job input method">
           <button type="button" class="tab-button active" data-add-job-tab="paste">Paste Text</button>
@@ -266,12 +416,12 @@ def _render_add_job_tab(values: dict[str, str]) -> str:
       <div id="add-job-review-step" hidden>
         <hr style="margin: 20px 0; border: none; border-top: 1px solid #e2e8f0;">
         <h3>Review and edit</h3>
-        <p>Review the prefilled fields below, then click <strong>Evaluate</strong> to save and evaluate the job.</p>
+        <p>Review the prefilled fields below, then click <strong>Save &amp; evaluate</strong>. The same intake pipeline is used by Advanced Review.</p>
         <form method="post" action="/job-submit" id="add-job-form">
           {_render_add_job_form_fields(values)}
           <div class="actions">
             <button type="button" id="add-job-back-btn">← Back</button>
-            <button type="submit" id="add-job-submit-btn">Evaluate →</button>
+            <button type="submit" id="add-job-submit-btn">Save &amp; evaluate →</button>
           </div>
         </form>
       </div>
@@ -279,7 +429,7 @@ def _render_add_job_tab(values: dict[str, str]) -> str:
     <script>
     (function () {{
       // --- Inner tab switching (Paste / URL within Add Job input step) ---
-        'var cvTextarea = document.querySelector("textarea[name=\'master_cv_text']");'
+      document.querySelectorAll('[data-add-job-tab]').forEach(function(tabBtn) {{
         tabBtn.addEventListener('click', function() {{
           var name = tabBtn.dataset.addJobTab;
           document.querySelectorAll('[data-add-job-tab]').forEach(function(b) {{ b.classList.toggle('active', b.dataset.addJobTab === name); }});
@@ -1563,6 +1713,24 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         '<script>(function(){var c=document.getElementById("outcome-card");if(c)c.scrollIntoView({block:"center"});})();</script>'
         if _is_outcome_flash else ""
     )
+    if outcome_current in {"rejected", "withdrawn"}:
+        outcome_reset_html = (
+            f'<form method="post" action="/outcome/reset" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);" '
+            f'onsubmit="return confirm(\'Reset this {escape(outcome_current)} outcome to not applied? The original outcome will remain in the history.\');">'
+            f'<input type="hidden" name="job_id" value="{escape(vm.job_id)}">'
+            + ('<input type="hidden" name="embed" value="1">' if embed else "")
+            + '<label style="display:grid;gap:4px;font-size:13.5px;">'
+            '<span style="font-weight:600;">Why reset this outcome? <span style="font-weight:400;color:var(--ink-faint);">(optional)</span></span>'
+            '<input name="reason" maxlength="500" placeholder="For example: selected the wrong job" '
+            'style="font:inherit;padding:9px 12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);color:var(--ink);">'
+            '</label>'
+            '<button type="submit" style="margin-top:10px;padding:9px 14px;border-radius:var(--r-md);font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;background:var(--surface-2);color:var(--ink);border:1px solid var(--line);">'
+            'Reset to not applied</button>'
+            '<p style="font-size:12px;color:var(--ink-faint);margin:8px 0 0;">The previous outcome stays in the audit history.</p>'
+            '</form>'
+        )
+    else:
+        outcome_reset_html = ""
     outcome_section_html = (
         f'<div id="outcome-card" style="margin-top:16px;background:var(--surface);border:1px solid var(--line);'
         f'border-radius:var(--r-lg);padding:var(--pad);box-shadow:var(--shadow-sm);">'
@@ -1589,6 +1757,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         f'<button type="submit" style="padding:10px 18px;border-radius:var(--r-md);font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer;background:var(--accent);color:var(--accent-contrast);border:none;white-space:nowrap;align-self:end;">Save outcome</button>'
         f'</div>'
         f'</form>'
+        f'{outcome_reset_html}'
         f'</div>'
         f'{outcome_scroll_js}'
     )
@@ -1829,7 +1998,7 @@ def render_profile_page(
             ("Industries", ", ".join(vm.industries[:5]) + ("…" if len(vm.industries) > 5 else "") or "—"),
             ("Certifications", ", ".join(vm.certifications) or "—"),
             ("Achievements", str(len(vm.achievements)) + " listed" if vm.achievements else "—"),
-            ("Master CV ref", vm.master_cv_ref or "—"),
+            ("Master CV", "On file" if vm.master_cv_text else "Not uploaded"),
         ]
         summary_html = "".join(
             f"<tr><td><strong>{escape(label)}</strong></td><td>{escape(str(val))}</td></tr>"
@@ -1872,11 +2041,11 @@ def render_profile_page(
             _cv_icon = "&#10003;"
             _cv_label = f"CV on file: {_cv_chars:,} chars"
             if _cv_ref:
-                _cv_label += f" | saved to {escape(_cv_ref)}"
+                _cv_label += " | available locally"
         elif _cv_ref:
             _cv_color = "#d97706"
             _cv_icon = "&#9888;"
-            _cv_label = f"CV ref set ({escape(_cv_ref)}) but no text stored — re-upload your CV below"
+            _cv_label = "CV file reference is set but no text is stored — re-upload your CV below"
         else:
             _cv_color = "#dc2626"
             _cv_icon = "&#9888;"
@@ -1901,7 +2070,8 @@ def render_profile_page(
         return str(getattr(vm, key, "") or "")
 
     cv_text = escape(parsed_cv_text or (vm.master_cv_text if vm.has_profile else ""))
-    cv_filename_val = escape(parsed_filename or (vm.master_cv_ref if vm.has_profile else ""))
+    _cv_filename = (parsed_filename or (vm.master_cv_ref if vm.has_profile else "") or "").replace("\\", "/").rsplit("/", 1)[-1]
+    cv_filename_val = escape(_cv_filename)
     # For multi-select, split stored value into a set of selected values.
     # Map old single-string values to the aligned option values.
     _REMOTE_COMPAT = {"remote": "remote_only", "hybrid_friendly": "hybrid", "office_only": "onsite"}
@@ -1956,9 +2126,8 @@ def render_profile_page(
         + '<input type="hidden" name="_cv_filename" id="cv-filename-field" value="'
         + cv_filename_val
         + '">'
-        + '<input type="hidden" name="master_cv_ref" value="'
-        + escape(vm.master_cv_ref if vm.has_profile else "")
-        + '">'
+        + '<fieldset class="profile-section" style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;">'
+        + '<legend style="font-weight:600;padding:0 6px;">Job search preferences</legend>'
         + '<div class="grid two-col">'
         + '<label><span>Name</span><input name="name" value="'
         + fvget("name", objval("name"))
@@ -1991,7 +2160,10 @@ def render_profile_page(
            '<option value="false"' + (' selected' if (fv.get("right_to_work_uk") or str(getattr(vm, "right_to_work_uk", None))) in ("false","False","0","no") else '') + '>No</option>')
         + '</select></label>'
         + '</div>'
-        + '<div class="grid two-col" style="margin-top:12px;">'
+        + '</fieldset>'
+        + '<fieldset class="profile-section" style="margin-top:16px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;">'
+        + '<legend style="font-weight:600;padding:0 6px;">Experience and evidence</legend>'
+        + '<div class="grid two-col" style="margin-top:4px;">'
         + '<div style="grid-column:1/-1;">'
         + '<span style="font-weight:600;font-size:0.875rem;display:block;margin-bottom:4px;">Skills</span>'
         + '<table id="skills-table" style="width:100%;border-collapse:collapse;font-size:0.875rem;">'
@@ -2023,6 +2195,7 @@ def render_profile_page(
         + '<label><span>Master CV text</span><textarea name="master_cv_text" rows="8" placeholder="Extracted CV text will appear here after upload, or paste manually...">'
         + cv_text
         + '</textarea></label>'
+        + '</fieldset>'
         # --- Daily Digest settings (D3) — saved with the profile ---
         + '<fieldset style="margin-top:18px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;">'
         + '<legend style="font-weight:600;padding:0 6px;">Daily Digest</legend>'
@@ -2468,8 +2641,8 @@ def _render_sidebar(active_tab: str = "") -> str:
     }
     nav_items = [
         ("search",   "Find Jobs",   "/?tab=search",   "search"),
-        ("evaluate", "Evaluate",    "/?tab=evaluate",  "evaluate"),
-        ("add_job",  "Add Job",     "/?tab=add_job",  "add"),
+        ("add_job",  "Add & Evaluate", "/?tab=add_job",  "add"),
+        ("evaluate", "Advanced Review", "/?tab=evaluate",  "evaluate"),
         ("history",  "History",     "/?tab=history",  "history"),
         ("board",    "Board View",  "/board/view",    "board"),
         ("digest",   "Digest",      "/digest",        "digest"),
@@ -2515,7 +2688,7 @@ def _render_sidebar(active_tab: str = "") -> str:
         <div class="sidebar-privacy-title">{lock_svg} Local-first</div>
         <div class="sidebar-privacy-body">Profile, jobs &amp; outcomes stay on this device. Nothing auto-applies.</div>
       </div>
-      <div style="padding:8px 18px 14px;font-size:10px;color:var(--ink-faint);letter-spacing:.02em;">
+      <div class="sidebar-updated" style="padding:8px 18px 14px;font-size:10px;color:var(--ink-faint);letter-spacing:.02em;">
         Page updated {_PAGE_UPDATED.get(active_tab, "—")}
       </div>
     </nav>"""
@@ -2725,6 +2898,38 @@ _PAGE_CSS = """    /* ── Design tokens — mirrors Claude deliverable ──
       line-height: 1.5; transition: opacity .3s;
     }
     .ai-loading-hint { font-size: 11.5px; color: var(--ink-faint); margin-top: 14px; }
+
+    /* ── Mobile shell ── */
+    @media (max-width: 640px) {
+      :root { --pad: 16px; --gap: 12px; }
+      html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
+      .app-shell { flex-direction: column; height: 100dvh; width: 100%; }
+      .sidebar {
+        width: 100%; max-width: 100vw; padding: 8px;
+        flex-direction: row; align-items: center; gap: 4px;
+        border-right: 0; border-bottom: 1px solid var(--line);
+        overflow-x: auto; overflow-y: hidden;
+        scrollbar-width: thin;
+      }
+      .sidebar-logo, .sidebar-spacer, .sidebar-privacy, .sidebar-updated { display: none; }
+      .nav-item {
+        flex: 0 0 auto; min-height: 44px; padding: 9px 11px; margin: 0;
+        white-space: nowrap;
+      }
+      .main-content { width: 100%; min-height: 0; overflow-x: hidden; }
+      .content-inner { width: 100%; padding: 16px 12px 28px; }
+      .panel { min-width: 0; }
+      .two-col, .summary-grid, .detail-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      form[action="/digest"] { grid-template-columns: minmax(0, 1fr) !important; }
+      table {
+        display: block; max-width: 100%; overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .actions > button, .actions > a { max-width: 100%; }
+      pre { max-width: 100%; overflow-wrap: anywhere; }
+    }
 """
 
 _PAGE_JS = """    /* ── Reed select loading overlay ── */

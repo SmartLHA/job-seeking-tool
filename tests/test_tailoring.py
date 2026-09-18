@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from src.job_hunt_config import TailoringPolicy
 from src.job_hunt_evaluation import evaluate_reviewed_job
 from src.job_hunt_models import CandidateProfile, JobAnalysis, JobPosting, ScoreBreakdown, ScoreComponent, Skill, TailoredCVResult
@@ -145,6 +147,30 @@ def test_validate_tailored_cv_accepts_supported_output_only() -> None:
     assert validate_tailored_cv(original_cv, result, profile) is True
 
 
+def test_validate_tailored_cv_accepts_supported_achievement() -> None:
+    profile = build_profile()
+    original_cv = "# Master CV\n\nBusiness analysis delivery."
+    result = tailor_cv(
+        original_cv,
+        ["Achievement: Improved reporting workflow by 20%"],
+        build_job(),
+    )
+
+    assert validate_tailored_cv(original_cv, result, profile) is True
+
+
+def test_validate_tailored_cv_rejects_invented_achievement() -> None:
+    profile = build_profile()
+    original_cv = "# Master CV\n\nBusiness analysis delivery."
+    result = tailor_cv(
+        original_cv,
+        ["Achievement: Increased revenue by 50%"],
+        build_job(),
+    )
+
+    assert validate_tailored_cv(original_cv, result, profile) is False
+
+
 def test_validate_tailored_cv_rejects_invented_skill_or_modified_base_cv() -> None:
     profile = build_profile()
     original_cv = "# Master CV\n\nBusiness analysis delivery."
@@ -224,6 +250,17 @@ def test_save_tailored_cv_writes_output_in_expected_location(tmp_path: Path) -> 
 
     assert output_path == tmp_path / "output" / "tailored_cvs" / "job-123.md"
     assert "profile_id: cand-001" in output_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("job_id", ["../escape", "nested/job", "..", ""])
+def test_save_tailored_cv_rejects_unsafe_job_id(tmp_path: Path, job_id: str) -> None:
+    with pytest.raises(ValueError, match="job_id|invalid"):
+        save_tailored_cv(
+            job_id,
+            "# Tailored CV - Business Analyst\n",
+            "cand-001",
+            policy=TailoringPolicy(output_dir=tmp_path / "output" / "tailored_cvs"),
+        )
 
 
 def test_tailor_cv_returns_tailored_cv_result() -> None:

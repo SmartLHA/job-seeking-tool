@@ -9,6 +9,7 @@ from src.job_hunt_outcomes import (
     create_outcome_record,
     outcome_from_dict,
     outcome_to_dict,
+    reset_terminal_outcome,
     update_outcome,
 )
 
@@ -52,6 +53,50 @@ def test_update_outcome_rejects_invalid_transition() -> None:
 
     with pytest.raises(OutcomeValidationError, match="invalid outcome transition"):
         update_outcome(initial, status="interview", updated_at=LATER_TIME)
+
+
+@pytest.mark.parametrize("terminal_status", ["rejected", "withdrawn"])
+def test_reset_terminal_outcome_preserves_terminal_history(terminal_status: str) -> None:
+    terminal = update_outcome(
+        update_outcome(create_outcome_record("job-001", updated_at=FIXED_TIME), status="applied", updated_at=LATER_TIME),
+        status=terminal_status,
+        updated_at="2026-04-06T09:15:00Z",
+        notes="Original terminal outcome",
+    )
+
+    reset = reset_terminal_outcome(
+        terminal,
+        updated_at="2026-04-07T09:15:00Z",
+        reason="Selected the wrong job",
+    )
+
+    assert reset.status == "not_applied"
+    assert [event.status for event in reset.history] == ["not_applied", "applied", terminal_status, "not_applied"]
+    assert reset.history[-2].notes == "Original terminal outcome"
+    assert reset.history[-1].notes == f"Reset from {terminal_status}. Reason: Selected the wrong job"
+
+
+def test_reset_terminal_outcome_rejects_non_terminal_status() -> None:
+    applied = update_outcome(
+        create_outcome_record("job-001", updated_at=FIXED_TIME),
+        status="applied",
+        updated_at=LATER_TIME,
+    )
+
+    with pytest.raises(OutcomeValidationError, match="only rejected or withdrawn"):
+        reset_terminal_outcome(applied, updated_at="2026-04-07T09:15:00Z")
+
+
+def test_reset_terminal_outcome_records_default_reason() -> None:
+    rejected = update_outcome(
+        update_outcome(create_outcome_record("job-001", updated_at=FIXED_TIME), status="applied", updated_at=LATER_TIME),
+        status="rejected",
+        updated_at="2026-04-06T09:15:00Z",
+    )
+
+    reset = reset_terminal_outcome(rejected, updated_at="2026-04-07T09:15:00Z")
+
+    assert reset.history[-1].notes == "Reset from rejected. Reason: Marked by mistake."
 
 
 def test_outcome_to_dict_and_from_dict_round_trip() -> None:

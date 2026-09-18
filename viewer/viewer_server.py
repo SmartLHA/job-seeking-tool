@@ -3324,6 +3324,9 @@ def handle_api_system_kanban(post_body: bytes) -> bytes:
 def main() -> None:
     os.chdir(PROJECT_ROOT)
     _ensure_multi_chat_dirs()
+    from swarm_router import initialize_swarm_router
+
+    initialize_swarm_router()
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)

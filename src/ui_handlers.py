@@ -43,6 +43,7 @@ from src.ui_render import (
     ReviewQueueViewModel,
     render_page,
     render_home_page,
+    render_board_page,
     render_job_page,
     render_keyword_match_panel,
     render_profile_page,
@@ -54,7 +55,7 @@ from src.ui_render import (
 
 from src.job_hunt_orchestrator import run_local_evaluation_flow_from_payload
 from src.job_hunt_parsing import parse_job_from_text, parse_job_from_url
-from src.job_hunt_outcomes import ALLOWED_OUTCOME_STATUSES, allowed_next_statuses, create_outcome_record, update_outcome
+from src.job_hunt_outcomes import ALLOWED_OUTCOME_STATUSES, allowed_next_statuses, create_outcome_record, reset_terminal_outcome, update_outcome
 from src.job_hunt_profile import load_candidate_profile, save_candidate_profile, ProfileValidationError, parse_cv_file, candidate_profile_from_dict
 from src.job_hunt_models import JobPosting, Skill
 from src.job_hunt_config import get_enabled_sources, DEFAULT_TAILORING_POLICY
@@ -370,7 +371,7 @@ def handle_save_profile(req, config, responder):
     for field in ("name", "target_roles", "locations", "remote_preference",
                   "salary_floor_gbp", "right_to_work_uk",
                   "years_experience", "industries", "achievements",
-                  "certifications", "master_cv_ref", "master_cv_text"):
+                  "certifications", "master_cv_text"):
         val = form.get(field, "").strip()
         if field == "achievements":
             # Textarea uses one-per-line; fall back to comma-split for old data
@@ -414,6 +415,13 @@ def handle_save_profile(req, config, responder):
             _existing = load_candidate_profile(config.profile_path)
         except Exception:
             _existing = None
+
+    # CV storage is server-managed. Do not accept or render its filesystem path
+    # in the browser; preserve the existing trusted reference when the user is
+    # saving other profile sections.
+    if _existing is not None and not payload.get("master_cv_text"):
+        payload["master_cv_text"] = _existing.master_cv_text
+        payload["master_cv_ref"] = _existing.master_cv_ref
 
     def _digest_default(attr, fallback):
         return getattr(_existing, attr, fallback) if _existing is not None else fallback
@@ -813,6 +821,10 @@ def _parse_exclude_terms(raw: str) -> list[str]:
 # decision) — a hard cap on the NUMBER of keyword sub-searches protects the
 # free-tier Reed/Adzuna rate limits (R1 in the plan).
 _MAX_KEYWORD_SEARCHES = 6
+# A "Next page" request may inspect this many additional source pages only when
+# the current page is entirely hidden/excluded. This prevents a hidden-result
+# search from becoming an unbounded background crawl.
+_MAX_HIDDEN_PAGE_LOOKAHEAD = 3
 
 
 def _parse_keyword_terms(raw: str) -> list[str]:
@@ -833,18 +845,18 @@ def _parse_keyword_terms(raw: str) -> list[str]:
     return terms
 
 
-def _run_multi_keyword_search(source, search_values: dict, keyword_terms: list[str]):
+def _run_multi_keyword_search(source, search_values: dict, keyword_terms: list[str], *, offsets: list[int | None] | None = None):
     """Run one search per keyword term (same location/radius/other criteria
     from `search_values`), merge the raw results. Never a cross-product with
     locations — `search_values` carries exactly one location.
 
-    Returns (merged_results, any_page_full, sub_errors):
+    Returns (merged_results, any_page_full, sub_errors, next_offsets):
     - `any_page_full` is True if ANY keyword's sub-search returned a full
       page (>= take), used instead of a raw merged count to decide whether
       a "Show more" page is offered.
     - `sub_errors` collects per-keyword failures without aborting the other
       keyword searches (partial failure never blanks out the whole page)."""
-    take_key, _skip_key = _take_skip_param_keys(search_values)
+    take_key, skip_key = _take_skip_param_keys(search_values)
     try:
         take = int(search_values.get(take_key, "10") or "10")
     except (TypeError, ValueError):
@@ -853,9 +865,16 @@ def _run_multi_keyword_search(source, search_values: dict, keyword_terms: list[s
     merged: list[dict[str, Any]] = []
     any_full = False
     sub_errors: list[str] = []
-    for term in terms:
+    next_offsets: list[int | None] = []
+    for index, term in enumerate(terms):
+        offset = offsets[index] if offsets is not None else None
+        if offset is None and offsets is not None:
+            next_offsets.append(None)
+            continue
         variant = dict(search_values)
         variant["keywords"] = term
+        if offset is not None:
+            variant[skip_key] = str(offset)
         try:
             sub_results = source.search_handler(variant)
         except Exception as exc:
@@ -864,11 +883,60 @@ def _run_multi_keyword_search(source, search_values: dict, keyword_terms: list[s
             # text is unchanged. Only prefix with the keyword when there is
             # more than one, so a partial multi-keyword failure is legible.
             sub_errors.append(str(exc) if len(terms) == 1 else f"{term!r}: {exc}")
+            next_offsets.append(offset)
             continue
         if take > 0 and len(sub_results) >= take:
             any_full = True
+            next_offsets.append((offset or 0) + take)
+        else:
+            next_offsets.append(None)
         merged.extend(sub_results)
-    return merged, any_full, sub_errors
+    return merged, any_full, sub_errors, next_offsets
+
+
+def _encode_keyword_cursors(offsets: list[int | None]) -> str:
+    return ",".join("x" if value is None else str(value) for value in offsets)
+
+
+def _parse_keyword_cursors(raw: str | None, term_count: int, *, default_offset: int) -> list[int | None] | None:
+    """Parse the bounded per-keyword pagination cursor vector.
+
+    ``x`` denotes an exhausted term. Reject malformed client values rather than
+    silently querying an unintended page.
+    """
+    if not raw:
+        return [default_offset] * term_count
+    parts = raw.split(",")
+    if len(parts) != term_count:
+        return None
+    offsets: list[int | None] = []
+    for part in parts:
+        if part == "x":
+            offsets.append(None)
+            continue
+        try:
+            value = int(part)
+        except (TypeError, ValueError):
+            return None
+        if value < 0:
+            return None
+        offsets.append(value)
+    return offsets
+
+
+def _render_other_results_fragment(source, results: list[dict[str, Any]], *, skip: int, nonce: str | None) -> str:
+    if not results or source.render_cards_fragment is None:
+        return ""
+    cards_html = source.render_cards_fragment(results, skip=skip, nonce=nonce)
+    return (
+        '<details id="jst-other-results" style="margin-top:18px;border:1px dashed var(--line);'
+        'border-radius:var(--r-md);padding:10px 14px;">'
+        f'<summary style="cursor:pointer;font-size:13px;color:var(--ink-faint);">'
+        f'Other results ({len(results)}) &mdash; titles that did not closely '
+        'match your search terms</summary>'
+        f'<div style="margin-top:12px;">{cards_html}</div>'
+        '</details>'
+    )
 
 
 def _apply_exclude_filter(results, raw_exclude: str):
@@ -925,7 +993,7 @@ def handle_source_search(req, config, responder, source_id):
     error: str | None = None
     results: list[dict[str, Any]] = []
     try:
-        results, _any_full_page, _kw_sub_errors = _run_multi_keyword_search(source, search_values, keyword_terms)
+        results, _any_full_page, _kw_sub_errors, _next_offsets = _run_multi_keyword_search(source, search_values, keyword_terms)
         if _kw_sub_errors:
             if not results:
                 error = f"{source.display_name} search failed: {'; '.join(_kw_sub_errors)}. Manual fallback is still available."
@@ -983,11 +1051,10 @@ def handle_source_search(req, config, responder, source_id):
     if other_results:
         search_values["_other_count"] = str(len(other_results))
     # New search (Slice B): mint a fresh search-id and seed its "seen" set
-    # with everything shown on this first page, so "Show more" can drop
-    # already-shown cards without a global (cross-search) seen-set. Only the
-    # main bucket is tracked — "Other results" isn't paginated via Show more.
+    # with both buckets, so later pages cannot reintroduce a result that was
+    # initially shown under Other results.
     from src.job_sources.search_state import start_search
-    _search_id = start_search(results)
+    _search_id = start_search(results + other_results)
     # Build "More jobs" URL for ANY source: same params, skip cursor advanced by
     # one page. Sources differ in param naming (Reed/Adzuna use camelCase
     # resultsToTake/resultsSkip; LinkedIn uses snake_case results_to_take/
@@ -1011,6 +1078,8 @@ def handle_source_search(req, config, responder, source_id):
             if not str(k).startswith("_") and k != skip_key
         }
         _more_params[skip_key] = str(_cur_skip + _take)
+        if len(keyword_terms) > 1:
+            _more_params["keywordCursors"] = _encode_keyword_cursors(_next_offsets)
         _more_params["searchId"] = _search_id
         search_values["_more_url"] = f"/search/{source_id}/more?" + _urlencode_ss(_more_params)
     render_home(req, config, responder, tab="search", search_values=search_values, reed_results=results, reed_error=error, reed_other_results=other_results)
@@ -1041,20 +1110,42 @@ def handle_source_select(req, config, responder, source_id):
     )
 
 
+def _intake_form_with_job_id(form: dict[str, str], *, generate_missing_id: bool) -> dict[str, str]:
+    """Return a submitted intake form with a stable job id when required.
+
+    Both the guided Add Job path and the advanced Evaluate form use this helper,
+    so they validate, save raw input, score, and persist through one pipeline.
+    """
+    if form.get("job_id", "").strip() or not generate_missing_id:
+        return form
+    title_part = form.get("job_title", "").strip() or "job"
+    company_part = form.get("company", "").strip() or "unknown"
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    slug = re.sub(r"[^a-z0-9]+", "-", (title_part + "-" + company_part).lower()).strip("-")
+    return {**form, "job_id": f"{slug}-{ts}"}
+
+
+def _run_intake_evaluation(form: dict[str, str], config, *, generate_missing_id: bool):
+    """Shared persistence and scoring pipeline for every manual job intake."""
+    intake_form = _intake_form_with_job_id(form, generate_missing_id=generate_missing_id)
+    reviewed_job_payload = reviewed_job_payload_from_form(intake_form)
+    raw_input_payload = raw_input_payload_from_form(intake_form, reviewed_job_payload)
+    result = run_local_evaluation_flow_from_payload(
+        profile_path=config.profile_path,
+        reviewed_job_payload=reviewed_job_payload,
+        state_root=config.state_root,
+        report_dir=config.report_dir,
+        raw_input_payload=raw_input_payload,
+        raw_input_id=reviewed_job_payload["job_id"],
+    )
+    return result
+
+
 def handle_evaluate(req, config, responder):
     form = req.form
     values = {**default_form_values(), **form}
     try:
-        reviewed_job_payload = reviewed_job_payload_from_form(form)
-        raw_input_payload = raw_input_payload_from_form(form, reviewed_job_payload)
-        result = run_local_evaluation_flow_from_payload(
-            profile_path=config.profile_path,
-            reviewed_job_payload=reviewed_job_payload,
-            state_root=config.state_root,
-            report_dir=config.report_dir,
-            raw_input_payload=raw_input_payload,
-            raw_input_id=reviewed_job_payload["job_id"],
-        )
+        result = _run_intake_evaluation(form, config, generate_missing_id=False)
     except Exception as exc:
         render_home(req, config, responder, values=values, error=str(exc), tab="evaluate")
         return
@@ -1109,34 +1200,11 @@ def handle_prefill(req, config, responder):
 
 def handle_job_submit(req, config, responder):
     form = req.form
-    job_id = form.get("job_id", "").strip()
-    if not job_id:
-        title_part = form.get("job_title", "").strip() or "job"
-        company_part = form.get("company", "").strip() or "unknown"
-        ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-        import re
-        slug = re.sub(r"[^a-z0-9]+", "-", (title_part + "-" + company_part).lower()).strip("-")
-        job_id = f"{slug}-{ts}"
-        form = {**form, "job_id": job_id}
-
-    # Build and validate reviewed job payload
     try:
-        reviewed_job_payload = reviewed_job_payload_from_form(form)
+        result = _run_intake_evaluation(form, config, generate_missing_id=True)
     except ValueError as exc:
         responder.send_json({"ok": False, "errors": {"form": str(exc)}}, status=HTTPStatus.BAD_REQUEST)
         return
-
-    raw_input_payload = raw_input_payload_from_form(form, reviewed_job_payload)
-
-    try:
-        result = run_local_evaluation_flow_from_payload(
-            profile_path=config.profile_path,
-            reviewed_job_payload=reviewed_job_payload,
-            state_root=config.state_root,
-            report_dir=config.report_dir,
-            raw_input_payload=raw_input_payload,
-            raw_input_id=reviewed_job_payload["job_id"],
-        )
     except Exception as exc:
         responder.send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
         return
@@ -1175,6 +1243,38 @@ def handle_outcome(req, config, responder):
     _upsert_job_to_index(config, job_id, outcome=outcome)
 
     render_job(req, config, responder, job_id, flash="Outcome updated.", flash_kind="success", embed=embed)
+
+
+def handle_outcome_reset(req, config, responder):
+    """POST /outcome/reset — recover a mistakenly terminal local outcome."""
+    form = req.form
+    job_id = form.get("job_id", "").strip()
+    if not job_id:
+        responder.redirect("/")
+        return
+
+    embed = form.get("embed", "") == "1"
+    try:
+        current = load_application_outcome(job_id, config.state_root)
+        outcome = reset_terminal_outcome(current, reason=form.get("reason", ""))
+        save_application_outcome(outcome, config.state_root)
+    except FileNotFoundError:
+        render_job(
+            req,
+            config,
+            responder,
+            job_id,
+            flash="Outcome reset failed: no tracked outcome exists for this job.",
+            flash_kind="error",
+            embed=embed,
+        )
+        return
+    except Exception as exc:
+        render_job(req, config, responder, job_id, flash=f"Outcome reset failed: {exc}", flash_kind="error", embed=embed)
+        return
+
+    _upsert_job_to_index(config, job_id, outcome=outcome)
+    render_job(req, config, responder, job_id, flash="Outcome reset to not applied. Previous outcome remains in history.", flash_kind="success", embed=embed)
 
 
 def handle_decision_override(req, config, responder, job_id):
@@ -1280,6 +1380,10 @@ def handle_ai_review_cv(req, config, responder, job_id):
     """POST /job/{id}/ai-review-cv — Gemini lightly rewrites the master CV for this job."""
     from src.job_hunt_llm import ai_review_cv_with_llm
 
+    if not isinstance(job_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", job_id) or job_id in {".", ".."}:
+        responder.send_json({"ok": False, "error": "Job not found"}, status=HTTPStatus.NOT_FOUND)
+        return
+
     # Load analysis
     try:
         analysis = load_job_analysis(job_id, config.state_root)
@@ -1317,7 +1421,8 @@ def handle_ai_review_cv(req, config, responder, job_id):
                     cv_ref_path = config.profile_path.parent / cv_ref_path
                 cv_text = load_master_cv(cv_ref_path)
             except Exception as exc:
-                responder.send_json({"ok": False, "error": f"CV file could not be read: {exc}. Re-upload on the Profile page."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
+                logger.warning("Could not read master CV %s: %s", profile.master_cv_ref, exc)
+                responder.send_json({"ok": False, "error": "CV file could not be read. Re-upload on the Profile page."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
                 return
         else:
             responder.send_json({"ok": False, "error": "No master CV on profile. Upload your CV on the Profile page first."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
@@ -1332,9 +1437,12 @@ def handle_ai_review_cv(req, config, responder, job_id):
     reviewed_cv = result["reviewed_cv"]
     changes = result["changes"]
 
-    # Save to tailored_cvs/{job_id}_ai_reviewed.md
+    # Save to tailored_cvs/{job_id}_ai_reviewed.md.  Treat route data as untrusted
+    # here too: an AI review may be displayed without saving, but must never write
+    # outside the configured output directory.
     try:
-        from src.job_hunt_config import DEFAULT_TAILORING_POLICY
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", job_id) or job_id in {".", ".."}:
+            raise ValueError("invalid job_id")
         output_dir = DEFAULT_TAILORING_POLICY.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         save_path = output_dir / f"{job_id}_ai_reviewed.md"
@@ -1351,7 +1459,7 @@ def handle_ai_review_cv(req, config, responder, job_id):
         "ok": True,
         "reviewed_cv": reviewed_cv,
         "changes": changes,
-        "saved_path": str(save_path) if save_path else None,
+        "saved_path": save_path.name if save_path else None,
         "model_used": model_used or "unknown",
     })
 
@@ -1439,26 +1547,9 @@ def handle_get_board(req, config, responder):
 
 
 def handle_get_board_view(req, config, responder):
-    import json as _json
     from src.job_hunt_index import query_board
     board = query_board(_index_db_path(config))
-    board_json = _json.dumps(board, indent=2, ensure_ascii=False)
-    sidebar = _render_sidebar("board")
-    body = f"""
-    <div class="app-shell">
-      {sidebar}
-      <main class="main-content">
-        <section class="panel">
-          <h2>Board View</h2>
-          <p style="color:var(--ink-faint);font-size:0.875rem;margin-bottom:16px;">
-            A full kanban board UI is coming soon. Raw board data is shown below for debugging.
-          </p>
-          <pre style="background:var(--surface-sunk);border:1px solid var(--line);border-radius:8px;
-                      padding:16px;overflow:auto;font-size:0.78rem;line-height:1.5;max-height:70vh;">{escape(board_json)}</pre>
-        </section>
-      </main>
-    </div>"""
-    responder.send_html(render_page("Board View — Job Seeking Tool", body, model_label=config.model_label))
+    responder.send_html(render_board_page(board, model_label=config.model_label))
 
 
 def handle_batch_evaluate(req, config, responder):
@@ -1552,49 +1643,106 @@ def handle_source_search_more(req, config, responder, source_id):
         skip = int(search_values.get(skip_key, "0") or "0")
     except (TypeError, ValueError):
         skip = 0
-    # Multi-keyword (Slice D): same chip list as the initial search, capped
-    # the same way — re-parsed from the (already comma-joined) "keywords"
-    # field the normaliser carried through. Same shared skip cursor is used
-    # for every keyword sub-search (one location, no per-keyword cursors).
+    # Multi-keyword searches keep one bounded cursor per term. An exhausted
+    # term is never re-queried while another term continues to paginate.
     keyword_terms = _parse_keyword_terms(search_values.get("keywords", ""))[:_MAX_KEYWORD_SEARCHES]
-    try:
-        results, any_full_page, _kw_sub_errors = _run_multi_keyword_search(source, search_values, keyword_terms)
-    except Exception as exc:
-        responder.send_json({"ok": False, "error": str(exc)})
+    effective_terms = keyword_terms or [""]
+    offsets = _parse_keyword_cursors(
+        req.query.get("keywordCursors"), len(effective_terms), default_offset=skip,
+    )
+    if offsets is None:
+        responder.send_json({"ok": False, "error": "Invalid keyword pagination cursor."}, status=HTTPStatus.BAD_REQUEST)
         return
-    if _kw_sub_errors and not results:
-        responder.send_json({"ok": False, "error": "; ".join(_kw_sub_errors)})
-        return
-    # Display-only not-interested filter; has_more / next skip stay on
-    # any_full_page so the cursor still advances a full source page.
-    raw_count = len(results)
-    hidden_count = 0
-    # Dedup (Slice B): collapse duplicate cards within this one page first, same
-    # as handle_source_search — before the not-interested/exclude filters.
-    if results:
-        from src.job_sources.dedup import deduplicate_jobs
-        results = deduplicate_jobs(results)
-    if results:
-        try:
-            from src.job_hunt_not_interested import filter_results as _filter_ni
-            results, hidden_count = _filter_ni(results, state_root=config.state_root)
-        except Exception as exc:
-            logger.warning("not-interested filter failed: %s", exc)
-    # Exclude-keyword title filter — read the raw field carried in the query.
     exclude_raw = (req.query.get("excludeKeywords") or "").strip()
-    if results and exclude_raw:
-        results, _excl_ct = _apply_exclude_filter(results, exclude_raw)
-        hidden_count += _excl_ct
-    # Cross-page dedup (Slice B): drop cards already shown for this search-id
-    # (search-id-keyed seen-set, not global — see job_sources.search_state).
     search_id = (req.query.get("searchId") or "").strip() or None
-    if results:
-        from src.job_sources.search_state import filter_new_page
-        _before_cross_page = len(results)
-        results = filter_new_page(search_id, results)
-        hidden_count += _before_cross_page - len(results)
+
+    def _prepare_page(raw_results: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:
+        """Apply the same bucket/filter/dedup pipeline as an initial search."""
+        hidden_count = 0
+        hidden_or_excluded_count = 0
+        main_results: list[dict[str, Any]] = []
+        other_page_results: list[dict[str, Any]] = []
+        if raw_results:
+            from src.job_sources.relevance import bucket_jobs_by_relevance
+            main_results, other_page_results = bucket_jobs_by_relevance(raw_results, search_values.get("keywords", ""))
+        if main_results:
+            from src.job_sources.dedup import deduplicate_jobs
+            main_results = deduplicate_jobs(main_results)
+        if other_page_results:
+            from src.job_sources.dedup import deduplicate_jobs
+            other_page_results = deduplicate_jobs(other_page_results)
+        if main_results or other_page_results:
+            try:
+                from src.job_hunt_not_interested import filter_results as _filter_ni
+                if main_results:
+                    main_results, hidden_count = _filter_ni(main_results, state_root=config.state_root)
+                    hidden_or_excluded_count += hidden_count
+                if other_page_results:
+                    other_page_results, other_hidden_count = _filter_ni(other_page_results, state_root=config.state_root)
+                    hidden_count += other_hidden_count
+                    hidden_or_excluded_count += other_hidden_count
+            except Exception as exc:
+                logger.warning("not-interested filter failed: %s", exc)
+        if main_results and exclude_raw:
+            main_results, excluded_count = _apply_exclude_filter(main_results, exclude_raw)
+            hidden_count += excluded_count
+            hidden_or_excluded_count += excluded_count
+        if other_page_results and exclude_raw:
+            other_page_results, excluded_count = _apply_exclude_filter(other_page_results, exclude_raw)
+            hidden_count += excluded_count
+            hidden_or_excluded_count += excluded_count
+        if main_results:
+            from src.job_sources.search_state import filter_new_page
+            before_cross_page = len(main_results)
+            main_results = filter_new_page(search_id, main_results)
+            hidden_count += before_cross_page - len(main_results)
+        if other_page_results:
+            from src.job_sources.search_state import filter_new_page
+            before_cross_page = len(other_page_results)
+            other_page_results = filter_new_page(search_id, other_page_results)
+            hidden_count += before_cross_page - len(other_page_results)
+        return main_results, other_page_results, hidden_count, hidden_or_excluded_count
+
+    # When a whole requested page is hidden/excluded, inspect only a bounded
+    # number of following source pages. A visible "Other result" is a valid
+    # result and therefore stops look-ahead without promoting it to the main
+    # bucket.
+    raw_count = 0
+    hidden_count = 0
+    results: list[dict[str, Any]] = []
+    other_results: list[dict[str, Any]] = []
+    any_full_page = False
+    next_offsets = offsets
+    current_offsets = offsets
+    pages_advanced = 0
+    while True:
+        try:
+            raw_results, any_full_page, kw_sub_errors, next_offsets = _run_multi_keyword_search(
+                source, search_values, effective_terms, offsets=current_offsets,
+            )
+        except Exception as exc:
+            responder.send_json({"ok": False, "error": str(exc)})
+            return
+        if kw_sub_errors and not raw_results:
+            responder.send_json({"ok": False, "error": "; ".join(kw_sub_errors)})
+            return
+        raw_count += len(raw_results)
+        results, other_results, page_hidden_count, page_hidden_or_excluded_count = _prepare_page(raw_results)
+        hidden_count += page_hidden_count
+        if (
+            results
+            or other_results
+            or not any_full_page
+            or not page_hidden_or_excluded_count
+            or pages_advanced >= _MAX_HIDDEN_PAGE_LOOKAHEAD
+        ):
+            break
+        pages_advanced += 1
+        current_offsets = next_offsets
     nonce = create_select_nonce()
-    cards_html = source.render_cards_fragment(results, skip=skip, nonce=nonce)
+    display_skip = skip + (take * pages_advanced)
+    cards_html = source.render_cards_fragment(results, skip=display_skip, nonce=nonce)
+    other_results_html = _render_other_results_fragment(source, other_results, skip=display_skip + len(results), nonce=nonce)
     has_more = take > 0 and any_full_page
     next_params = {
         str(k): str(v) for k, v in search_values.items()
@@ -1602,17 +1750,20 @@ def handle_source_search_more(req, config, responder, source_id):
     }
     if exclude_raw:
         next_params["excludeKeywords"] = exclude_raw
-    next_params[skip_key] = str(skip + take)
+    next_params[skip_key] = str(display_skip + take)
+    if len(keyword_terms) > 1:
+        next_params["keywordCursors"] = _encode_keyword_cursors(next_offsets)
     if search_id:
         next_params["searchId"] = search_id
     next_url = f"/search/{source_id}/more?" + _urlencode(next_params)
     responder.send_json({
         "ok": True,
         "cards_html": cards_html,
+        "other_results_html": other_results_html,
         "has_more": has_more,
         "next_url": next_url,
         "count": raw_count,
-        "visible_count": len(results),
+        "visible_count": len(results) + len(other_results),
         "hidden_count": hidden_count,
     })
 
@@ -2319,7 +2470,8 @@ def handle_tailor(req, config, responder):
                     cv_ref_path = config.profile_path.parent / cv_ref_path
                 cv_text = load_master_cv(cv_ref_path)
             except Exception as exc:
-                responder.send_json({"error": f"CV file could not be read ({profile.master_cv_ref}): {exc}. Re-upload your CV on the Profile page."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
+                logger.warning("Could not read master CV %s: %s", profile.master_cv_ref, exc)
+                responder.send_json({"error": "CV file could not be read. Re-upload your CV on the Profile page."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
                 return
         else:
             responder.send_json({"error": "No master CV on profile. Go to Profile → upload your CV file → click Save (or Parse CV to auto-save)."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
@@ -2350,7 +2502,7 @@ def handle_tailor(req, config, responder):
         "matched": result.matched,
         "missing": result.missing,
         "markdown": result.markdown,
-        "saved_path": str(path),
+        "saved_path": path.name,
     })
 
 
@@ -2418,7 +2570,8 @@ def handle_cover_letter(req, config, responder):
                     cv_ref_path = config.profile_path.parent / cv_ref_path
                 cv_text = load_master_cv(cv_ref_path)
             except Exception as exc:
-                responder.send_json({"error": f"CV file could not be read ({profile.master_cv_ref}): {exc}. Re-upload your CV on the Profile page."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
+                logger.warning("Could not read master CV %s: %s", profile.master_cv_ref, exc)
+                responder.send_json({"error": "CV file could not be read. Re-upload your CV on the Profile page."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
                 return
         else:
             responder.send_json({"error": "No master CV on profile. Go to Profile → upload your CV file → click Save (or Parse CV to auto-save)."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
@@ -2446,7 +2599,7 @@ def handle_cover_letter(req, config, responder):
     responder.send_json({
         "letter": letter,
         "word_count": len(letter.split()),
-        "saved_path": str(path),
+        "saved_path": path.name,
     })
 
 
@@ -2626,17 +2779,8 @@ def _render_search_jobs_tab(
     if active_search_source and reed_other_results:
         for source in sources:
             if source.source_id == active_search_source and source.render_cards_fragment:
-                _other_cards_html = source.render_cards_fragment(
-                    reed_other_results, skip=len(reed_results or []), nonce=reed_select_nonce
-                )
-                other_results_html = (
-                    '<details style="margin-top:18px;border:1px dashed var(--line);'
-                    'border-radius:var(--r-md);padding:10px 14px;">'
-                    f'<summary style="cursor:pointer;font-size:13px;color:var(--ink-faint);">'
-                    f'Other results ({len(reed_other_results)}) &mdash; titles that did not closely '
-                    'match your search terms</summary>'
-                    f'<div style="margin-top:12px;">{_other_cards_html}</div>'
-                    '</details>'
+                other_results_html = _render_other_results_fragment(
+                    source, reed_other_results, skip=len(reed_results or []), nonce=reed_select_nonce
                 )
                 break
 

@@ -17,7 +17,7 @@ Source research: santifer/career-ops (MIT), raw files verified 2026-07-08; notes
 - Target stack is the **existing Python tool** (http.server + JSON/SQLite + Gemini REST), NOT Next.js/Supabase/Claude API. Mike confirmed.
 - LLM stays **Gemini free tier** (existing integration + rate-limited worker). Mike confirmed.
 - career-ops has **no real A-F letter grade and no 10-dimension weighted rubric**. Verified from raw source (`modes/_shared.md:37`): "The evaluation uses 6 blocks (A-F) with a global score of 1-5". Dimensions are 5 (CV match, North Star alignment, Comp, Cultural signals, Red flags) averaged (no published weights) into a 1-5 Global score with bands: 4.5+ apply immediately / 4.0-4.4 good / 3.5-3.9 only with reason / <3.5 skip. "A-F" in its README is the report block letters.
-- Both requested features **partially exist already**: `score_job()` (7 weighted components, 0-100, Apply ≥80 / Review 65-79 / Skip <65, hard blockers) and `POST /jobs/batch-evaluate` (synchronous, ≤20 jobs). This plan extends them; it does not rebuild them.
+- Both requested features **partially exist already**: `score_job()` (7 weighted components, 0-100, Apply ≥80 / Review ≥65 and <80 / Skip <65, hard blockers) and `POST /jobs/batch-evaluate` (synchronous, ≤20 jobs). This plan extends them; it does not rebuild them.
 
 ## 1. career-ops → Job Seeking Tool mapping
 

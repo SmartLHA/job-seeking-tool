@@ -5,8 +5,8 @@ Detects /swarm <task> commands in Telegram, creates pipeline DB rows,
 spawns agents via sessions_spawn(), polls for completion, sends Telegram
 summary on done/failed/partial.
 
-Must be imported in main session to activate.
-Calls add_swarm_tables() and recover_orphaned_pipelines() on import.
+Call initialize_swarm_router() from a runtime entry point to activate.
+Importing this module does not write to the filesystem or database.
 """
 
 from __future__ import annotations
@@ -31,14 +31,13 @@ sys.path.insert(0, str(SRC_DIR))
 # ── Logging ────────────────────────────────────────────────────────────────────
 
 LOG_DIR = Path.home() / ".openclaw" / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
 _SWARM_LOG = LOG_DIR / "swarm.log"
 
 _log = logging.getLogger("swarm_router")
 _log.setLevel(logging.DEBUG)
-_hdlr = logging.FileHandler(_SWARM_LOG)
-_hdlr.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-_log.addHandler(_hdlr)
+_hdlr: Optional[logging.FileHandler] = None
+_initialization_lock = threading.Lock()
+_initialized = False
 
 
 def _log_info(msg: str) -> None:
@@ -49,6 +48,35 @@ def _log_info(msg: str) -> None:
 def _log_err(msg: str) -> None:
     _log.error(msg)
     print(f"[swarm] ERROR: {msg}", flush=True)
+
+
+def initialize_swarm_router() -> None:
+    """Initialize persistent logging, database schema, and recovery exactly once."""
+    global _hdlr, _initialized
+
+    with _initialization_lock:
+        if _initialized:
+            return
+
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        _hdlr = logging.FileHandler(_SWARM_LOG)
+        _hdlr.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        _log.addHandler(_hdlr)
+
+        if _sb is not None:
+            try:
+                _sb.add_swarm_tables()
+                _log_info("Swarm tables initialised")
+            except Exception as e:
+                _log_err(f"add_swarm_tables during initialization failed: {e}")
+
+            try:
+                recover_orphaned_pipelines()
+            except Exception as e:
+                _log_err(f"recover_orphaned_pipelines during initialization failed: {e}")
+
+        _initialized = True
+        _log_info("swarm_router initialized")
 
 
 # ── Late imports — verify OpenClaw tools available ─────────────────────────────
@@ -201,14 +229,10 @@ def init_pipeline(task_key: str, agent_roles: list[str], router_session_key: str
     Create a swarm pipeline: insert pipeline_runs + agent_executions rows.
     Returns pipeline_run_id (uuid string).
     """
+    initialize_swarm_router()
+
     if _sb is None:
         raise RuntimeError("shared_bus not available")
-
-    # Migration: ensure swarm tables exist
-    try:
-        _sb.add_swarm_tables()
-    except Exception as e:
-        _log_err(f"add_swarm_tables failed: {e}")
 
     pipeline_run_id = _sb.init_pipeline(
         task_key=task_key,
@@ -589,7 +613,7 @@ def stop_pipeline(pipeline_run_id: str) -> bool:
 
 def recover_orphaned_pipelines() -> None:
     """
-    Run on module import: find active pipelines whose router session is gone,
+    Run during explicit runtime initialization: find active pipelines whose router session is gone,
     kill orphaned agent sessions, mark as failed.
     """
     if not _OPENCLAW_AVAILABLE or _sb is None:
@@ -661,6 +685,8 @@ def on_telegram_message(text: str, router_session_key: str = "agent:main:telegra
     Main entry point: call this from the Telegram message handler.
     Parses /swarm commands, starts or stops pipelines.
     """
+    initialize_swarm_router()
+
     if not _OPENCLAW_AVAILABLE:
         _send_telegram("⚠️ Swarm unavailable: OpenClaw tools not found")
         return
@@ -724,13 +750,10 @@ def get_swarm_status() -> list[dict[str, Any]]:
     Return all active + recent pipelines with agent statuses.
     Used by GET /api/swarm-status in viewer_server.py.
     """
+    initialize_swarm_router()
+
     if _sb is None:
         return []
-
-    try:
-        _sb.add_swarm_tables()
-    except Exception:
-        pass
 
     pipelines = _sb.get_pipeline_runs(limit=20)
     result = []
@@ -784,20 +807,3 @@ def get_swarm_status() -> list[dict[str, Any]]:
         })
 
     return result
-
-
-# ── Module init: migrate schema + recover orphaned ────────────────────────────
-
-if _sb is not None:
-    try:
-        _sb.add_swarm_tables()
-        _log_info("Swarm tables initialised")
-    except Exception as e:
-        _log_err(f"add_swarm_tables on import failed: {e}")
-
-    try:
-        recover_orphaned_pipelines()
-    except Exception as e:
-        _log_err(f"recover_orphaned_pipelines on import failed: {e}")
-
-_log_info("swarm_router loaded")

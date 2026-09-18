@@ -1,14 +1,14 @@
 # GAP-H — Board/List Aggregate Read-Model + New Routes
 
-**Status:** ✅ IMPLEMENTED 2026-06-16 — 267/267 tests green
+**Status:** ✅ IMPLEMENTED 2026-06-16; Board View rendering completed 2026-07-27
+**Updated:** `GET /board/view` delegates to `ui_render.render_board_page()` for six accessible, read-only stage columns, escaped linked job cards, counts, statistics, and empty states. Status changes remain through Job Detail outcome controls; drag-and-drop is not implemented.
 **Date:** 2026-06-16
 
 ---
 
 ## Goal
 
-The Tracker Kanban board and Find Jobs "Save" bookmark both need server-side aggregate views
-over the stored per-record JSON files. Currently storage is per-id only — no list or board view exists.
+At design time, the Tracker Kanban board and Find Jobs "Save" bookmark needed server-side aggregate views over stored per-record JSON files. This is historical context: the current product has list and read-only Board View routes.
 
 ---
 

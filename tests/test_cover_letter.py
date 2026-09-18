@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.job_hunt_cover_letter import _format_list, _match_skills, _normalize_text, generate_cover_letter, generate_cover_letter_text
+from src.job_hunt_cover_letter import _format_list, _match_skills, _normalize_text, generate_cover_letter, generate_cover_letter_text, save_cover_letter
 from src.job_hunt_models import (
     CandidateProfile,
     JobAnalysis,
@@ -368,3 +368,9 @@ def test_generate_cover_letter_rejects_invalid_length() -> None:
     analysis = build_analysis()
     with pytest.raises(ValueError, match="Invalid length"):
         generate_cover_letter_text(profile, "", job, analysis, "Why text.", length="paragraph")
+
+
+@pytest.mark.parametrize("job_id", ["../escape", "nested/job", "..", ""])
+def test_save_cover_letter_rejects_unsafe_job_id(job_id: str) -> None:
+    with pytest.raises(ValueError, match="invalid"):
+        save_cover_letter(job_id, "Letter body", "cand-001")

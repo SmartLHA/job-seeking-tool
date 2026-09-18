@@ -6,6 +6,8 @@ results" section (never hard-dropped)."""
 from __future__ import annotations
 
 import json
+import html
+import re
 import threading
 import urllib.error
 import urllib.parse
@@ -16,6 +18,7 @@ from pathlib import Path
 
 from src.ui_state import UIServerConfig
 from src.ui_routes import _build_handler
+from src.job_hunt_not_interested import hide_jobs
 
 
 def _write_profile(tmp_path: Path) -> Path:
@@ -131,3 +134,92 @@ def test_blank_query_shows_no_other_results_bucket(tmp_path: Path, monkeypatch) 
     assert status == 200
     assert "Other results" not in body
     assert "Store Manager" in body
+
+
+def test_more_page_keeps_nonmatching_titles_in_other_results(tmp_path: Path, monkeypatch) -> None:
+    def fake_fetch_reed_jobs(keyword, location, max_results, *, skip=0, save_raw=True):
+        if skip == 0:
+            return [_reed_job(index, "Business Analyst") for index in range(1, 11)]
+        return [_reed_job(11, "Business Analyst"), _reed_job(12, "Store Manager")]
+
+    monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
+    query = urllib.parse.urlencode({"keywords": "Business Analysis", "locationName": "London"})
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        status, body = _http_get(f"{base_url}/search/reed?{query}")
+        assert status == 200
+        next_url = html.unescape(re.search(r'data-next-url="([^"]+)"', body).group(1))
+        status, more_body = _http_get(f"{base_url}{next_url}")
+
+    assert status == 200
+    payload = json.loads(more_body)
+    assert "Business Analyst" in payload["cards_html"]
+    assert "Store Manager" not in payload["cards_html"]
+    assert "Store Manager" in payload["other_results_html"]
+    assert 'id="jst-other-results"' in payload["other_results_html"]
+
+
+def test_more_looks_ahead_when_entire_requested_page_is_hidden(tmp_path: Path, monkeypatch) -> None:
+    calls: list[int] = []
+
+    def fake_fetch_reed_jobs(keyword, location, max_results, *, skip=0, save_raw=True):
+        calls.append(skip)
+        jobs = [_reed_job(skip + index + 1, "Business Analyst") for index in range(10)]
+        for index, job in enumerate(jobs):
+            job["employerName"] = f"Acme {skip + index + 1}"
+        return jobs
+
+    monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
+    query = urllib.parse.urlencode({"keywords": "Business Analysis", "locationName": "London"})
+    with _running_ui_server(tmp_path) as (base_url, config):
+        status, body = _http_get(f"{base_url}/search/reed?{query}")
+        assert status == 200
+        hide_jobs(
+            [
+                {"source": "reed", "source_job_id": str(job_id), "title": "Business Analyst", "company": "Acme"}
+                for job_id in range(11, 21)
+            ],
+            state_root=config.state_root,
+        )
+        next_url = html.unescape(re.search(r'data-next-url="([^"]+)"', body).group(1))
+        status, more_body = _http_get(f"{base_url}{next_url}")
+
+    payload = json.loads(more_body)
+    assert status == 200
+    assert calls == [0, 10, 20]
+    assert "Business Analyst" in payload["cards_html"]
+    assert payload["hidden_count"] == 10
+    assert "resultsSkip=30" in payload["next_url"]
+
+
+def test_more_stops_hidden_page_lookahead_at_fixed_cap(tmp_path: Path, monkeypatch) -> None:
+    calls: list[int] = []
+
+    def fake_fetch_reed_jobs(keyword, location, max_results, *, skip=0, save_raw=True):
+        calls.append(skip)
+        jobs = [_reed_job(skip + index + 1, "Business Analyst") for index in range(10)]
+        for index, job in enumerate(jobs):
+            job["employerName"] = f"Acme {skip + index + 1}"
+        return jobs
+
+    monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
+    query = urllib.parse.urlencode({"keywords": "Business Analysis", "locationName": "London"})
+    with _running_ui_server(tmp_path) as (base_url, config):
+        status, body = _http_get(f"{base_url}/search/reed?{query}")
+        assert status == 200
+        hide_jobs(
+            [
+                {"source": "reed", "source_job_id": str(job_id), "title": "Business Analyst", "company": "Acme"}
+                for job_id in range(11, 51)
+            ],
+            state_root=config.state_root,
+        )
+        next_url = html.unescape(re.search(r'data-next-url="([^"]+)"', body).group(1))
+        status, more_body = _http_get(f"{base_url}{next_url}")
+
+    payload = json.loads(more_body)
+    assert status == 200
+    assert calls == [0, 10, 20, 30, 40]
+    assert payload["visible_count"] == 0
+    assert payload["hidden_count"] == 40
+    assert payload["has_more"] is True
+    assert "resultsSkip=50" in payload["next_url"]

@@ -11,6 +11,8 @@ Covers:
 from __future__ import annotations
 
 import json
+import html
+import re
 import threading
 import urllib.error
 import urllib.parse
@@ -207,3 +209,44 @@ def test_search_page_renders_chip_fields_for_keywords_location_exclude(tmp_path:
     assert 'name="excludeKeywords"' in body
     assert "CHIP_FIELD_JS" not in body  # sanity: the JS is embedded, not the constant name
     assert "chip-real-input" in body
+
+
+def test_multi_keyword_more_advances_each_term_independently(tmp_path: Path, monkeypatch) -> None:
+    calls: list[tuple[str, int]] = []
+
+    def fake_fetch_reed_jobs(keyword, location, max_results, *, skip=0, save_raw=True):
+        calls.append((keyword, skip))
+        if skip == 0:
+            start = 1 if keyword == "Business Analyst" else 101
+            return [{
+                "jobId": start + index, "jobTitle": keyword, "employerName": "Acme",
+                "locationName": "London", "minimumSalary": 50000, "maximumSalary": 60000,
+                "contractType": "Permanent", "jobUrl": f"https://reed.example/{keyword}/{start + index}",
+                "jobDescription": "<p>Analytics role.</p>", "fullTime": True,
+            } for index in range(10)]
+        if keyword == "Business Analyst":
+            return []
+        return [{
+            "jobId": 200 + skip + index, "jobTitle": "Data Analyst", "employerName": "Beta",
+            "locationName": "London", "minimumSalary": 50000, "maximumSalary": 60000,
+            "contractType": "Permanent", "jobUrl": f"https://reed.example/data/{skip + index}",
+            "jobDescription": "<p>Analytics role.</p>", "fullTime": True,
+        } for index in range(10)]
+
+    monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
+    query = urllib.parse.urlencode({"keywords": "Business Analyst, Data Analyst", "locationName": "London"})
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        status, body = _http_get(f"{base_url}/search/reed?{query}")
+        assert status == 200
+        first_next = html.unescape(re.search(r'data-next-url="([^"]+)"', body).group(1))
+        status, first_more = _http_get(f"{base_url}{first_next}")
+        assert status == 200
+        second_next = json.loads(first_more)["next_url"]
+        status, _second_more = _http_get(f"{base_url}{second_next}")
+
+    assert status == 200
+    assert calls == [
+        ("Business Analyst", 0), ("Data Analyst", 0),
+        ("Business Analyst", 10), ("Data Analyst", 10),
+        ("Data Analyst", 20),
+    ]

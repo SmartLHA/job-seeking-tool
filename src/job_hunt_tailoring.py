@@ -271,6 +271,11 @@ def validate_tailored_cv(
         return False
 
     allowed_skills = {_normalize_text(skill.name) for skill in profile.skills}
+    allowed_achievements = {
+        _normalize_text(achievement)
+        for achievement in profile.achievements
+        if isinstance(achievement, str) and achievement.strip()
+    }
     expected_years = None
     if profile.years_experience is not None:
         expected_years = int(profile.years_experience) if float(profile.years_experience).is_integer() else profile.years_experience
@@ -288,6 +293,11 @@ def validate_tailored_cv(
             continue
         if claim.startswith("Experience: "):
             if expected_years is None or claim != f"Experience: {expected_years} years":
+                return False
+            continue
+        if claim.startswith("Achievement: "):
+            achievement = claim.removeprefix("Achievement: ")
+            if _normalize_text(achievement) not in allowed_achievements:
                 return False
             continue
         return False
@@ -384,6 +394,9 @@ def save_tailored_cv(
 ) -> Path:
     if not isinstance(job_id, str) or not job_id.strip():
         raise ValueError("job_id must be a non-empty string")
+    normalized_job_id = job_id.strip()
+    if not _SAFE_JOB_ID.match(normalized_job_id) or normalized_job_id in (".", ".."):
+        raise ValueError("invalid job_id")
     if not isinstance(profile_id, str) or not profile_id.strip():
         raise ValueError("profile_id must be a non-empty string")
 
@@ -398,7 +411,7 @@ def save_tailored_cv(
 
     output_dir = policy.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
-    destination = output_dir / f"{job_id.strip()}.md"
+    destination = output_dir / f"{normalized_job_id}.md"
     content = f"<!-- profile_id: {profile_id.strip()} -->\n{markdown_content.strip()}\n"
     destination.write_text(content, encoding="utf-8")
     return destination
