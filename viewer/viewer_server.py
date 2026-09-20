@@ -1997,12 +1997,54 @@ def _call_free(message: str, history: list, out_q: list) -> None:
 # ── URL Pre-fill API handlers ──────────────────────────────────────────────
 
 def _import_ui_module():
-    """Lazily import viewer.ui module to avoid circular imports."""
-    ui_path = SRC_DIR / "job_hunt_paste_ui.py"
-    spec = __import__('importlib.util').util.spec_from_file_location("viewer_ui", str(ui_path))
-    module = __import__('importlib.util').module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    """Return a small adapter over src/job_hunt_parsing.py (the real parser).
+
+    Imported lazily so a missing optional dependency surfaces as a JSON error
+    from the handler rather than breaking viewer start-up.
+    """
+    import types
+    import job_hunt_parsing as parsing  # src/ is on sys.path (see top of file)
+
+    def submit_parsed_job(data: dict) -> str:
+        """Store a parsed job through the main UI's job-submit path.
+
+        Delegates to ``src.ui_handlers.submit_job_form`` (intake evaluation +
+        SQLite index upsert into data/state/), the same function the main UI's
+        POST /job-submit uses. job_id is sanitised first.
+        """
+        raw_id = str(data.get("job_id") or "")
+        job_id = re.sub(r"[^a-z0-9._-]+", "-", raw_id.lower()).strip("-.")[:80]
+        if not job_id:
+            raise ValueError("job_id could not be derived")
+        form = {}
+        for key, value in dict(data, job_id=job_id).items():
+            if value is None:
+                form[key] = ""
+            elif isinstance(value, (list, tuple)):
+                form[key] = ", ".join(str(v) for v in value)
+            else:
+                form[key] = str(value)
+        form.setdefault("source_type", "copied_text")
+        if not form["source_type"]:
+            form["source_type"] = "copied_text"
+        if str(PROJECT_ROOT) not in sys.path:
+            sys.path.insert(0, str(PROJECT_ROOT))  # ui_handlers imports `src.*`
+        from src.ui_handlers import submit_job_form
+        from src.ui_state import UIServerConfig
+        profile = os.environ.get("JOB_HUNT_PROFILE") or str(PROJECT_ROOT / "data" / "mic_profile.json")
+        config = UIServerConfig(
+            profile_path=Path(profile),
+            state_root=PROJECT_ROOT / "data" / "state",
+            report_dir=PROJECT_ROOT / "output" / "reports",
+        )
+        result = submit_job_form(form, config)
+        return result.reviewed_job.job_id
+
+    return types.SimpleNamespace(
+        parse_job_url=parsing.parse_job_from_url,
+        parse_job_text=parsing.parse_job_from_text,
+        submit_parsed_job=submit_parsed_job,
+    )
 
 
 def _handle_api_url_parse(post_body: bytes) -> bytes:
@@ -2049,8 +2091,9 @@ def _handle_api_job_submit(post_body: bytes) -> bytes:
         data = json.loads(post_body.decode("utf-8"))
     except Exception:
         return json.dumps({"error": "bad request"}).encode()
-    if not data.get("job_title") and not data.get("company"):
-        return json.dumps({"error": "job_title or company is required"}).encode()
+    missing = [k for k in ("job_title", "company", "description_raw") if not str(data.get(k) or "").strip()]
+    if missing:
+        return json.dumps({"error": f"{', '.join(missing)} required"}).encode()
     try:
         ui = _import_ui_module()
         # Build a job_id if not provided

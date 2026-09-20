@@ -43,7 +43,7 @@ Used by SilverHand to brief Handy/Scout precisely, and by any agent to orient qu
 | `docs/tasks/cover-letter-spec-draft.md` | GAP-G: Cover letter v2 — tone/length/points params; POST /cover-letter route. |
 | `docs/tasks/cv-tailoring-brief.md` | GAP-F: Tailoring v2 — TailoredCVResult with summary/promoted/matched/missing; POST /tailor route. |
 | `docs/tasks/ats-score-deferred.md` | JOB-008: ATS scorer integration — ats_score on JobAnalysis; called from evaluate_reviewed_job(). |
-| `docs/tasks/url-ingestion-design.md` | JOB-009: URL ingestion spec + hardening tasks for parse_job_from_url(); delete job_hunt_paste_fetch.py. |
+| `docs/tasks/url-ingestion-design.md` | JOB-009: URL ingestion spec + hardening tasks for parse_job_from_url(); the empty job_hunt_paste_fetch.py it flagged was deleted 2026-09-20. |
 | `docs/tasks/reed-search-first-story-breakdown.md` | Story breakdown for making Reed search the app's first/main journey before Evaluate. |
 | `docs/tasks/pl-01-reed-search-first-shell-design.md` | PL-01 design: make the app landing shell search-first while preserving manual fallback. |
 | `docs/tasks/pl-02-reed-search-form-api-wiring-design.md` | PL-02 design: app-native Reed search form, filters, and result rendering before selection/prefill. |
@@ -130,6 +130,44 @@ Used by SilverHand to brief Handy/Scout precisely, and by any agent to orient qu
 | `tests/test_ui_routes_uncovered.py` | **NEW (2026-07-08; expanded 2026-07-27).** Parser/startup coverage including loopback-only bind and IPv6 URL handling. |
 | `tests/test_ui_security.py` | **NEW (2026-07-27).** Loopback bind, body-size, browser Origin/Referer, Host-port, DNS-rebinding, and client-safe error regressions. |
 | `tests/test_llm_wrappers_uncovered.py` | **NEW (2026-07-08).** 20 tests: `ai_review_cv_with_llm`, `extract_cv_skills_with_llm`, `extract_skills_from_cv` fallback, `generate_cover_letter_text` — Gemini transport patched, valid + malformed LLM responses. |
+| `tests/test_ats_scorer.py` | `score_cv` ATS scoring of a CV against job text. |
+| `tests/test_bookmark_evaluate.py` | Bookmark to Evaluate bridge (7 tests). |
+| `tests/test_cover_letter.py` | Cover-letter generation: `generate_cover_letter_text` tones/lengths/validation, `save_cover_letter`, matching helpers, unsafe job_id rejection. |
+| `tests/test_cover_letter_form.py` | **NEW (2026-09-20, audit F1).** Cover-letter form option values equal `_VALID_TONES`/`_VALID_LENGTHS`; every form combination is accepted by `handle_cover_letter` (no `ValueError`). |
+| `tests/test_dedup.py` | `job_sources.dedup`: within-source, cross-source URL and description-similarity dedup. |
+| `tests/test_digest.py` | Digest D2: schema migration, dedup, digest queries, unseen counts. |
+| `tests/test_digest_e2e.py` | Digest D1-D6 end to end through the real HTTP server. |
+| `tests/test_digest_health_strip.py` | **NEW (2026-09-20, audit F2).** `/digest` health strip (Gemini quota, scheduler status), "Run LLM batch" button targets, `handle_llm_queue` `rpd_limit`. |
+| `tests/test_digest_pipeline.py` | Digest D3: deterministic saved-search run pipeline. |
+| `tests/test_digest_reeval.py` | Digest OQ-2: re-evaluate seen jobs against the current profile/threshold. |
+| `tests/test_digest_scheduler.py` | Digest D5: `DigestScheduler` daemon (once-per-day run, status). |
+| `tests/test_digest_ui.py` | Digest D4: feed UI, filters, mark-seen, XSS escaping. |
+| `tests/test_digest_worker.py` | Digest D6: paced LLM worker `drain_llm_batch`. |
+| `tests/test_eval_queue.py` | Qualitative `eval_queue`/`eval_batch` state machine, stale-running reset, worker processing. |
+| `tests/test_f1_recheck.py` | F1 v2 ATS keyword-match re-check against the latest tailored CV. |
+| `tests/test_index.py` | `job_hunt_index` SQLite index: upsert, jobs list, board grouping and stats. |
+| `tests/test_keyword_match.py` | Per-job ATS keyword match (F1). |
+| `tests/test_lint.py` | Lint gate: pyflakes findings stay at the known-benign baseline. |
+| `tests/test_llm_client.py` | Gemini client hardening: timeout fall-through and `max_output_tokens`. |
+| `tests/test_multi_keyword_search.py` | Slice D: multi-keyword search, cursors and chip entry. |
+| `tests/test_multi_llm_chat.py` | Multi-LLM chat persistence (Rev3 QA). |
+| `tests/test_multiselect_shared.py` | Shared multi-select / load-more module regressions. |
+| `tests/test_normalize.py` | `job_sources.normalize`: HTML stripping, location normalisation, remote-type derivation. |
+| `tests/test_not_interested.py` | Persistent "not interested" store and search-flow triage UX. |
+| `tests/test_parsing.py` | `job_hunt_parsing`: `parse_job_from_text` prefill, `parse_job_from_url` fetch and robots handling. |
+| `tests/test_qualitative.py` | Qualitative assessment: parse/validate payload, CAS claim, grade. |
+| `tests/test_quality_score.py` | `calculate_quality_score` boundaries and combinations. |
+| `tests/test_relevance.py` | Slice A: local relevance filter and bucketing. |
+| `tests/test_relevance_ui.py` | Slice A: relevance bucketing wired into search results. |
+| `tests/test_saved_searches.py` | Digest D1: saved-search CRUD and validation. |
+| `tests/test_scoring_preset_ui.py` | Slice C: `POST /scoring-preset` UI wiring. |
+| `tests/test_scoring_presets.py` | Slice C: named scoring-weight presets and persistence. |
+| `tests/test_search_dedup.py` | Slice B: dedup wired into live search and "Show more". |
+| `tests/test_session_guard.py` | Session guard: cancelled pipeline agent-execution cleanup. |
+| `tests/test_swarm_router_auto_advance.py` | Viewer swarm router: import is side-effect free, initializer idempotent, viewer startup order. |
+| `tests/test_swarm_stage_derivation.py` | Swarm stage derivation and stage timing helpers. |
+| `tests/test_tailoring.py` | CV tailoring: `TailoringPolicy`, `TailoredCVResult`, tailoring flow over evaluated jobs. |
+| `tests/test_validation.py` | Shared validation helpers (MT-2). |
 
 ---
 

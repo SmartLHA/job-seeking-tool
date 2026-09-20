@@ -67,7 +67,6 @@ from src.ui_handlers import (
     handle_batch_assess,
     handle_get_batch,
     handle_cancel_batch,
-    handle_search_reed_more,
     handle_source_search_more,
     handle_get_review_queue,
     handle_jobs_save,

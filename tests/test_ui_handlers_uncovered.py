@@ -7,7 +7,6 @@ Coverage targets:
 - handle_add_gap_skills (L919)
 - handle_ai_review_cv (L973)
 - handle_get_board_view (L1135)
-- handle_search_reed_more (L1291)
 - handle_get_review_queue (L1365)
 - set_daemons (L1721)
 """
@@ -37,7 +36,6 @@ from src.ui_handlers import (
     handle_add_gap_skills,
     handle_ai_review_cv,
     handle_get_board_view,
-    handle_search_reed_more,
     handle_get_review_queue,
     set_daemons,
 )
@@ -872,26 +870,6 @@ class TestHandleGetBoardView:
         assert "<script>alert" not in html
         assert html.count('class="board-empty"') == 5
         assert ">25%<" in html
-
-
-class TestHandleSearchReedMore:
-    """Tests for handle_search_reed_more."""
-
-    def test_handle_search_reed_more_delegates(self, tmp_path: Path) -> None:
-        config = UIServerConfig(
-            profile_path=_setup_test_profile(tmp_path),
-            state_root=tmp_path / "state",
-            report_dir=tmp_path / "reports",
-        )
-        req = _make_request(
-            path="/search/reed/more?keywords=BA&resultsSkip=50&resultsToTake=50"
-        )
-        responder = MockResponder()
-
-        with mock.patch("src.ui_handlers.handle_source_search_more") as mock_delegate:
-            handle_search_reed_more(req, config, responder)
-            mock_delegate.assert_called_once()
-            assert mock_delegate.call_args[0][3] == "reed"
 
 
 class TestHandleGetReviewQueue:

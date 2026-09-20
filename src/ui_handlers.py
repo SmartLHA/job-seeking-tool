@@ -1198,19 +1198,29 @@ def handle_prefill(req, config, responder):
     responder.send_json({"ok": True, "values": values})
 
 
+def submit_job_form(form: dict[str, str], config):
+    """Shared job-submit persistence: intake evaluation + SQLite index upsert.
+
+    Used by the main UI ``POST /job-submit`` and the viewer ``/api/job-submit`` so
+    both store jobs through the same path. Raises whatever the pipeline raises
+    (ValueError for invalid input); returns the LocalEvaluationRunResult.
+    """
+    result = _run_intake_evaluation(form, config, generate_missing_id=True)
+    # Upsert hook (QW-7)
+    _upsert_job_to_index(config, result.reviewed_job.job_id, reviewed_job=result.reviewed_job, analysis=result.analysis)
+    return result
+
+
 def handle_job_submit(req, config, responder):
     form = req.form
     try:
-        result = _run_intake_evaluation(form, config, generate_missing_id=True)
+        result = submit_job_form(form, config)
     except ValueError as exc:
         responder.send_json({"ok": False, "errors": {"form": str(exc)}}, status=HTTPStatus.BAD_REQUEST)
         return
     except Exception as exc:
         responder.send_json({"ok": False, "error": str(exc)}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
         return
-
-    # Upsert hook (QW-7)
-    _upsert_job_to_index(config, result.reviewed_job.job_id, reviewed_job=result.reviewed_job, analysis=result.analysis)
 
     # Redirect to GET /job/{job_id} — the existing result page
     responder.redirect(f"/job/{result.reviewed_job.job_id}")
@@ -1766,12 +1776,6 @@ def handle_source_search_more(req, config, responder, source_id):
         "visible_count": len(results) + len(other_results),
         "hidden_count": hidden_count,
     })
-
-
-def handle_search_reed_more(req, config, responder):
-    """Back-compat shim for the old Reed-only route; delegates to the generic
-    handler. Retained so existing imports/links keep working."""
-    handle_source_search_more(req, config, responder, "reed")
 
 
 def _read_json_body(req, responder) -> dict | None:
@@ -2395,7 +2399,12 @@ def handle_digest_reevaluate(req, config, responder):
 def handle_llm_queue(req, config, responder):
     """GET /digest/llm-queue — queue counts + RPD usage."""
     from src.job_hunt_scheduler import llm_queue_stats
-    responder.send_json(llm_queue_stats(db_path=_index_db_path(config)))
+    stats = llm_queue_stats(db_path=_index_db_path(config))
+    try:
+        stats["rpd_limit"] = int(_load_active_profile(config).digest_llm_rpd)
+    except Exception:
+        stats["rpd_limit"] = None
+    responder.send_json(stats)
 
 
 def handle_saved_search_toggle(req, config, responder, search_id):

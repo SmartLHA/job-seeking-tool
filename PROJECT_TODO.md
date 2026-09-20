@@ -5,7 +5,20 @@
 
 ---
 
-**Last updated:** 2026-07-29 — SSF-F3 complete: the real-browser test covers keyword chip add (Enter/comma), remove, and Backspace synchronisation. The project-venv non-browser baseline remains 1012 passed, 3 skipped.
+**Last updated:** 2026-09-20 — audit fixes F1-F4 (see "Audit fixes 2026-09-20" below). Prior: 2026-07-29 — SSF-F3 complete: the real-browser test covers keyword chip add (Enter/comma), remove, and Backspace synchronisation.
+
+## Audit fixes — 2026-09-20
+
+**Status:** ✅ Done 2026-09-20 (uncommitted) — spec `docs/tasks/audit-fixes-2026-09-20.md`; source audit `docs/audits/ui-functions-audit-2026-09-19.md`.
+
+Context (from `git show --stat`, facts only): commit `63a055e` (search/score/filter slices A-D: `src/job_sources/relevance.py`, `src/job_sources/search_state.py`, `src/job_hunt_scoring_presets.py`, `src/ui_chip_field.py`, `POST /scoring-preset`, 33 new tests) and commit `d25394e` (2026-09-18 checkpoint: digest/saved-search/not-interested modules `src/job_hunt_digest.py`, `src/job_hunt_saved_searches.py`, `src/job_hunt_not_interested.py`, Adzuna/LinkedIn sources, cover-letter/outcomes job_id hardening, UI server IPv6 loopback + Origin checks, new test modules).
+
+- F1 ✅ Cover-letter form offered `friendly`/`short`/`medium`/`long`, which the generator rejects; form now offers exactly `_VALID_TONES`/`_VALID_LENGTHS` (defaults `professional`/`standard`). New `tests/test_cover_letter_form.py`.
+- F2 ✅ `/digest` shows a health strip (Gemini quota used/limit, scheduler running or not) and a "Run LLM batch" button posting to `/digest/run-llm-batch`. `handle_llm_queue` now also returns `rpd_limit`. New `tests/test_digest_health_strip.py`.
+- F3 ✅ Removed dead `src/job_hunt_paste_fetch.py`, `src/job_hunt_paste_ui.py` and `handle_search_reed_more` (+ its import and tests). `generate_cover_letter` kept (used by `src/job_hunt_tailoring.py`).
+- F4 ✅ INDEX.md tests table now lists every `tests/*.py`; this entry and a `docs/function_list.md` entry added.
+- ⬜ Pending (Mike's decision, not touched): audit finding 5, swarm code.
+
 
 ## Recovery Baseline — 2026-06-22
 
