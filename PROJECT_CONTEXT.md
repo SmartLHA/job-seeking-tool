@@ -108,6 +108,15 @@ earlier monolithic checkout or unimplemented planning notes.
 - A source registry and a Reed adapter power generic source search/select flows.
   Reed results retain the original posting URL, which is rendered as a safe
   “View original posting / Apply” link on the saved job page.
+- Search results are relevance-bucketed (2026-07-22): a local role-family rule
+  compares the query against each job's title (description as a weak
+  secondary signal) and buckets non-matches into a collapsed "Other results"
+  section instead of dropping them. Results are also deduplicated live
+  (reusing the same identity rule as the CLI's `deduplicate_jobs()`),
+  including across "Show more" pages via a lock-guarded, TTL-expiring
+  per-search state. The keyword field accepts multiple comma-separated terms
+  (chip/tag entry with a no-JS comma fallback), searched against one location
+  + radius and capped at 6 sub-searches to protect free-tier API rate limits.
 - The end-to-end workflow includes review/evaluate, a review queue and batch
   evaluation, board APIs/views, outcome tracking, profile/CV handling, CV tailoring,
   cover-letter generation, and optional manual Gemini analysis.
@@ -117,12 +126,17 @@ earlier monolithic checkout or unimplemented planning notes.
   filtered from all future searches, with a 10-second undo and a "Hidden jobs"
   overlay to unhide later; "Next page" replaces the list instead of appending, and
   shortlisted jobs survive page changes.
-- Evaluation uses seven weighted scoring components, categorical confidence, source
+- Evaluation uses seven weighted scoring components (skills_required 35,
+  skills_preferred 5, experience 20, location/salary/domain/work_mode 10 each;
+  sums to 100 — this is the "Balanced" preset), categorical confidence, source
   quality gating, an ATS readiness score, and F1 per-job keyword matching. F1 is an
   advisory CV-coverage signal only; it never changes Apply / Review / Skip. F1 v2
   adds a re-check (`POST /job/<id>/ats-recheck`) that re-scores the keyword match
   against the latest saved tailored CV and shows `was X% → now Y%`, keeping the
-  master rate as the baseline.
+  master rate as the baseline. Since 2026-07-22, the 7 weights can be switched
+  between 3 named presets (Balanced/Salary-focused/Skills-focused) from My
+  Profile; the choice persists across restart and scores recompute on the
+  next evaluation run. No free-form weight editor in v1.
 - Tracker statuses are `not_applied`, `applied`, `interview`, `offer`, `rejected`,
   and `withdrawn`.
 - Remaining product work is additive: saved searches/daily digest, Gap Coach,
@@ -328,10 +342,11 @@ Before implementation starts, preserve these boundaries:
 ### decision.py
 - convert score + blockers + risks into Apply / Review / Skip
 
-Default decision logic currently proposed:
+Decision logic (implemented in src/job_hunt_decision.py — decide_application()):
 - blocker present -> Skip
 - score >= 80 and no critical risk -> Apply
-- score 65-79 -> Review
+- score >=65 and <80 -> Review
+- critical risk present -> Review (suppresses Apply regardless of score)
 - otherwise -> Skip
 
 ### tailoring.py

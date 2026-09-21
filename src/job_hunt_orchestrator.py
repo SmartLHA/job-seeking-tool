@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from src.job_hunt_evaluation import evaluate_reviewed_job
+from src.job_hunt_scoring_presets import get_active_scoring_policy
 from src.job_hunt_models import CandidateProfile, JobAnalysis, JobPosting
 from src.job_hunt_profile import load_candidate_profile, load_master_cv, resolve_master_cv_path
 from src.job_hunt_reporting import build_evaluated_job_report_row, export_report_csv, export_report_json
@@ -118,7 +119,11 @@ def run_local_evaluation_flow_from_payload(
         )
 
     stored_reviewed_job_path = save_reviewed_job(reviewed_job, layout.root)
-    analysis = evaluate_reviewed_job(profile, reviewed_job)
+    # Slice C (2026-07-21 search/score/filter plan): score with whichever
+    # named weight preset is currently persisted (falls back to Balanced —
+    # i.e. today's DEFAULT_SCORING_POLICY weights — if none was ever chosen).
+    _scoring_policy = get_active_scoring_policy(state_root=layout.root)
+    analysis = evaluate_reviewed_job(profile, reviewed_job, scoring_policy=_scoring_policy)
     stored_analysis_path = save_job_analysis(analysis, layout.root)
 
     report_row = build_evaluated_job_report_row(reviewed_job, analysis)

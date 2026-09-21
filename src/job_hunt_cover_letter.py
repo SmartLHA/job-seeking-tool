@@ -6,6 +6,7 @@ and job posting data.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -14,6 +15,7 @@ if TYPE_CHECKING:
 
 _VALID_TONES = {"professional", "conversational", "concise"}
 _VALID_LENGTHS = {"brief", "standard", "detailed"}
+_SAFE_JOB_ID = re.compile(r"^[A-Za-z0-9._-]+$")
 
 # Sentence counts per paragraph by length
 _LENGTH_SENTENCES = {
@@ -395,8 +397,13 @@ def _filter_grounded_points(points: list[str], profile: CandidateProfile, master
 
 def save_cover_letter(job_id: str, letter: str, profile_id: str) -> Path:
     """Save a cover letter to output/cover_letters/<job_id>.txt and return the path."""
+    if not isinstance(job_id, str):
+        raise ValueError("invalid job_id")
+    normalized_job_id = job_id.strip()
+    if not _SAFE_JOB_ID.match(normalized_job_id) or normalized_job_id in (".", ".."):
+        raise ValueError("invalid job_id")
     output_dir = Path("output") / "cover_letters"
     output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"{job_id}.txt"
+    path = output_dir / f"{normalized_job_id}.txt"
     path.write_text(letter, encoding="utf-8")
     return path

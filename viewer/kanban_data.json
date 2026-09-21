@@ -35,7 +35,7 @@
         {
           "id": "job-009",
           "title": "[JOB-009] Clarify job_hunt_paste_fetch.py status",
-          "description": "job_hunt_paste_fetch.py + job_hunt_paste_ui.py handle URL/text parsing for UI prefill tab, but job-ingestion-api-design.md is current spec. Decide if paste_fetch is active/canonical or superseded by job_sources pipeline.",
+          "description": "the former paste-fetch and paste-UI modules (deleted 2026-09-20) handled URL/text parsing for UI prefill tab, but job-ingestion-api-design.md is current spec. Decide if paste_fetch is active/canonical or superseded by job_sources pipeline.",
           "priority": "medium",
           "tags": [
             "job",

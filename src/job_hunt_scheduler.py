@@ -49,6 +49,7 @@ from src.job_hunt_index import (
     LLMQuotaExhausted,
 )
 from src.job_hunt_evaluation import evaluate_reviewed_job
+from src.job_hunt_scoring_presets import get_active_scoring_policy
 from src.job_hunt_parsing import extract_skills_from_text
 from src.job_hunt_reviewed_input import reviewed_job_from_dict
 from src.job_hunt_storage import (
@@ -162,6 +163,9 @@ def _run_digest_pipeline_locked(
     jobs_llm_queued = jobs_skipped = jobs_already_seen = 0
     newly_queued = 0                                 # global cap counter (across searches)
     errors: list[str] = []
+    # Slice C (2026-07-21 plan): score with whichever named weight preset is
+    # currently persisted, computed once per run (not per-job).
+    _scoring_policy = get_active_scoring_policy(state_root=state_root)
 
     for ss in saved_searches:
         if not getattr(ss, "enabled", True):
@@ -220,7 +224,7 @@ def _run_digest_pipeline_locked(
                 payload["required_skills"] = required
                 payload["preferred_skills"] = preferred
                 job = reviewed_job_from_dict(payload)
-                analysis = evaluate_reviewed_job(profile, job)
+                analysis = evaluate_reviewed_job(profile, job, scoring_policy=_scoring_policy)
             except Exception as exc:
                 _log_skipped(state_root, run_date, source=source_id,
                              saved_search_id=ss.search_id, reason="evaluation_error",
@@ -348,6 +352,10 @@ def _reevaluate_digest_jobs_locked(*, config: Any, profile: Any, db_path: Path) 
     examined = rescored = resurfaced = llm_requeued = dequeued = missing = errored = 0
     requeued = 0   # counts ACTUAL CAS successes against the cap (not stale snapshots)
     errors: list[str] = []
+    # Slice C (2026-07-21 plan): re-score with whichever named weight preset
+    # is currently persisted, so switching presets then clicking "Re-evaluate
+    # all" recomputes every listed job's score under the new weights.
+    _scoring_policy = get_active_scoring_policy(state_root=config.state_root)
 
     for row in rows:
         examined += 1
@@ -361,7 +369,7 @@ def _reevaluate_digest_jobs_locked(*, config: Any, profile: Any, db_path: Path) 
             missing += 1
             continue
         try:
-            analysis = evaluate_reviewed_job(profile, reviewed)
+            analysis = evaluate_reviewed_job(profile, reviewed, scoring_policy=_scoring_policy)
         except Exception as exc:
             errored += 1
             errors.append(f"{job_id}: re-score failed: {exc}")
@@ -480,7 +488,6 @@ def rpd_date_key(now: datetime | None = None) -> str:
     now = now or datetime.now()
     try:
         from zoneinfo import ZoneInfo
-        from datetime import datetime as _dt, timezone as _tz
         # Interpret a naive `now` as local time, then convert to Pacific.
         aware = now if now.tzinfo else now.astimezone()
         return aware.astimezone(ZoneInfo("America/Los_Angeles")).date().isoformat()
@@ -855,14 +862,45 @@ class DigestScheduler:
 
     # -- status snapshot (lock-guarded; read by HTTP threads) --
     def status(self) -> dict:
+        state, reason, enabled = self._describe_state()
         with self._lock:
             return {
+                # NOTE: "running" means a digest RUN is in progress right now, not that
+                # the daemon thread is alive (that is "alive"). Idle between runs is
+                # running=False by design; use "state"/"reason" for the explanation.
                 "running": self._running,
+                "alive": bool(self._thread is not None and self._thread.is_alive()),
+                "enabled": enabled,
+                "state": state,
+                "reason": reason,
                 "last_run": self._last_result.to_dict() if self._last_result else None,
                 "last_run_date": self._last_run_date,
                 "last_error": self._last_error,
                 "next_run": self._compute_next_run_iso(),
             }
+
+    def _describe_state(self) -> tuple[str, str, bool | None]:
+        """Return (state, reason, digest_enabled): state is one of running / disabled /
+        stopped / idle. ``enabled`` mirrors the profile toggle independently of thread
+        liveness; it is None only when the profile cannot be read (genuinely unknown)."""
+        try:
+            profile = self._get_profile()
+            enabled: bool | None = bool(getattr(profile, "digest_enabled", False))
+            run_time = str(getattr(profile, "digest_run_time", ""))
+            profile_error = None
+        except Exception as exc:
+            enabled, run_time, profile_error = None, "", exc
+        if self._thread is None or not self._thread.is_alive():
+            return "stopped", "Scheduler thread is not alive.", enabled
+        if profile_error is not None:
+            return "idle", f"Could not read profile: {profile_error}", None
+        if self._running:
+            return "running", "A digest run is in progress.", enabled
+        if not enabled:
+            return "disabled", "Daily digest is disabled in My Profile.", False
+        if self._last_run_date == datetime.now().date().isoformat():
+            return "idle", f"Idle: today's digest already ran; next run at {run_time} tomorrow.", True
+        return "idle", f"Idle: waiting for today's run at {run_time}.", True
 
     def _compute_next_run_iso(self) -> str | None:
         try:

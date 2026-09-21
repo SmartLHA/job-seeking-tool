@@ -18,7 +18,7 @@ Reed, Adzuna, and LinkedIn are the enabled sources (all live via the generic sou
 - Search uses `GET /search/{source}`; Reed supports a "more" results path.
 - Result selection uses `POST /select/{source}`, preserves a source snapshot, and fetches full Reed detail when available before extracting skills.
 - Users may stage selected results and call `POST /jobs/batch-evaluate` (maximum enforced by the handler), then inspect them through `GET /review-queue`.
-- Manual input uses `POST /prefill` and `POST /job-submit`. URL parsing remains host-allowlisted, robots-aware, SSRF-protected, and fail-closed.
+- Manual input follows **Add & Evaluate**: paste or URL → `POST /prefill` → review/edit → `POST /job-submit`. The Advanced Review form remains available through `POST /evaluate` for reviewed/amended data; both routes use the same validation, raw-input persistence, and scoring pipeline. URL parsing remains host-allowlisted, robots-aware, SSRF-protected, and fail-closed.
 - Parsed values carry field-review provenance. Missing data remains unknown rather than invented.
 
 ### Evaluate and job detail
@@ -35,7 +35,7 @@ Reed, Adzuna, and LinkedIn are the enabled sources (all live via the generic sou
 - The job page exposes decision-gated Tailor CV and Cover Letter actions, backed by `POST /tailor` and `POST /cover-letter`.
 - Tailoring returns summary, promoted evidence, matched keywords, missing keywords, and markdown. Review decisions require manual selection; Skip is blocked.
 - Cover letters require `why_company_text`, accept only supported tone/length values, and use grounded optional points.
-- Profile editing supports structured skills, master-CV parsing, and explicit save feedback.
+- Profile editing separates job-search preferences, experience/evidence, CV upload/content, scoring presets, and digest settings. It supports structured skills, master-CV parsing, and explicit save feedback without rendering local CV filesystem paths.
 - `POST /outcome` enforces the local outcome state machine.
 
 ### Board and tracker
@@ -55,6 +55,5 @@ Reed, Adzuna, and LinkedIn are the enabled sources (all live via the generic sou
 ## Backlog
 
 - Gap Coach, deterministic aggregation over stored analyses.
-- Daily digest and saved searches.
 - *(Adzuna and LinkedIn source adapters — shipped & enabled, 2026-06.)*
 - DOCX/PDF application-package export.

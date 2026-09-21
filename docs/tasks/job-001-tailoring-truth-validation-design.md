@@ -1,6 +1,6 @@
 # JOB-001 — Tailoring Truth Validation Design
 
-**Status:** Draft for Wiser review  
+**Status:** ⚠️ Partially implemented 2026-07-27 — 20 tailoring tests green; broader structural checks remain as documented.
 **Owner:** SilverHand design → Wiser review → Handy build → Scout QA  
 **Date:** 2026-05-13
 
@@ -23,14 +23,14 @@ The validator should return `True` only when:
 
 - The original CV is embedded exactly under `## Base CV`.
 - The tailored CV uses only the approved deterministic sections.
-- Matching evidence claims are supported by `CandidateProfile.skills` or `CandidateProfile.years_experience`.
+- Matching evidence claims are supported by `CandidateProfile.skills`, `CandidateProfile.years_experience`, or a normalised exact entry in `CandidateProfile.achievements` (implemented 2026-07-27).
 - ATS keywords are either `Keywords: None` or a comma-separated subset of `CandidateProfile.skills`.
 - No additional generated candidate-claim sections or unexpected lines exist outside the deterministic template.
 
 ## Non-goals
 
 - Do not introduce LLM generation.
-- Do not expand evidence to achievements or certifications.
+- Certifications remain out of scope. Achievement grounding was added as an intentional 2026-07-27 divergence to close an audited invented-claim path.
 - Do not change the public function signature unless Handy finds a strong reason and reports it before implementation.
 - Do not validate job title/company against candidate profile; those are job metadata, not candidate claims. Keep them constrained to the deterministic `## Role Target` section shape.
 

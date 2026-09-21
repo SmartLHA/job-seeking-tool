@@ -1,3 +1,88 @@
+## 2026-08-10
+
+### Outcome recovery, hidden-result paging, and test reliability
+- **Status:** ✅ COMPLETE — mistaken terminal outcomes can be safely recovered, triage no longer stalls on a fully hidden source page, and test assertions now verify observable behaviour.
+- **Changes:** `reset_terminal_outcome()` preserves the terminal event and appends an auditable `not_applied` reset; `POST /outcome/reset` adds a confirmed Job Detail control. Pagination looks ahead through at most three additional pages only after user-hidden/excluded results remove an entire page; Hidden Jobs now filters title/company locally with a count and empty state.
+- **Tests:** 12 focused pagination/cursor tests passed; 13 hidden-store/UI-contract tests passed; 94 test-quality suites passed; real-browser Hidden Jobs filter smoke passed (1 test, no page errors). Full local suite: **1020 passed, 5 skipped**.
+- **Coverage:** Added test-only `coverage>=7,<8` to `requirements-dev.txt` and generated a fresh full-suite baseline: **81%** across the checkout. The low aggregate is dominated by the separate `viewer/` application; the historical 14-function Job Seeking Tool snapshot is superseded. Added default-reset-reason coverage for the new outcome recovery path.
+
+## 2026-07-29
+
+### SSF-F3 — real-browser chip interaction coverage
+- **Status:** ✅ COMPLETE — the search keyword chip widget was exercised in a real headless browser.
+- **Changes:** `tests/test_ui.py` now verifies adding chips with Enter and comma, removing a chip with its remove button, and Backspace removal from an empty entry. Each step asserts the hidden submitted `keywords` input remains synchronized.
+- **Key facts:** The browser test passed under the system Python browser runtime with no page errors. The project virtual environment still skips browser tests when Playwright is unavailable, while its full non-browser baseline remains green.
+
+## 2026-07-28
+
+### Search pagination correctness — Other results and per-keyword cursors
+- **Status:** ✅ COMPLETE — later pages preserve relevance buckets and paginate each keyword independently.
+- **Changes:** `handle_source_search_more()` now repeats the initial relevance/dedup/filter pipeline for both main and Other results. Multi-keyword continuation carries a bounded cursor vector, stops querying exhausted terms, and keeps failed terms retryable. Shared pagination JavaScript replaces both result buckets while preserving selected cards.
+- **Tests:** Added later-page Other-results and uneven multi-keyword cursor regressions; the focused search suites passed **15 tests**.
+
+### Clean full-test baseline restored
+- **Status:** ✅ COMPLETE — **1010 passed, 3 skipped** using the project virtual environment with loopback enabled.
+- **Motivation:** The prior baseline was blocked by a stale digest route fixture, while system Python and the restricted sandbox created misleading dependency and socket failures.
+- **Changes:** `tests/test_digest_pipeline.py` now marks its registered `stub` source as enabled only within the route test before it persists the fixture saved search. Production source validation remains unchanged.
+- **Key facts:** Use `PYTHONDONTWRITEBYTECODE=1 venv/bin/python -m pytest tests -q -p no:cacheprovider` for the authoritative local baseline; the system interpreter lacks declared test dependencies and the restricted sandbox cannot bind loopback sockets.
+
+## 2026-07-27
+
+### Documentation reconciliation after Critical remediation
+- **Status:** ✅ COMPLETE — product, flow, tailoring, cover-letter, and Board View specifications now reflect the verified implementation.
+- **Changes:** Documented the shared Add & Evaluate/Advanced Review intake pipeline, read-only Board View, achievement grounding, safe output job IDs, filename-only responses, and server-side CV path handling.
+- **Key facts:** Documentation records current behaviour; historical design context is explicitly labelled where retained.
+
+### Guided manual intake and sectioned Profile follow-up
+- **Status:** ✅ COMPLETE — UI suite passed with the local loopback server; handler/security/tailoring focused suites also green.
+- **Changes:** `src/ui_handlers.py` now centralises Add Job and Advanced Review in `_run_intake_evaluation()`; `src/ui_render.py` presents the guided Add & Evaluate labels and Profile preference/evidence sections, and keeps CV filesystem references server-side. `tests/test_ui.py` submits the browser Add Job journey and verifies the reviewed job plus analysis were persisted.
+- **Key facts:** `POST /job-submit` and `POST /evaluate` remain supported for compatibility; neither changes the scoring or stored-job contract.
+
+### Critical audit remediation — UI flow, truth validation, local security, and board view
+- **Status:** ✅ COMPLETE — exact-current Critical regression suite: **167 passed**.
+- **Motivation:** The audit found blockers in the Add Job flow and router startup, a CV-claim validation gap, exposed local-server assumptions, mobile layout defects, and an under-specified Board View.
+- **Changes:**
+  - `src/ui_render.py` — restored Add Job tab activation; added responsive small-screen layout rules; added `render_board_page()` with escaped job cards, stage columns, counts, empty states, and accessible links.
+  - `src/job_hunt_tailoring.py` — `Achievement:` claims now fail closed unless they normalise to a declared `CandidateProfile.achievements` entry.
+  - `src/ui_routes.py` — local server accepts loopback hosts only; enforces a 1 MiB POST cap before body reads; browser POSTs require same loopback host/port Origin or Referer; errors are generic to clients; IPv6 URLs are bracketed.
+  - `viewer/swarm_router.py` / `viewer/viewer_server.py` — replaced import-time router setup with idempotent `initialize_swarm_router()` called in server startup before binding.
+  - Tests — added browser smoke coverage for Add Job plus mobile tabs, and focused security, board, route, tailoring, and router-startup regressions (`test_ui_security.py`, `test_ui_routes_uncovered.py`, `test_ui_handlers_uncovered.py`).
+- **Key facts:** Full suite result: **1024 passed, 1 skipped, 10 failed**. The failures are unrelated environment/pre-existing issues: missing `beautifulsoup4`, missing `python-dotenv`, and an unregistered digest test `stub` source. The chip add/remove click interaction remains an explicit open follow-up (`SSF-F3`).
+
+## 2026-07-22
+
+### Search/Score/Filter improvements — relevance filter, live-search dedup, scoring presets, multi-keyword search
+- **Status:** ✅ COMPLETE — see `docs/tasks/2026-07-21-search-score-filter-plan.md` (STATUS block added this session; no divergences from the locked decisions).
+- **Motivation:** Search results included clearly-unrelated titles (e.g. "Store Manager" for a "Business Analysis" search), duplicate cards appeared (including after "Show more"), the 7 scoring weights were fixed with no way to reflect Mike's real priorities, and the keyword/location/exclude fields only accepted one raw value each.
+- **Changes (four slices, one shippable build):**
+  - **Slice A — Local relevance filter (`src/job_sources/relevance.py`, NEW):** role-family rule — tokens normalised, a coarse suffix-stem collapses grammatical/derivational variants (analyst/analysts/analysis/analyses → `analy`), and an acronym is derived from the query's own significant words (e.g. "Business Analysis" → "ba") so common abbreviations are recognised without a hardcoded alias table. Title is the primary signal; description is a weak, stricter (unstemmed) secondary signal. `bucket_jobs_by_relevance(jobs, query)` never hard-drops — it splits into `(matches, other)`, wired into `handle_source_search` before dedup.
+  - **Slice B — Live-search dedup (`src/job_sources/search_state.py`, NEW; `src/job_sources/dedup.py`, CHANGED):** `dedup.py`'s `_identity_fields`/`is_duplicate_job` generalized to work on BOTH the CLI `NormalizedJob` schema and the leaner UI search-result dict (via `dict.get` fallbacks) — `deduplicate_jobs()` intent unchanged. `search_state.py` tracks per-search "seen" keys across `/search/{source}/more` pages: a random `uuid4()` search-id minted on the first page (`start_search`), `threading.Lock`-guarded state, TTL expiry + hard cap (`_prune_locked`) so memory never grows unbounded on a long-running `ThreadingHTTPServer`. Wired into `handle_source_search` (dedup + `start_search` reset) and `handle_source_search_more`.
+  - **Slice C — Named scoring-weight presets (`src/job_hunt_scoring_presets.py`, NEW):** 3 fixed presets only (Mike's locked decision, no free-form editor) — Balanced (today's default 35/5/20/10/10/10/10, unchanged), Salary-focused, Skills-focused; each sums to 100. Atomic JSON persistence (temp file + `fsync` + `os.replace`); missing/corrupt file falls back to Balanced without crashing. New `POST /scoring-preset` route (`ui_handlers.handle_set_scoring_preset`) + a "Scoring weights" preset section in `render_profile_page` (`ui_render.py`). `job_hunt_orchestrator.py:125` and `job_hunt_scheduler.py:168,358` now call `get_active_scoring_policy(...)` so the active preset governs the next evaluation/digest run.
+  - **Slice D — Multi-keyword search + chip entry (`src/ui_chip_field.py`, NEW):** `_parse_keyword_terms`/`_run_multi_keyword_search` (`ui_handlers.py`) run one search per keyword term against the SAME location/radius (no multi-location cross-product, per Mike's locked decision), capped at 6 sub-searches to protect free-tier Reed/Adzuna rate limits, surfaced to the user when capped. `ui_chip_field.py` is a vanilla-JS chip/tag widget as progressive enhancement over a real name-carrying `<input>` — no-JS comma-separated submission still works, parsed by the same `_parse_keyword_terms`/`_parse_exclude_terms`. Wired into `_render_shared_search_form` for keywords/exclude/location.
+  - Pipeline order (fetch → normalise → relevance-bucket → dedup → score → sort → paginate) implemented in `handle_source_search`; "Other results" rendered as a collapsed `<details>` bucket in `_render_search_jobs_tab`.
+  - **Tests (all green):** `tests/test_search_dedup.py` (5), `tests/test_relevance.py` (8), `tests/test_relevance_ui.py` (2), `tests/test_scoring_presets.py` (9), `tests/test_scoring_preset_ui.py` (3), `tests/test_multi_keyword_search.py` (6).
+- **Key facts:** Full suite (project venv): 1005 passed, 2 failed (both pre-existing/unrelated — digest run-now route test and the known tailor-CV test), 1 skipped — independently verified, zero defects. New route this session: `POST /scoring-preset`. Design spec `docs/tasks/2026-07-21-search-score-filter-plan.md` marked ✅ Implemented 2026-07-22. Known follow-ups (not blocking): "Show more" doesn't carry the Other-results bucket forward; multi-keyword pagination shares one cursor across keywords; browser click-test of chip add/remove not yet done (see `PROJECT_TODO.md` Follow-ups).
+
+## 2026-07-17
+
+### LinkedIn adapter — 4 MEDIUM code-review findings fixed
+- **Status:** ✅ COMPLETE — 44 tests green (`tests/test_linkedin_source.py`)
+- **Motivation:** Follow-up to the 2026-07-11 HIGH-severity review: the same LinkedIn adapter review flagged 4 MEDIUM-severity correctness/robustness issues; all fixed this session.
+- **Changes:**
+  - `src/job_sources/linkedin_source.py` — `salary_min_gbp`/`salary_max_gbp` now consistently `None` (previously a mix of `None` and `""`) in both `_parse_search_html` and `select_handler`; `search_handler` now always caches the result via `_cache_set` — including empty result sets — so repeated zero-result queries no longer re-hit the scraper; `_cache_get` now deletes the stale row on a TTL miss instead of leaving it in `linkedin_search_cache`; `normalize_search_params` no longer crashes on `{"keywords": None}` (uses `raw.get("keywords") or ""` before slicing, matching the existing `location` guard).
+  - `tests/test_linkedin_source.py` — +4 tests: `test_cache_ttl_expired_triggers_new_http_request` (stale row deleted on TTL miss → new fetch), `test_render_results_error_content_is_escaped` (error-HTML escaping), `test_normalize_search_params_keywords_none_does_not_crash`, `test_normalize_search_params_location_none_uses_default`.
+- **Key facts:** No change to scraping selectors, scoring, or the Apply/Review/Skip decision — all four are typing/caching/input-handling robustness fixes. Test count 40 → 44.
+
+## 2026-07-11
+
+### LinkedIn adapter security hardening — 4 HIGH code-review findings fixed
+- **Status:** ✅ COMPLETE — 40 tests green (`tests/test_linkedin_source.py`)
+- **Motivation:** Full code review of the LinkedIn adapter identified 4 HIGH-severity issues; all fixed in the same session.
+- **Changes:**
+  - `src/job_sources/linkedin_source.py` — `_render_cards`: validate URL scheme before rendering `<a href>` (strips `javascript:` and any non-http/https URL); `_is_blocked`: add `linkedin.com/authwall` alongside `linkedin.com/login` so the auth-wall redirect also raises `LinkedInBlockedError`; `select_handler`: reject any non-empty submitted URL that does not start with `https://www.linkedin.com/` (tampered-form protection).
+  - `tests/test_linkedin_source.py` — +24 tests: `test_javascript_url_not_rendered_as_link`; `test_authwall_raises_blocked_error`; 18 `select_handler` tests (happy path + all default-form-values keys present, wrong source, field-length limits for title/url, work_mode/employment_type normalisation incl. `unknown→""`, lazy fetch triggered/skipped/failed, `config=None` and `state_root` path sync, `source_ref` url-vs-job_id fallback, `job_id` slug format); 4 URL origin tests (non-LinkedIn http/https rejected, empty accepted, valid LinkedIn URL accepted).
+- **Key facts:** No change to scraping logic, scoring, or cache behaviour — all changes are input validation and output sanitisation. Test count 16 → 40.
+
 ## 2026-07-09
 
 ### A-F grade badge with decision-aware and culture caps (career-ops absorption slice 2)

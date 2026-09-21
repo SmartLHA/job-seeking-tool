@@ -629,7 +629,7 @@ def test_post_qualitative_force_versions_done_assessment(tmp_path: Path, monkeyp
 
 
 def test_get_home_page_defaults_to_search_jobs_shell(tmp_path: Path) -> None:
-    with _running_ui_server(tmp_path) as (base_url, _config):
+    with _running_ui_server(tmp_path) as (base_url, config):
         status, body = _http_get(f"{base_url}/")
 
     assert status == 200
@@ -950,7 +950,7 @@ def test_get_evaluate_tab_returns_existing_form_and_history_panel(tmp_path: Path
         status, body = _http_get(f"{base_url}/?tab=evaluate")
 
     assert status == 200
-    assert "Evaluate a job" in body
+    assert "Advanced review" in body
     assert "Input method used to enter this job" in body
     assert "Saved source type for this reviewed job" in body
     assert "Original pasted/context text (reference only)" in body
@@ -965,8 +965,237 @@ def test_get_manual_fallback_tab_keeps_paste_and_url_flow(tmp_path: Path) -> Non
     assert "Manual Fallback" in body
     assert "Paste Text" in body
     assert "Job URL" in body
-    assert "Paste a job advert or enter a posting URL" in body
+    assert "Add &amp; Evaluate a job" in body
+    assert "1. Add:" in body and "3. Evaluate:" in body
     assert 'id="tab-add_job" class="tab-content"' in body
+
+
+def test_add_job_parse_and_preview_browser_smoke(tmp_path: Path) -> None:
+    try:
+        from playwright.sync_api import Error as PlaywrightError
+        from playwright.sync_api import sync_playwright
+    except ModuleNotFoundError:
+        from unittest import SkipTest
+
+        raise SkipTest("Playwright is not installed; browser smoke test was not run")
+
+    with _running_ui_server(tmp_path) as (base_url, config):
+        with sync_playwright() as playwright:
+            try:
+                browser = playwright.chromium.launch(headless=True)
+            except PlaywrightError as exc:
+                from unittest import SkipTest
+
+                raise SkipTest(f"Playwright Chromium is unavailable: {exc}") from exc
+
+            page_errors: list[str] = []
+            page = browser.new_page()
+            page.on("pageerror", lambda error: page_errors.append(str(error)))
+            try:
+                page.goto(f"{base_url}/?tab=add_job")
+                page.locator("#add-job-text").fill(
+                    "Job title: Business Analyst\n"
+                    "Company: Example Ltd\n"
+                    "Location: Chester\n"
+                    "Skills: stakeholder management, SQL"
+                )
+                page.locator("#add-job-parse-btn").click()
+                page.locator("#add-job-review-step").wait_for(state="visible")
+
+                assert page.locator('#add-job-form input[name="job_title"]').input_value() == "Business Analyst"
+                assert page.locator('#add-job-form input[name="company"]').input_value() == "Example Ltd"
+                assert page_errors == []
+                page.locator("#add-job-submit-btn").click()
+                page.wait_for_url("**/job/**")
+                job_id = urllib.parse.urlparse(page.url).path.rsplit("/", 1)[-1]
+                assert "Business Analyst" in page.locator("body").inner_text()
+                assert load_reviewed_job(job_id, config.state_root).company == "Example Ltd"
+                assert load_job_analysis(job_id, config.state_root).job_id == job_id
+            finally:
+                browser.close()
+
+
+def test_search_keyword_chips_add_remove_and_backspace_browser_smoke(tmp_path: Path) -> None:
+    try:
+        from playwright.sync_api import Error as PlaywrightError
+        from playwright.sync_api import sync_playwright
+    except ModuleNotFoundError:
+        from unittest import SkipTest
+
+        raise SkipTest("Playwright is not installed; browser smoke test was not run")
+
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        with sync_playwright() as playwright:
+            try:
+                browser = playwright.chromium.launch(headless=True)
+            except PlaywrightError as exc:
+                from unittest import SkipTest
+
+                raise SkipTest(f"Playwright Chromium is unavailable: {exc}") from exc
+
+            page_errors: list[str] = []
+            page = browser.new_page()
+            page.on("pageerror", lambda error: page_errors.append(str(error)))
+            try:
+                page.goto(f"{base_url}/?tab=search")
+                keywords = page.locator('label.chip-field:has(input[name="keywords"])')
+                assert keywords.count() == 1
+                entry = keywords.locator('input[type="text"]:visible')
+                real_input = keywords.locator('input[name="keywords"]')
+                assert entry.count() == 1
+                assert real_input.count() == 1
+
+                entry.fill("Business Analyst")
+                entry.press("Enter")
+                assert real_input.input_value() == "Business Analyst"
+
+                entry.fill("Data Analyst")
+                entry.press(",")
+                assert real_input.input_value() == "Business Analyst, Data Analyst"
+
+                remove_buttons = keywords.get_by_role("button", name="Remove")
+                assert remove_buttons.count() == 2
+                remove_buttons.nth(0).click()
+                assert real_input.input_value() == "Data Analyst"
+
+                entry.press("Backspace")
+                assert real_input.input_value() == ""
+                assert page_errors == []
+            finally:
+                browser.close()
+
+
+def test_hidden_jobs_filter_browser_smoke(tmp_path: Path, monkeypatch) -> None:
+    try:
+        from playwright.sync_api import Error as PlaywrightError
+        from playwright.sync_api import expect, sync_playwright
+    except ModuleNotFoundError:
+        from unittest import SkipTest
+
+        raise SkipTest("Playwright is not installed; browser smoke test was not run")
+
+    def fake_fetch_reed_jobs(keyword, location, max_results, *, skip=0, save_raw=True):
+        return [{
+            "jobId": 1, "jobTitle": "Business Analyst", "employerName": "Example Co",
+            "locationName": "London", "minimumSalary": 50000, "maximumSalary": 60000,
+            "contractType": "Permanent", "jobUrl": "https://reed.example/jobs/1",
+            "jobDescription": "<p>Analysis role.</p>", "fullTime": True,
+        }]
+
+    monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
+    from src.job_hunt_not_interested import hide_jobs
+
+    with _running_ui_server(tmp_path) as (base_url, config):
+        hide_jobs(
+            [
+                {"source": "reed", "source_job_id": "hidden-1", "title": "Business Analyst", "company": "Acme Partners"},
+                {"source": "reed", "source_job_id": "hidden-2", "title": "Delivery Manager", "company": "Bravo Ltd"},
+            ],
+            state_root=config.state_root,
+        )
+        with sync_playwright() as playwright:
+            try:
+                browser = playwright.chromium.launch(headless=True)
+            except PlaywrightError as exc:
+                from unittest import SkipTest
+
+                raise SkipTest(f"Playwright Chromium is unavailable: {exc}") from exc
+
+            page_errors: list[str] = []
+            page = browser.new_page()
+            page.on("pageerror", lambda error: page_errors.append(str(error)))
+            try:
+                query = urllib.parse.urlencode({"keywords": "Business Analyst", "locationName": "London"})
+                page.goto(f"{base_url}/search/reed?{query}")
+                page.get_by_role("button", name=re.compile(r"Hidden jobs")).click()
+                page.locator("#jst-hidden-filter").fill("acme")
+                # The hidden list loads via fetch after the modal opens; use retrying
+                # assertions so the test does not race the network response.
+                expect(page.locator("#jst-hidden-filter-count")).to_have_text("1 of 2 hidden jobs")
+                hidden_text = page.locator("#jst-hidden-list").inner_text()
+                assert "Business Analyst" in hidden_text
+                assert "Acme Partners" in hidden_text
+                assert "Delivery Manager" not in hidden_text
+
+                page.locator("#jst-hidden-filter").fill("no match")
+                expect(page.locator("#jst-hidden-list")).to_have_text("No hidden jobs match this filter.")
+                assert page_errors == []
+            finally:
+                browser.close()
+
+
+def test_shared_shell_has_no_mobile_document_overflow(tmp_path: Path) -> None:
+    try:
+        from playwright.sync_api import Error as PlaywrightError
+        from playwright.sync_api import sync_playwright
+    except ModuleNotFoundError:
+        from unittest import SkipTest
+
+        raise SkipTest("Playwright is not installed; browser smoke test was not run")
+
+    pages = [
+        ("/?tab=search", "Find Jobs"),
+        ("/?tab=add_job", "Add & Evaluate"),
+        ("/?tab=evaluate", "Advanced Review"),
+        ("/board/view", "Board View"),
+        ("/digest", "Digest"),
+        ("/profile", "My Profile"),
+    ]
+    with _running_ui_server(tmp_path) as (base_url, _config):
+        with sync_playwright() as playwright:
+            try:
+                browser = playwright.chromium.launch(headless=True)
+            except PlaywrightError as exc:
+                from unittest import SkipTest
+
+                raise SkipTest(f"Playwright Chromium is unavailable: {exc}") from exc
+
+            page = browser.new_page(viewport={"width": 390, "height": 844})
+            try:
+                for path, nav_label in pages:
+                    page.goto(f"{base_url}{path}")
+                    page.locator(".main-content").wait_for(state="visible")
+                    assert page.get_by_role("navigation", name="Main navigation").is_visible()
+                    active_nav = page.get_by_role("link", name=nav_label, exact=True)
+                    active_nav.scroll_into_view_if_needed()
+                    assert active_nav.is_visible()
+                    dimensions = page.evaluate(
+                        """() => ({
+                            documentScrollWidth: document.documentElement.scrollWidth,
+                            documentClientWidth: document.documentElement.clientWidth,
+                            bodyScrollWidth: document.body.scrollWidth,
+                            mainWidth: document.querySelector('.main-content')?.getBoundingClientRect().width,
+                            mainHeight: document.querySelector('.main-content')?.getBoundingClientRect().height,
+                            boardScrollClientWidth: document.querySelector('.board-scroll')?.clientWidth ?? null,
+                            boardScrollWidth: document.querySelector('.board-scroll')?.scrollWidth ?? null,
+                            clippedControls: Array.from(document.querySelectorAll(
+                                '.main-content .panel, .main-content input, .main-content textarea, ' +
+                                '.main-content select, .main-content button'
+                            )).filter((element) => {
+                                const rect = element.getBoundingClientRect();
+                                return rect.width > 0 && rect.height > 0 &&
+                                    (rect.left < -1 || rect.right > document.documentElement.clientWidth + 1);
+                            }).map((element) => element.tagName + '.' + element.className),
+                        })"""
+                    )
+                    assert dimensions["documentScrollWidth"] <= dimensions["documentClientWidth"], (
+                        path,
+                        dimensions,
+                    )
+                    assert dimensions["bodyScrollWidth"] <= dimensions["documentClientWidth"], (
+                        path,
+                        dimensions,
+                    )
+                    assert 0 < dimensions["mainWidth"] <= 390, (path, dimensions)
+                    assert dimensions["mainHeight"] > 0, (path, dimensions)
+                    assert dimensions["clippedControls"] == [], (path, dimensions)
+                    if path == "/board/view":
+                        assert dimensions["boardScrollWidth"] > dimensions["boardScrollClientWidth"], (
+                            path,
+                            dimensions,
+                        )
+            finally:
+                browser.close()
 
 
 def test_get_unknown_home_tab_falls_back_to_search(tmp_path: Path) -> None:
@@ -1007,7 +1236,7 @@ def test_post_evaluate_validation_failure_re_renders_home_with_error(tmp_path: P
 
         assert status == 200
         assert "job_title is required" in body
-        assert "Evaluate a job" in body
+        assert "Advanced review" in body
         assert load_recent_job_history(config.state_root) == []
 
 
@@ -1174,6 +1403,32 @@ def test_post_outcome_invalid_transition_shows_error_feedback(tmp_path: Path) ->
     assert status == 200
     assert "Outcome update failed:" in body
     assert 'class="panel flash error"' in body
+
+
+def test_post_outcome_reset_preserves_terminal_history(tmp_path: Path) -> None:
+    with _running_ui_server(tmp_path) as (base_url, config):
+        _http_post(f"{base_url}/evaluate", _valid_evaluate_form(job_id="job-ui-reset-001"))
+        _http_post(
+            f"{base_url}/outcome",
+            {"job_id": "job-ui-reset-001", "status": "applied", "notes": "Applied"},
+        )
+        _http_post(
+            f"{base_url}/outcome",
+            {"job_id": "job-ui-reset-001", "status": "rejected", "notes": "Original outcome"},
+        )
+
+        status, body = _http_post(
+            f"{base_url}/outcome/reset",
+            {"job_id": "job-ui-reset-001", "reason": "Selected the wrong job"},
+        )
+        saved_outcome = load_application_outcome("job-ui-reset-001", config.state_root)
+
+    assert status == 200
+    assert "Outcome reset to not applied." in body
+    assert "Previous outcome remains in history." in body
+    assert saved_outcome.status == "not_applied"
+    assert [event.status for event in saved_outcome.history] == ["not_applied", "applied", "rejected", "not_applied"]
+    assert saved_outcome.history[-1].notes == "Reset from rejected. Reason: Selected the wrong job"
 
 
 def _http_post_json(url: str, payload: dict) -> tuple[int, dict]:
@@ -1518,6 +1773,9 @@ def test_post_tailor_returns_tailored_cv_result_for_apply_job(tmp_path: Path) ->
     assert "missing" in data
     assert "markdown" in data
     assert "saved_path" in data
+    assert not data["saved_path"].startswith("/")
+    assert "/" not in data["saved_path"]
+    assert "\\" not in data["saved_path"]
     assert isinstance(data["summary"], str)
     assert isinstance(data["promoted"], list)
     assert isinstance(data["matched"], list)
@@ -1553,6 +1811,29 @@ def test_post_tailor_returns_404_for_unknown_job_id(tmp_path: Path) -> None:
     assert status == 404
 
 
+def test_cv_read_errors_do_not_disclose_local_path(tmp_path: Path) -> None:
+    hidden_path = "/private/hidden-candidate-documents/master_cv.txt"
+    with _running_ui_server(tmp_path) as (base_url, config):
+        profile_data = json.loads(config.profile_path.read_text(encoding="utf-8"))
+        profile_data.pop("master_cv_text", None)
+        profile_data["master_cv_ref"] = hidden_path
+        config.profile_path.write_text(json.dumps(profile_data), encoding="utf-8")
+        _write_apply_job_state(config.state_root, "cv-path-error-001")
+
+        tailor_status, tailor_data = _http_post_json(
+            f"{base_url}/tailor", {"job_id": "cv-path-error-001"}
+        )
+        cover_status, cover_data = _http_post_json(
+            f"{base_url}/cover-letter",
+            {"job_id": "cv-path-error-001", "why_company_text": "Strong product fit."},
+        )
+
+    assert tailor_status == 422
+    assert cover_status == 422
+    assert hidden_path not in tailor_data["error"]
+    assert hidden_path not in cover_data["error"]
+
+
 # ---------------------------------------------------------------------------
 # POST /cover-letter route tests
 # ---------------------------------------------------------------------------
@@ -1572,6 +1853,9 @@ def test_post_cover_letter_returns_letter_for_apply_job(tmp_path: Path) -> None:
     assert "letter" in data
     assert "word_count" in data
     assert "saved_path" in data
+    assert not data["saved_path"].startswith("/")
+    assert "/" not in data["saved_path"]
+    assert "\\" not in data["saved_path"]
     assert isinstance(data["letter"], str)
     assert len(data["letter"]) > 0
     assert isinstance(data["word_count"], int)
@@ -1875,6 +2159,40 @@ def test_post_save_profile_skills_json_takes_precedence_over_comma(tmp_path: Pat
     text = saved.read_text(encoding="utf-8")
     assert "SQL" in text and "Python" in text
     assert "OldSkillA" not in text and "OldSkillB" not in text
+
+
+def test_profile_sections_hide_local_cv_path() -> None:
+    from src.ui_render import ProfilePageViewModel, render_profile_page
+
+    local_cv_path = "/private/example/profile/docs/master_cv.txt"
+    body = render_profile_page(
+        profile_id="candidate",
+        vm=ProfilePageViewModel(
+            has_profile=True,
+            name="Test Candidate",
+            target_roles=["Business Analyst"],
+            locations=["Chester"],
+            remote_preference="hybrid",
+            salary_floor_gbp=50000,
+            right_to_work_uk=True,
+            skills=[],
+            years_experience=5,
+            industries=[],
+            certifications=[],
+            achievements=[],
+            master_cv_ref=local_cv_path,
+            master_cv_text="CV text",
+        ),
+        parsed_cv_text=None,
+        parsed_filename=None,
+        errors={},
+        form_values=None,
+    )
+
+    assert local_cv_path not in body
+    assert "master_cv.txt" in body
+    assert "Job search preferences" in body
+    assert "Experience and evidence" in body
 
 
 def test_job_page_renders_ats_keyword_match_panel(tmp_path: Path) -> None:

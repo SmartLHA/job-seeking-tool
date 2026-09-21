@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 from src.ui_utils import escape, format_salary_range
 from src.ui_state import _HOME_TABS, _PAGE_UPDATED
@@ -20,6 +21,155 @@ def _normalize_home_tab(tab: str | None) -> str:
     if tab in _HOME_TABS:
         return tab
     return "search"
+
+
+_BOARD_COLUMNS = (
+    ("not_applied", "Not applied"),
+    ("applied", "Applied"),
+    ("interview", "Interview"),
+    ("offer", "Offer"),
+    ("rejected", "Rejected"),
+    ("withdrawn", "Withdrawn"),
+)
+
+
+_BOARD_CSS = """
+<style>
+  .board-page { max-width: none; }
+  .board-header { display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap; }
+  .board-header p { margin-bottom:0; }
+  .board-stats {
+    display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:12px;margin:18px 0;
+  }
+  .board-stat {
+    background:var(--surface-sunk);border:1px solid var(--line);border-radius:var(--r-md);padding:12px 14px;
+  }
+  .board-stat-value { display:block;font-size:20px;font-weight:800;color:var(--ink);line-height:1.2; }
+  .board-stat-label { display:block;margin-top:3px;font-size:11px;font-weight:700;letter-spacing:.07em;
+                      text-transform:uppercase;color:var(--ink-faint); }
+  .board-scroll {
+    width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;padding-bottom:8px;
+    -webkit-overflow-scrolling:touch;overscroll-behavior-inline:contain;
+  }
+  .board-grid {
+    display:grid;grid-template-columns:repeat(6,minmax(230px,1fr));gap:12px;min-width:1450px;
+  }
+  .board-column {
+    min-width:0;background:var(--surface-sunk);border:1px solid var(--line);
+    border-radius:var(--r-lg);padding:12px;
+  }
+  .board-column-heading {
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    margin:0 0 12px;font-size:13px;
+  }
+  .board-column-count {
+    display:inline-flex;align-items:center;justify-content:center;min-width:25px;height:25px;padding:0 7px;
+    border:1px solid var(--line);border-radius:999px;background:var(--surface-2);
+    color:var(--ink-soft);font-size:11px;font-weight:700;
+  }
+  .board-card {
+    margin-bottom:10px;background:var(--surface-2);border:1px solid var(--line);
+    border-radius:var(--r-md);box-shadow:var(--shadow-sm);
+  }
+  .board-card:last-child { margin-bottom:0; }
+  .board-card-link { display:block;padding:13px;color:inherit;text-decoration:none; }
+  .board-card-link:hover { text-decoration:none;border-radius:inherit;background:var(--surface); }
+  .board-card-title { margin:0 0 6px;font-size:14px;line-height:1.35;color:var(--ink);overflow-wrap:anywhere; }
+  .board-card-company { margin:0;color:var(--ink-soft);font-size:12.5px;line-height:1.4;overflow-wrap:anywhere; }
+  .board-card-meta { display:flex;gap:6px;flex-wrap:wrap;margin-top:10px; }
+  .board-card-meta .badge { max-width:100%;overflow-wrap:anywhere;white-space:normal; }
+  .board-empty {
+    min-height:96px;display:flex;align-items:center;justify-content:center;text-align:center;
+    border:1px dashed var(--line);border-radius:var(--r-md);padding:14px;
+    color:var(--ink-faint);font-size:12.5px;line-height:1.45;
+  }
+  @media (max-width: 640px) {
+    .board-page { padding-left:12px;padding-right:12px; }
+    .board-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .board-scroll { max-width:calc(100vw - 24px); }
+  }
+</style>
+"""
+
+
+def render_board_page(board: dict[str, Any], *, model_label: str = "") -> str:
+    """Render the board payload as a read-only, accessible kanban page."""
+    columns = board.get("columns") if isinstance(board, dict) else {}
+    columns = columns if isinstance(columns, dict) else {}
+    stats = board.get("stats") if isinstance(board, dict) else {}
+    stats = stats if isinstance(stats, dict) else {}
+
+    stat_items = (
+        ("Active", stats.get("active", 0)),
+        ("Interviews", stats.get("interviews", 0)),
+        ("Offers", stats.get("offers", 0)),
+        ("Response rate", f"{float(stats.get('response_rate', 0) or 0) * 100:.0f}%"),
+    )
+    stats_html = "".join(
+        '<div class="board-stat">'
+        f'<span class="board-stat-value">{escape(value)}</span>'
+        f'<span class="board-stat-label">{escape(label)}</span>'
+        "</div>"
+        for label, value in stat_items
+    )
+
+    column_html: list[str] = []
+    for status, label in _BOARD_COLUMNS:
+        jobs = columns.get(status, [])
+        jobs = jobs if isinstance(jobs, list) else []
+        cards: list[str] = []
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            job_id = str(job.get("job_id") or "")
+            title = job.get("job_title") or "Untitled job"
+            company = job.get("company") or "Company not provided"
+            location = job.get("location")
+            score = job.get("match_score")
+            metadata = ""
+            if location not in (None, ""):
+                metadata += f'<span class="badge">{escape(location)}</span>'
+            if score not in (None, ""):
+                metadata += f'<span class="badge mono">Score {escape(score)}</span>'
+            meta_html = f'<div class="board-card-meta">{metadata}</div>' if metadata else ""
+            cards.append(
+                '<article class="board-card">'
+                f'<a class="board-card-link" href="/job/{quote(job_id, safe="")}">'
+                f'<h3 class="board-card-title">{escape(title)}</h3>'
+                f'<p class="board-card-company">{escape(company)}</p>'
+                f"{meta_html}"
+                "</a></article>"
+            )
+        cards_html = "".join(cards)
+        if not cards_html:
+            cards_html = f'<div class="board-empty">No jobs in {escape(label.lower())}.</div>'
+        heading_id = f"board-column-{status}-title"
+        column_html.append(
+            f'<section class="board-column" data-status="{status}" aria-labelledby="{heading_id}">'
+            f'<h2 class="board-column-heading" id="{heading_id}">'
+            f"<span>{escape(label)}</span>"
+            f'<span class="board-column-count" aria-label="{len(cards)} jobs">{len(cards)}</span>'
+            "</h2>"
+            f"{cards_html}"
+            "</section>"
+        )
+
+    body = (
+        '<div class="app-shell">'
+        f'{_render_sidebar("board")}'
+        '<main class="main-content">'
+        '<div class="content-inner board-page">'
+        '<section class="panel">'
+        '<div class="board-header"><div>'
+        '<h1>Board View</h1>'
+        '<p>Track application progress. Update status from each job detail page.</p>'
+        "</div></div>"
+        f'<section class="board-stats" aria-label="Board summary">{stats_html}</section>'
+        '<div class="board-scroll" role="region" aria-label="Application board" tabindex="0">'
+        f'<div class="board-grid">{"".join(column_html)}</div>'
+        "</div></section></div></main></div>"
+    )
+    return render_page("Board View — Job Seeking Tool", _BOARD_CSS + body, model_label=model_label)
 
 
 def render_home_page(
@@ -61,8 +211,8 @@ def render_home_page(
           <div id="tab-evaluate" class="tab-content"{' hidden' if tab != 'evaluate' else ''}>
             {evaluate_notice_html}
             <section class="panel">
-              <h2>Evaluate a job</h2>
-              <p>Fill in the fields below to save and score a job against your profile. <strong>Reviewed description</strong> is the version used for scoring.</p>
+              <h2>Advanced review</h2>
+              <p>Use this for an already-reviewed job or to amend saved intake data. New jobs should start in <strong>Add &amp; Evaluate</strong>; both paths use the same save-and-score pipeline.</p>
               <form method="post" action="/evaluate" id="job-form">
                 {render_input_form(values)}
                 <div class="actions"><button type="submit">Evaluate and save</button></div>
@@ -187,10 +337,29 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
         '})();</script>'
     )
 
+    rq_css = (
+        '<style>'
+        '.rq-root{display:flex;flex-direction:column;height:100vh;overflow:hidden;}'
+        '.rq-header{flex-shrink:0;display:flex;align-items:center;gap:13px;padding:12px 20px;'
+        'border-bottom:1px solid var(--line);background:var(--surface);z-index:10;flex-wrap:wrap;}'
+        '.rq-panels{flex:1;display:flex;overflow:hidden;}'
+        '.rq-list{width:300px;flex-shrink:0;border-right:1px solid var(--line);background:var(--surface);'
+        'display:flex;flex-direction:column;overflow:hidden;}'
+        '.rq-frame{flex:1;border:none;height:100%;background:var(--bg);}'
+        '@media (max-width:640px){'
+        '.rq-root{height:auto;min-height:100vh;overflow:visible;}'
+        '.rq-header{padding:10px 12px;gap:8px;}'
+        '.rq-panels{flex-direction:column;overflow:visible;}'
+        '.rq-list{width:100%;border-right:none;border-bottom:1px solid var(--line);max-height:45vh;}'
+        '.rq-frame{flex:none;width:100%;height:80vh;min-height:420px;}'
+        '}'
+        '</style>'
+    )
+
     body = f"""
-    <div style="display:flex;flex-direction:column;height:100vh;overflow:hidden;">
-      <div style="flex-shrink:0;display:flex;align-items:center;gap:13px;padding:12px 20px;
-                  border-bottom:1px solid var(--line);background:var(--surface);z-index:10;">
+    {rq_css}
+    <div class="rq-root">
+      <div class="rq-header">
         <a href="/?tab=search"
            style="display:inline-flex;align-items:center;gap:7px;padding:8px 14px;
                   border-radius:var(--r-md);border:1px solid var(--line);background:var(--surface-2);
@@ -211,9 +380,8 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
         <div style="flex:1;"></div>
         <span style="font-size:11.5px;color:var(--ink-faint);">Sorted by fit score &#xb7; click a job to view</span>
       </div>
-      <div style="flex:1;display:flex;overflow:hidden;">
-        <div style="width:300px;flex-shrink:0;border-right:1px solid var(--line);
-                    background:var(--surface);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="rq-panels">
+        <div class="rq-list">
           <form method="post" action="/jobs/batch-assess" style="display:flex;flex-direction:column;min-height:0;flex:1;">
           <div style="padding:14px 14px 8px;">
             <div style="font-size:10.5px;font-weight:700;letter-spacing:0.07em;
@@ -225,8 +393,7 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
           </div>
           </form>
         </div>
-        <iframe id="rq-iframe" src="/job/{active_id_esc}?embed=1"
-                style="flex:1;border:none;height:100%;background:var(--bg);"
+        <iframe id="rq-iframe" class="rq-frame" src="/job/{active_id_esc}?embed=1"
                 title="Job detail"></iframe>
       </div>
     </div>
@@ -246,8 +413,8 @@ def _render_profile_tab_section(current_tab: str) -> str:
 def _render_add_job_tab(values: dict[str, str]) -> str:
     return f"""
     <section class="panel">
-      <h2>Add a new job</h2>
-      <p>Paste a job advert or enter a posting URL to prefill the form automatically.</p>
+      <h2>Add &amp; Evaluate a job</h2>
+      <p><strong>1. Add:</strong> paste a job advert or enter a posting URL. <strong>2. Review:</strong> check the extracted fields. <strong>3. Evaluate:</strong> save and score it against your profile.</p>
       <div id="add-job-input-step">
         <div class="tab-row" role="tablist" aria-label="Job input method">
           <button type="button" class="tab-button active" data-add-job-tab="paste">Paste Text</button>
@@ -266,12 +433,12 @@ def _render_add_job_tab(values: dict[str, str]) -> str:
       <div id="add-job-review-step" hidden>
         <hr style="margin: 20px 0; border: none; border-top: 1px solid #e2e8f0;">
         <h3>Review and edit</h3>
-        <p>Review the prefilled fields below, then click <strong>Evaluate</strong> to save and evaluate the job.</p>
+        <p>Review the prefilled fields below, then click <strong>Save &amp; evaluate</strong>. The same intake pipeline is used by Advanced Review.</p>
         <form method="post" action="/job-submit" id="add-job-form">
           {_render_add_job_form_fields(values)}
           <div class="actions">
             <button type="button" id="add-job-back-btn">← Back</button>
-            <button type="submit" id="add-job-submit-btn">Evaluate →</button>
+            <button type="submit" id="add-job-submit-btn">Save &amp; evaluate →</button>
           </div>
         </form>
       </div>
@@ -279,7 +446,7 @@ def _render_add_job_tab(values: dict[str, str]) -> str:
     <script>
     (function () {{
       // --- Inner tab switching (Paste / URL within Add Job input step) ---
-        'var cvTextarea = document.querySelector("textarea[name=\'master_cv_text']");'
+      document.querySelectorAll('[data-add-job-tab]').forEach(function(tabBtn) {{
         tabBtn.addEventListener('click', function() {{
           var name = tabBtn.dataset.addJobTab;
           document.querySelectorAll('[data-add-job-tab]').forEach(function(b) {{ b.classList.toggle('active', b.dataset.addJobTab === name); }});
@@ -689,6 +856,36 @@ _ATS_RECHECK_JS = (
 )
 
 
+# D1 (2026-09-20): progressive enhancement for the qualitative-assess form. The route is
+# unchanged (POST returns the full job page HTML with a flash); JS submits it via fetch
+# so the user sees a loading state, then swaps in the returned page. Without JS the plain
+# form POST still works.
+_QUAL_ASSESS_JS = (
+    '<script>(function(){'
+    'document.querySelectorAll("form[data-qual-assess]").forEach(function(form){'
+    'if(form.dataset.qualBound)return;form.dataset.qualBound="1";'
+    'form.addEventListener("submit",function(ev){'
+    'ev.preventDefault();'
+    'var st=form.querySelector(".qual-assess-status"),btns=form.querySelectorAll("button");'
+    'var body=new URLSearchParams();if(ev.submitter&&ev.submitter.name)body.append(ev.submitter.name,ev.submitter.value);'
+    'btns.forEach(function(b){b.disabled=true;});'
+    'if(st){st.style.color="var(--ink-faint)";st.textContent="Running assessment\u2026 this can take up to a minute.";}'
+    'fetch(form.action,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()})'
+    '.then(function(r){return r.text().then(function(t){return {ok:r.ok,status:r.status,text:t};});})'
+    '.then(function(o){'
+    'if(!o.ok)throw new Error("HTTP "+o.status);'
+    'document.open();document.write(o.text);document.close();'
+    '}).catch(function(err){'
+    'btns.forEach(function(b){b.disabled=false;});'
+    'if(st){st.style.color="var(--skip)";st.textContent="Assessment failed: "+err.message+". Please try again.";}'
+    '});'
+    '});'
+    '});'
+    '})();</script>'
+)
+
+
+
 def render_job_page(vm: "JobPageViewModel") -> str:
     flash, flash_kind, embed = vm.flash, vm.flash_kind, vm.embed
 
@@ -855,10 +1052,13 @@ def render_job_page(vm: "JobPageViewModel") -> str:
                 f'border-radius:var(--r-md);font-weight:600;font-family:inherit;">Re-run</button>'
             )
         button = (
-            f'<form method="post" action="/job/{escape(vm.job_id)}/qualitative-assess" style="margin:0;">'
+            f'<form method="post" action="/job/{escape(vm.job_id)}/qualitative-assess" data-qual-assess="1" style="margin:0;">'
             f'<button type="submit" style="padding:6px 14px;font-size:12.5px;cursor:pointer;border:1px solid var(--accent);'
             f'background:transparent;color:var(--accent);border-radius:var(--r-md);font-weight:600;font-family:inherit;">'
-            f'Qualitative assessment (AI)</button>{force_button}</form>'
+            f'Qualitative assessment (AI)</button>{force_button}'
+            f'<span class="qual-assess-status" role="status" aria-live="polite" '
+            f'style="font-size:12px;margin-left:8px;color:var(--ink-faint);"></span></form>'
+            + _QUAL_ASSESS_JS
         )
         if not show_panel:
             return (
@@ -1179,10 +1379,10 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'btn.addEventListener("click",function(){{'
             f'var jobId=btn.dataset.jobId;var decision=btn.dataset.decision;var current=btn.dataset.current;'
             f'var payload=current===decision?{{user_decision:null}}:{{user_decision:decision}};'
-            f'fetch("/job/"+jobId+"/decision",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify(payload)}})'
+            f'fetch("/job/"+encodeURIComponent(jobId)+"/decision",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify(payload)}})'
             f'.then(function(r){{return r.json();}})'
             f'.then(function(){{setTimeout(function(){{window.location.reload();}},300);}});'
-            f'}});}})();'
+            f'}});}});}})();'
             f'</script>'
             f'<script>/* add gap skills */'
             f'function addGapSkills(jobId){{'
@@ -1299,12 +1499,12 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'<label style="flex:1;min-width:140px;display:grid;gap:4px;font-size:13.5px;">'
             f'<span style="font-weight:600;">Tone</span>'
             f'<select name="tone" style="font:inherit;padding:9px 12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);color:var(--ink);">'
-            f'<option value="professional">Professional</option><option value="friendly">Friendly</option><option value="concise">Concise</option>'
+            f'<option value="professional" selected>Professional</option><option value="conversational">Conversational</option><option value="concise">Concise</option>'
             f'</select></label>'
             f'<label style="flex:1;min-width:140px;display:grid;gap:4px;font-size:13.5px;">'
             f'<span style="font-weight:600;">Length</span>'
             f'<select name="length" style="font:inherit;padding:9px 12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);color:var(--ink);">'
-            f'<option value="short">Short</option><option value="medium" selected>Medium</option><option value="long">Long</option>'
+            f'<option value="brief">Brief</option><option value="standard" selected>Standard</option><option value="detailed">Detailed</option>'
             f'</select></label></div>'
             f'<label style="display:grid;gap:4px;font-size:13.5px;">'
             f'<span style="font-weight:600;">Key points <span style="color:var(--ink-faint);font-weight:400;">(optional, one per line)</span></span>'
@@ -1387,7 +1587,12 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'navigator.clipboard.writeText(t).then(function(){{'
             f'copyBtn.textContent="Copied ✓";copyBtn.style.color="var(--apply)";'
             f'setTimeout(function(){{copyBtn.textContent="Copy";copyBtn.style.color="";}},1800);'
-            f'}}).catch(function(){{alert("Copy failed — please select the text manually.");}});'
+            f'}}).catch(function(){{'
+            f'var m=document.getElementById("ai-cv-copy-msg");'
+            f'if(!m){{m=document.createElement("span");m.id="ai-cv-copy-msg";m.setAttribute("role","status");'
+            f'm.style.cssText="font-size:12px;color:var(--skip);margin-left:8px;";copyBtn.parentNode.insertBefore(m,copyBtn.nextSibling);}}'
+            f'm.textContent="Copy failed — please select the text manually.";'
+            f'}});'
             f'}});}}'
             f'}}).catch(function(err){{'
             f'aiCvBtn.disabled=false;aiCvBtn.textContent="AI Review CV";'
@@ -1407,7 +1612,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'var jobId=fd.get("job_id")||"";'
             f'var whyText=(fd.get("why_company_text")||"").trim();'
             f'var tone=fd.get("tone")||"professional";'
-            f'var length=fd.get("length")||"medium";'
+            f'var length=fd.get("length")||"standard";'
             f'var pointsRaw=(fd.get("points")||"").trim();'
             f'var points=pointsRaw?pointsRaw.split("\\n").map(function(s){{return s.trim();}}).filter(Boolean):null;'
             f'var spinner=document.getElementById("cover-letter-spinner");'
@@ -1563,6 +1768,24 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         '<script>(function(){var c=document.getElementById("outcome-card");if(c)c.scrollIntoView({block:"center"});})();</script>'
         if _is_outcome_flash else ""
     )
+    if outcome_current in {"rejected", "withdrawn"}:
+        outcome_reset_html = (
+            f'<form method="post" action="/outcome/reset" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);" '
+            f'onsubmit="return confirm(\'Reset this {escape(outcome_current)} outcome to not applied? The original outcome will remain in the history.\');">'
+            f'<input type="hidden" name="job_id" value="{escape(vm.job_id)}">'
+            + ('<input type="hidden" name="embed" value="1">' if embed else "")
+            + '<label style="display:grid;gap:4px;font-size:13.5px;">'
+            '<span style="font-weight:600;">Why reset this outcome? <span style="font-weight:400;color:var(--ink-faint);">(optional)</span></span>'
+            '<input name="reason" maxlength="500" placeholder="For example: selected the wrong job" '
+            'style="font:inherit;padding:9px 12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);color:var(--ink);">'
+            '</label>'
+            '<button type="submit" style="margin-top:10px;padding:9px 14px;border-radius:var(--r-md);font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;background:var(--surface-2);color:var(--ink);border:1px solid var(--line);">'
+            'Reset to not applied</button>'
+            '<p style="font-size:12px;color:var(--ink-faint);margin:8px 0 0;">The previous outcome stays in the audit history.</p>'
+            '</form>'
+        )
+    else:
+        outcome_reset_html = ""
     outcome_section_html = (
         f'<div id="outcome-card" style="margin-top:16px;background:var(--surface);border:1px solid var(--line);'
         f'border-radius:var(--r-lg);padding:var(--pad);box-shadow:var(--shadow-sm);">'
@@ -1589,6 +1812,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         f'<button type="submit" style="padding:10px 18px;border-radius:var(--r-md);font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer;background:var(--accent);color:var(--accent-contrast);border:none;white-space:nowrap;align-self:end;">Save outcome</button>'
         f'</div>'
         f'</form>'
+        f'{outcome_reset_html}'
         f'</div>'
         f'{outcome_scroll_js}'
     )
@@ -1762,6 +1986,7 @@ def render_profile_page(
     flash: str | None = None,
     model_label: str = "",
     enabled_sources: list[str] | None = None,
+    active_scoring_preset: str = "balanced",
 ) -> str:
     """Render the My Profile tab page."""
     # Saved Searches (Daily Job Digest — D1). Source options come from the
@@ -1790,6 +2015,29 @@ def render_profile_page(
         + '</section>'
     )
 
+    # Scoring weight presets (Slice C, 2026-07-21 search/score/filter plan).
+    # Plain HTML form (no JS required) so it degrades gracefully; imported
+    # lazily to keep the render layer free of a module-load-order dependency
+    # on the scoring-presets module.
+    from src.job_hunt_scoring_presets import PRESET_LABELS
+
+    _preset_options = "".join(
+        f'<option value="{escape(name)}"' + (' selected' if name == active_scoring_preset else '') + f'>{escape(label)}</option>'
+        for name, label in PRESET_LABELS.items()
+    )
+    scoring_preset_section = (
+        '<section class="panel" id="scoring-preset-panel">'
+        + '<h2>Scoring weights</h2>'
+        + '<p>Pick which named preset the 7-component match score uses. Persists across restart; '
+        + 'existing listed jobs recompute the next time they are (re-)evaluated.</p>'
+        + f'<form method="post" action="/scoring-preset">'
+        + f'<input type="hidden" name="profile_id" value="{escape(profile_id)}">'
+        + '<label><span>Preset</span><select name="preset">' + _preset_options + '</select></label>'
+        + '<div style="margin-top:10px;"><button type="submit">Save preset</button></div>'
+        + '</form>'
+        + '</section>'
+    )
+
     # Summary
     if vm.has_profile:
         rtw = vm.right_to_work_uk
@@ -1805,7 +2053,7 @@ def render_profile_page(
             ("Industries", ", ".join(vm.industries[:5]) + ("…" if len(vm.industries) > 5 else "") or "—"),
             ("Certifications", ", ".join(vm.certifications) or "—"),
             ("Achievements", str(len(vm.achievements)) + " listed" if vm.achievements else "—"),
-            ("Master CV ref", vm.master_cv_ref or "—"),
+            ("Master CV", "On file" if vm.master_cv_text else "Not uploaded"),
         ]
         summary_html = "".join(
             f"<tr><td><strong>{escape(label)}</strong></td><td>{escape(str(val))}</td></tr>"
@@ -1848,11 +2096,11 @@ def render_profile_page(
             _cv_icon = "&#10003;"
             _cv_label = f"CV on file: {_cv_chars:,} chars"
             if _cv_ref:
-                _cv_label += f" | saved to {escape(_cv_ref)}"
+                _cv_label += " | available locally"
         elif _cv_ref:
             _cv_color = "#d97706"
             _cv_icon = "&#9888;"
-            _cv_label = f"CV ref set ({escape(_cv_ref)}) but no text stored — re-upload your CV below"
+            _cv_label = "CV file reference is set but no text is stored — re-upload your CV below"
         else:
             _cv_color = "#dc2626"
             _cv_icon = "&#9888;"
@@ -1877,7 +2125,8 @@ def render_profile_page(
         return str(getattr(vm, key, "") or "")
 
     cv_text = escape(parsed_cv_text or (vm.master_cv_text if vm.has_profile else ""))
-    cv_filename_val = escape(parsed_filename or (vm.master_cv_ref if vm.has_profile else ""))
+    _cv_filename = (parsed_filename or (vm.master_cv_ref if vm.has_profile else "") or "").replace("\\", "/").rsplit("/", 1)[-1]
+    cv_filename_val = escape(_cv_filename)
     # For multi-select, split stored value into a set of selected values.
     # Map old single-string values to the aligned option values.
     _REMOTE_COMPAT = {"remote": "remote_only", "hybrid_friendly": "hybrid", "office_only": "onsite"}
@@ -1902,364 +2151,368 @@ def render_profile_page(
     # Build body via string concat - each piece is a single-quoted Python string
     # inner double-quotes inside HTML work via string concatenation: "<attr " + "value" + ">"
     _sidebar_html = _render_sidebar("profile")
-    body = (
-        '<div class="app-shell">'
-        + _sidebar_html
-        + '<main class="main-content"><div class="content-inner">'
-        + flash_banner
-        + error_banner
-        + summary_section
-        + '<section class="panel">'
-        + '<h2>Upload CV</h2>'
-        + cv_status_strip
-        + '<p>Upload a .txt, .pdf, or .docx file (max 5 MB) to extract your CV text, then edit and save your profile.</p>'
-        + '<div style="margin-bottom: 16px;">'
-        + '<input type="file" id="cv-file-input" accept=".txt,.pdf,.docx">'
-        + '<button type="button" id="cv-upload-btn" style="margin-top:8px;">Parse CV</button>'
-        + '<p id="cv-upload-status" style="min-height:1.25rem; margin-top:4px; color:#475569;"></p>'
-        + '</div>'
-        + '<div id="cv-parsed-preview" hidden style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:16px;">'
-        + '<p style="color:#2563eb;font-weight:600;">CV parsed! Review the text below and fill in the rest of the form.</p>'
-        + '<p style="font-size:0.9em;color:#64748b;">Filename: '
-        + cv_filename_val
-        + '</p></div></section>'
-        + '<section class="panel">'
-        + '<h2>Profile details</h2>'
-        + '<form method="post" action="/profile/save" id="profile-form">'
-        + '<input type="hidden" name="profile_id" value="'
-        + escape(profile_id)
-        + '">'
-        + '<input type="hidden" name="_cv_filename" id="cv-filename-field" value="'
-        + cv_filename_val
-        + '">'
-        + '<input type="hidden" name="master_cv_ref" value="'
-        + escape(vm.master_cv_ref if vm.has_profile else "")
-        + '">'
-        + '<div class="grid two-col">'
-        + '<label><span>Name</span><input name="name" value="'
-        + fvget("name", objval("name"))
-        + '"></label>'
-        + '<label><span>Target roles (comma-separated)</span><input name="target_roles" value="'
-        + fvget("target_roles", ", ".join(getattr(vm, "target_roles", []) or []))
-        + '" placeholder="e.g. Business Analyst, Data Analyst"></label>'
-        + '<label><span>Locations (comma-separated)</span><input name="locations" value="'
-        + fvget("locations", ", ".join(getattr(vm, "locations", []) or []))
-        + '" placeholder="e.g. London, Manchester, Remote"></label>'
-        + '<label><span>Remote preference <small style="color:var(--ink-faint);font-weight:400">(hold Cmd/Ctrl to multi-select)</small></span>'
-        + '<select multiple id="remote_pref_select" size="4" style="height:auto">'
-        + sel_opt_multi("remote_only", "Remote only")
-        + sel_opt_multi("hybrid", "Hybrid (remote + office)")
-        + sel_opt_multi("flexible", "Flexible (any mode)")
-        + sel_opt_multi("onsite", "Office / Onsite")
-        + '</select>'
-        + '<input type="hidden" name="remote_preference" id="remote_pref_hidden">'
-        + '</label>'
-        + '<label><span>Salary floor (GBP)</span><input name="salary_floor_gbp" type="number" min="0" value="'
-        + fvget("salary_floor_gbp", objval("salary_floor_gbp"))
-        + '"></label>'
-        + '<label><span>Years experience</span><input name="years_experience" type="number" min="0" step="0.5" value="'
-        + fvget("years_experience", objval("years_experience"))
-        + '"></label>'
-        + '<label><span>Right to work UK</span>'
-        + '<select name="right_to_work_uk">'
-        + ('<option value="">— not set —</option>'
+    body = "".join([
+        '<div class="app-shell">',
+          _sidebar_html,
+          '<main class="main-content"><div class="content-inner">',
+          flash_banner,
+          error_banner,
+          summary_section,
+          '<section class="panel">',
+          '<h2>Upload CV</h2>',
+          cv_status_strip,
+          '<p>Upload a .txt, .pdf, or .docx file (max 5 MB) to extract your CV text, then edit and save your profile.</p>',
+          '<div style="margin-bottom: 16px;">',
+          '<input type="file" id="cv-file-input" accept=".txt,.pdf,.docx">',
+          '<button type="button" id="cv-upload-btn" style="margin-top:8px;">Parse CV</button>',
+          '<p id="cv-upload-status" style="min-height:1.25rem; margin-top:4px; color:#475569;"></p>',
+          '</div>',
+          '<div id="cv-parsed-preview" hidden style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:16px;">',
+          '<p style="color:#2563eb;font-weight:600;">CV parsed! Review the text below and fill in the rest of the form.</p>',
+          '<p style="font-size:0.9em;color:#64748b;">Filename: ',
+          cv_filename_val,
+          '</p></div></section>',
+          '<section class="panel">',
+          '<h2>Profile details</h2>',
+          '<form method="post" action="/profile/save" id="profile-form">',
+          '<input type="hidden" name="profile_id" value="',
+          escape(profile_id),
+          '">',
+          '<input type="hidden" name="_cv_filename" id="cv-filename-field" value="',
+          cv_filename_val,
+          '">',
+          '<fieldset class="profile-section" style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;">',
+          '<legend style="font-weight:600;padding:0 6px;">Job search preferences</legend>',
+          '<div class="grid two-col">',
+          '<label><span>Name</span><input name="name" value="',
+          fvget("name", objval("name")),
+          '"></label>',
+          '<label><span>Target roles (comma-separated)</span><input name="target_roles" value="',
+          fvget("target_roles", ", ".join(getattr(vm, "target_roles", []) or [])),
+          '" placeholder="e.g. Business Analyst, Data Analyst"></label>',
+          '<label><span>Locations (comma-separated)</span><input name="locations" value="',
+          fvget("locations", ", ".join(getattr(vm, "locations", []) or [])),
+          '" placeholder="e.g. London, Manchester, Remote"></label>',
+          '<label><span>Remote preference <small style="color:var(--ink-faint);font-weight:400">(hold Cmd/Ctrl to multi-select)</small></span>',
+          '<select multiple id="remote_pref_select" size="4" style="height:auto">',
+          sel_opt_multi("remote_only", "Remote only"),
+          sel_opt_multi("hybrid", "Hybrid (remote + office)"),
+          sel_opt_multi("flexible", "Flexible (any mode)"),
+          sel_opt_multi("onsite", "Office / Onsite"),
+          '</select>',
+          '<input type="hidden" name="remote_preference" id="remote_pref_hidden">',
+          '</label>',
+          '<label><span>Salary floor (GBP)</span><input name="salary_floor_gbp" type="number" min="0" value="',
+          fvget("salary_floor_gbp", objval("salary_floor_gbp")),
+          '"></label>',
+          '<label><span>Years experience</span><input name="years_experience" type="number" min="0" step="0.5" value="',
+          fvget("years_experience", objval("years_experience")),
+          '"></label>',
+          '<label><span>Right to work UK</span>',
+          '<select name="right_to_work_uk">',
+          ('<option value="">— not set —</option>'
            '<option value="true"' + (' selected' if (fv.get("right_to_work_uk") or str(getattr(vm, "right_to_work_uk", None))) in ("true","True","1","yes") else '') + '>Yes</option>'
-           '<option value="false"' + (' selected' if (fv.get("right_to_work_uk") or str(getattr(vm, "right_to_work_uk", None))) in ("false","False","0","no") else '') + '>No</option>')
-        + '</select></label>'
-        + '</div>'
-        + '<div class="grid two-col" style="margin-top:12px;">'
-        + '<div style="grid-column:1/-1;">'
-        + '<span style="font-weight:600;font-size:0.875rem;display:block;margin-bottom:4px;">Skills</span>'
-        + '<table id="skills-table" style="width:100%;border-collapse:collapse;font-size:0.875rem;">'
-        + '<thead><tr>'
-        + '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Name</th>'
-        + '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Level</th>'
-        + '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Years</th>'
-        + '<th style="border-bottom:1px solid #e2e8f0;width:40px;"></th>'
-        + '</tr></thead>'
-        + '<tbody id="skills-tbody"></tbody>'
-        + '</table>'
-        + '<button type="button" id="add-skill-btn" style="margin-top:6px;font-size:0.8rem;padding:4px 10px;">+ Add skill</button>'
-        + '<input type="hidden" name="skills_json" id="skills_json" value="'
-        + _skills_init_json
-        + '">'
-        + '</div>'
-        + '<label><span>Industries (comma-separated)</span><input name="industries" value="'
-        + fvget("industries", ", ".join(getattr(vm, "industries", []) or []))
-        + '" placeholder="Finance, Technology"></label>'
-        + '<label><span>Certifications (comma-separated)</span><input name="certifications" value="'
-        + fvget("certifications", ", ".join(getattr(vm, "certifications", []) or []))
-        + '" placeholder="AWS, PMP, CFA"></label>'
-        + '</div>'
-        + '<label style="margin-top:12px;"><span>Achievements (one per line)</span>'
-        + '<textarea name="achievements" rows="4">'
-        + escape(fv.get("achievements") if "achievements" in fv else "\n".join(getattr(vm, "achievements", []) or []))
-        + '</textarea>'
-        + '</label>'
-        + '<label><span>Master CV text</span><textarea name="master_cv_text" rows="8" placeholder="Extracted CV text will appear here after upload, or paste manually...">'
-        + cv_text
-        + '</textarea></label>'
+           '<option value="false"' + (' selected' if (fv.get("right_to_work_uk") or str(getattr(vm, "right_to_work_uk", None))) in ("false","False","0","no") else '') + '>No</option>'),
+          '</select></label>',
+          '</div>',
+          '</fieldset>',
+          '<fieldset class="profile-section" style="margin-top:16px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;">',
+          '<legend style="font-weight:600;padding:0 6px;">Experience and evidence</legend>',
+          '<div class="grid two-col" style="margin-top:4px;">',
+          '<div style="grid-column:1/-1;">',
+          '<span style="font-weight:600;font-size:0.875rem;display:block;margin-bottom:4px;">Skills</span>',
+          '<table id="skills-table" style="width:100%;border-collapse:collapse;font-size:0.875rem;">',
+          '<thead><tr>',
+          '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Name</th>',
+          '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Level</th>',
+          '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Years</th>',
+          '<th style="border-bottom:1px solid #e2e8f0;width:40px;"></th>',
+          '</tr></thead>',
+          '<tbody id="skills-tbody"></tbody>',
+          '</table>',
+          '<button type="button" id="add-skill-btn" style="margin-top:6px;font-size:0.8rem;padding:4px 10px;">+ Add skill</button>',
+          '<input type="hidden" name="skills_json" id="skills_json" value="',
+          _skills_init_json,
+          '">',
+          '</div>',
+          '<label><span>Industries (comma-separated)</span><input name="industries" value="',
+          fvget("industries", ", ".join(getattr(vm, "industries", []) or [])),
+          '" placeholder="Finance, Technology"></label>',
+          '<label><span>Certifications (comma-separated)</span><input name="certifications" value="',
+          fvget("certifications", ", ".join(getattr(vm, "certifications", []) or [])),
+          '" placeholder="AWS, PMP, CFA"></label>',
+          '</div>',
+          '<label style="margin-top:12px;"><span>Achievements (one per line)</span>',
+          '<textarea name="achievements" rows="4">',
+          escape(fv.get("achievements") if "achievements" in fv else "\n".join(getattr(vm, "achievements", []) or [])),
+          '</textarea>',
+          '</label>',
+          '<label><span>Master CV text</span><textarea name="master_cv_text" rows="8" placeholder="Extracted CV text will appear here after upload, or paste manually...">',
+          cv_text,
+          '</textarea></label>',
+          '</fieldset>',
         # --- Daily Digest settings (D3) — saved with the profile ---
-        + '<fieldset style="margin-top:18px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;">'
-        + '<legend style="font-weight:600;padding:0 6px;">Daily Digest</legend>'
-        + '<div class="grid two-col">'
-        + '<label><span>Enabled</span><select name="digest_enabled">'
-        + ('<option value="true"' + (' selected' if vm.digest_enabled else '') + '>Yes</option>')
-        + ('<option value="false"' + ('' if vm.digest_enabled else ' selected') + '>No</option>')
-        + '</select></label>'
-        + '<label><span>Show jobs scoring ≥ (0–100)</span><input name="digest_threshold" type="number" min="0" max="100" value="' + escape(str(vm.digest_threshold)) + '"></label>'
-        + '<label><span>Run time (HH:MM, local)</span><input name="digest_run_time" value="' + escape(vm.digest_run_time) + '" placeholder="07:00"></label>'
-        + '<label><span>Max jobs per saved search (1–200)</span><input name="digest_max_per_source" type="number" min="1" max="200" value="' + escape(str(vm.digest_max_per_source)) + '"></label>'
-        + '<label><span>AI analysis on top matches</span><select name="digest_llm_enabled">'
-        + ('<option value="true"' + (' selected' if vm.digest_llm_enabled else '') + '>Yes</option>')
-        + ('<option value="false"' + ('' if vm.digest_llm_enabled else ' selected') + '>No</option>')
-        + '</select></label>'
-        + '<label><span>Max AI calls queued per run (0–100)</span><input name="digest_max_llm_per_run" type="number" min="0" max="100" value="' + escape(str(vm.digest_max_llm_per_run)) + '"></label>'
-        + '<label><span>AI calls/min (1–60)</span><input name="digest_llm_rpm" type="number" min="1" max="60" value="' + escape(str(vm.digest_llm_rpm)) + '"></label>'
-        + '<label><span>AI calls/day (1–1000)</span><input name="digest_llm_rpd" type="number" min="1" max="1000" value="' + escape(str(vm.digest_llm_rpd)) + '"></label>'
-        + '<label><span>AI batch size (1–50)</span><input name="digest_llm_batch_size" type="number" min="1" max="50" value="' + escape(str(vm.digest_llm_batch_size)) + '"></label>'
-        + '<label><span>AI batch interval min (1–1440)</span><input name="digest_llm_batch_interval_min" type="number" min="1" max="1440" value="' + escape(str(vm.digest_llm_batch_interval_min)) + '"></label>'
-        + '</div>'
-        + '<p style="font-size:0.8rem;color:var(--ink-faint);margin-top:6px;">AI rate limits apply to the paced LLM worker (Daily Digest D6). Keep calls/min under your Gemini model\'s RPM and calls/day under the free-tier cap.</p>'
-        + '</fieldset>'
-        + '<div style="margin-top:16px;">'
-        + '<button type="submit" id="profile-save-btn">Save Profile</button>'
-        + '<span id="profile-save-status" style="margin-left:16px;"></span>'
-        + '</div>'
-        + '</form>'
-        + '</section>'
-        + saved_searches_section
-        + '</div>'
-        + '<script>'
-        + '(function () {'
-        + 'var fileInput = document.getElementById("cv-file-input");'
-        + 'var uploadBtn = document.getElementById("cv-upload-btn");'
-        + 'var statusEl = document.getElementById("cv-upload-status");'
-        + 'var previewEl = document.getElementById("cv-parsed-preview");'
-        + 'var cvTextarea = document.querySelector("textarea[name=master_cv_text]");'
-        + 'var cvFilenameField = document.getElementById("cv-filename-field");'
-        + 'function setStatus(msg, isError) {'
-        + 'if (!statusEl) return;'
-        + 'statusEl.textContent = msg;'
-        + 'statusEl.style.color = isError ? "#b91c1c" : "#2563eb";'
-        + '}'
-        + 'uploadBtn && uploadBtn.addEventListener("click", async function() {'
-        + 'var file = fileInput && fileInput.files && fileInput.files[0];'
-        + 'if (!file) { setStatus("Please select a file first.", true); return; }'
-        + 'if (file.size > 5 * 1024 * 1024) { setStatus("File too large. Maximum is 5 MB.", true); return; }'
-        + 'var ext = file.name.split(".").pop().toLowerCase();'
-        + 'if (!["txt","pdf","docx"].includes(ext)) { setStatus("Unsupported file type. Use .txt, .pdf, or .docx", true); return; }'
-        + 'setStatus("Uploading and parsing...");'
-        + 'var formData = new FormData();'
-        + 'formData.append("cv_file", file);'
-        + 'var pidInput = document.querySelector("input[name=\'profile_id\']");'
-        + 'if (pidInput && pidInput.value) formData.append("profile_id", pidInput.value);'
-        + 'try {'
-        + 'var response = await fetch("/profile/parse-cv", { method: "POST", body: formData });'
-        + 'var data = await response.json();'
-        + 'if (!response.ok || !data.ok) throw new Error(data.error || "Parse failed");'
-        + 'if (cvTextarea) cvTextarea.value = data.master_cv_text || "";'
-        + 'if (cvFilenameField) cvFilenameField.value = data.filename || file.name;'
-        + 'if (previewEl) previewEl.hidden = false;'
-        + 'var added = 0;'
-        + 'if (data.suggested_skills && data.suggested_skills.length) {'
-        + '  var tbody = document.getElementById("skills-tbody");'
-        + '  if (tbody && typeof makeRow === "function") {'
-        + '    var existing = new Set();'
-        + '    var rows = tbody.rows;'
-        + '    for (var ri = 0; ri < rows.length; ri++) {'
-        + '      var inp = rows[ri].cells[0] && rows[ri].cells[0].querySelector("input");'
-        + '      if (inp && inp.value.trim()) existing.add(inp.value.trim().toLowerCase());'
-        + '    }'
-        + '    data.suggested_skills.forEach(function(name) {'
-        + '      if (!existing.has(name.toLowerCase())) {'
-        + '        tbody.appendChild(makeRow({ name: name, level: "unspecified", years: null }));'
-        + '        existing.add(name.toLowerCase());'
-        + '        added++;'
-        + '      }'
-        + '    });'
-        + '  }'
-        + '}'
-        + 'var skillMsg = added > 0 ? " Added " + added + " skill(s) — set levels then save." : (data.skill_extraction_warning ? " Skill extraction: " + data.skill_extraction_warning : "");'
-        + 'var saveMsg = data.auto_saved ? " CV saved automatically." : (data.auto_save_error ? " Auto-save FAILED: " + data.auto_save_error + ". Save manually below." : " Review and save below.");'
-        + 'setStatus("CV parsed successfully." + saveMsg + skillMsg);'
-        + '} catch(err) {'
-        + 'setStatus(err.message || "Parse failed", true);'
-        + '}'
-        + '});'
-        + '})();'
-        + '(function () {'
-        + 'var LEVELS = ["unspecified","junior","mid","senior","expert"];'
-        + 'var tbody = document.getElementById("skills-tbody");'
-        + 'var hiddenField = document.getElementById("skills_json");'
-        + 'var form = document.getElementById("profile-form");'
-        + 'function makeRow(skill) {'
-        + '  var tr = document.createElement("tr");'
-        + '  var tdName = document.createElement("td"); tdName.style.padding = "4px 8px";'
-        + '  var nameInput = document.createElement("input");'
-        + '  nameInput.type = "text"; nameInput.placeholder = "e.g. Python"; nameInput.value = skill.name || "";'
-        + '  nameInput.style.cssText = "width:100%;box-sizing:border-box;";'
-        + '  tdName.appendChild(nameInput);'
-        + '  var tdLevel = document.createElement("td"); tdLevel.style.padding = "4px 8px";'
-        + '  var levelSel = document.createElement("select");'
-        + '  LEVELS.forEach(function(l) {'
-        + '    var opt = document.createElement("option"); opt.value = l; opt.textContent = l;'
-        + '    if (l === (skill.level || "unspecified")) opt.selected = true;'
-        + '    levelSel.appendChild(opt);'
-        + '  });'
-        + '  tdLevel.appendChild(levelSel);'
-        + '  var tdYears = document.createElement("td"); tdYears.style.padding = "4px 8px";'
-        + '  var yearsInput = document.createElement("input");'
-        + '  yearsInput.type = "number"; yearsInput.min = "0"; yearsInput.step = "1"; yearsInput.style.width = "60px";'
-        + '  yearsInput.value = (skill.years != null) ? String(skill.years) : "";'
-        + '  tdYears.appendChild(yearsInput);'
-        + '  var tdDel = document.createElement("td"); tdDel.style.padding = "4px 8px";'
-        + '  var delBtn = document.createElement("button"); delBtn.type = "button"; delBtn.textContent = "✕";'
-        + '  delBtn.style.cssText = "background:none;border:none;cursor:pointer;color:#b91c1c;font-size:1rem;padding:0 4px;";'
-        + '  delBtn.onclick = function() { tr.remove(); };'
-        + '  tdDel.appendChild(delBtn);'
-        + '  tr.appendChild(tdName); tr.appendChild(tdLevel); tr.appendChild(tdYears); tr.appendChild(tdDel);'
-        + '  return tr;'
-        + '}'
-        + 'window.makeRow = makeRow;'
-        + 'function initTable() {'
-        + '  var raw = hiddenField ? hiddenField.value : "[]";'
-        + '  var skills = [];'
-        + '  try { skills = JSON.parse(raw) || []; } catch(e) {}'
-        + '  skills.forEach(function(s) { tbody.appendChild(makeRow(s)); });'
-        + '}'
-        + 'function serializeTable() {'
-        + '  var rows = tbody ? tbody.rows : [];'
-        + '  var result = [];'
-        + '  for (var i = 0; i < rows.length; i++) {'
-        + '    var cells = rows[i].cells;'
-        + '    var name = cells[0].querySelector("input").value.trim();'
-        + '    if (!name) continue;'
-        + '    var level = cells[1].querySelector("select").value;'
-        + '    var yearsVal = cells[2].querySelector("input").value.trim();'
-        + '    var years = yearsVal !== "" ? parseInt(yearsVal, 10) : null;'
-        + '    result.push({ name: name, level: level, years: years, evidence_type: "self-reported" });'
-        + '  }'
-        + '  return JSON.stringify(result);'
-        + '}'
-        + 'document.getElementById("add-skill-btn") && document.getElementById("add-skill-btn").addEventListener("click", function() {'
-        + '  tbody.appendChild(makeRow({ name: "", level: "unspecified", years: null }));'
-        + '});'
-        + 'form && form.addEventListener("submit", function() {'
-        + '  if (hiddenField) hiddenField.value = serializeTable();'
-        + '});'
-        + 'initTable();'
-        + '})();'
-        + '</script>'
-        + '<script>'
-        + '(function() {'
-        + '  var sel = document.getElementById("remote_pref_select");'
-        + '  var hid = document.getElementById("remote_pref_hidden");'
-        + '  var profileForm = document.querySelector("form[action=\'/profile/save\']");'
-        + '  if (sel && hid && profileForm) {'
-        + '    profileForm.addEventListener("submit", function() {'
-        + '      var vals = Array.from(sel.selectedOptions).map(function(o){return o.value;});'
-        + '      hid.value = vals.join(",");'
-        + '    });'
-        + '  }'
-        + '})();'
-        + '</script>'
-        + '<script>'
-        + '(function () {'
-        + '  var listEl = document.getElementById("saved-searches-list");'
-        + '  var statusEl = document.getElementById("ss-status");'
-        + '  var addBtn = document.getElementById("ss-add-btn");'
-        + '  if (!listEl) return;'
-        + '  function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }'
-        + '  function setStatus(msg, isErr) { if (statusEl) { statusEl.textContent = msg || ""; statusEl.style.color = isErr ? "#b91c1c" : "#475569"; } }'
-        + '  function paramsSummary(p) {'
-        + '    p = p || {}; var bits = [];'
-        + '    if (p.keywords) bits.push(esc(p.keywords));'
-        + '    if (p.locationName) bits.push(esc(p.locationName));'
-        + '    if (p.minimumSalary) bits.push("\\u00a3" + esc(p.minimumSalary) + "+");'
-        + '    return bits.join(" \\u00b7 ");'
-        + '  }'
-        + '  function render(searches) {'
-        + '    if (!searches.length) { listEl.innerHTML = "<p style=\'color:#64748b;\'><em>No saved searches yet.</em></p>"; return; }'
-        + '    var html = searches.map(function(s) {'
-        + '      var badge = s.enabled'
-        + '        ? "<span style=\'color:#16a34a;font-weight:600;\'>\\u25cf Enabled</span>"'
-        + '        : "<span style=\'color:#94a3b8;font-weight:600;\'>\\u25cb Disabled</span>";'
-        + '      var lastRun = s.last_run_at ? (" \\u00b7 last run " + esc(s.last_run_at) + " (" + s.last_run_count + ")") : "";'
-        + '      return "<div class=\'panel\' style=\'padding:10px 14px;margin-bottom:8px;\' data-id=\'" + esc(s.search_id) + "\'>"'
-        + '        + "<div style=\'display:flex;justify-content:space-between;align-items:center;gap:8px;\'>"'
-        + '        + "<div><strong>" + esc(s.name) + "</strong> &nbsp;<small style=\'color:#64748b;\'>" + esc(s.source_id) + "</small><br>"'
-        + '        + "<small style=\'color:#475569;\'>" + paramsSummary(s.params) + lastRun + "</small></div>"'
-        + '        + "<div style=\'white-space:nowrap;\'>" + badge'
-        + '        + " <button type=\'button\' class=\'ss-run\' style=\'font-size:0.8rem;padding:3px 8px;\'>Run now</button>"'
-        + '        + " <button type=\'button\' class=\'ss-toggle\' style=\'font-size:0.8rem;padding:3px 8px;\'>" + (s.enabled ? "Disable" : "Enable") + "</button>"'
-        + '        + " <button type=\'button\' class=\'ss-delete\' style=\'font-size:0.8rem;padding:3px 8px;color:#b91c1c;\'>Delete</button>"'
-        + '        + "</div></div></div>";'
-        + '    }).join("");'
-        + '    listEl.innerHTML = html;'
-        + '    listEl.querySelectorAll(".ss-run").forEach(function(b) {'
-        + '      b.addEventListener("click", function() { runNow(b.closest("[data-id]").getAttribute("data-id"), b); });'
-        + '    });'
-        + '    listEl.querySelectorAll(".ss-toggle").forEach(function(b) {'
-        + '      b.addEventListener("click", function() { mutate(b.closest("[data-id]").getAttribute("data-id"), "toggle"); });'
-        + '    });'
-        + '    listEl.querySelectorAll(".ss-delete").forEach(function(b) {'
-        + '      b.addEventListener("click", function() { if (confirm("Delete this saved search?")) mutate(b.closest("[data-id]").getAttribute("data-id"), "delete"); });'
-        + '    });'
-        + '  }'
-        + '  async function runNow(id, btn) {'
-        + '    setStatus("Running… (this may take a few seconds)");'
-        + '    if (btn) btn.disabled = true;'
-        + '    try {'
-        + '      var r = await fetch("/saved-searches/" + encodeURIComponent(id) + "/run-now", { method: "POST" });'
-        + '      var d = await r.json().catch(function(){return {};});'
-        + '      if (!r.ok || !d.ok) { setStatus(d.error || "Run failed", true); return; }'
-        + '      setStatus("Run done \\u2014 " + d.jobs_new + " new, " + d.jobs_llm_queued + " queued for AI, " + d.jobs_skipped + " skipped, " + d.jobs_already_seen + " already seen.");'
-        + '      await load();'
-        + '    } catch (e) { setStatus("Run failed", true); }'
-        + '    finally { if (btn) btn.disabled = false; }'
-        + '  }'
-        + '  async function load() {'
-        + '    try { var r = await fetch("/saved-searches"); var d = await r.json(); render(d.searches || []); }'
-        + '    catch (e) { listEl.innerHTML = "<p style=\'color:#b91c1c;\'>Could not load saved searches.</p>"; }'
-        + '  }'
-        + '  async function mutate(id, action) {'
-        + '    try {'
-        + '      var r = await fetch("/saved-searches/" + encodeURIComponent(id) + "/" + action, { method: "POST" });'
-        + '      if (!r.ok) { var e = await r.json().catch(function(){return {};}); setStatus(e.error || (action + " failed"), true); return; }'
-        + '      await load();'
-        + '    } catch (e) { setStatus(action + " failed", true); }'
-        + '  }'
-        + '  addBtn && addBtn.addEventListener("click", async function() {'
-        + '    var name = (document.getElementById("ss-name").value || "").trim();'
-        + '    var source = document.getElementById("ss-source").value;'
-        + '    var params = {};'
-        + '    var kw = (document.getElementById("ss-keywords").value || "").trim();'
-        + '    var loc = (document.getElementById("ss-location").value || "").trim();'
-        + '    var sal = (document.getElementById("ss-minsalary").value || "").trim();'
-        + '    if (kw) params.keywords = kw;'
-        + '    if (loc) params.locationName = loc;'
-        + '    if (sal) params.minimumSalary = sal;'
-        + '    if (!name) { setStatus("Name is required.", true); return; }'
-        + '    if (!source) { setStatus("Pick a source.", true); return; }'
-        + '    setStatus("Saving…");'
-        + '    try {'
-        + '      var r = await fetch("/saved-searches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name, source_id: source, params: params }) });'
-        + '      var d = await r.json().catch(function(){return {};});'
-        + '      if (!r.ok || !d.ok) { setStatus(d.error || "Save failed", true); return; }'
-        + '      document.getElementById("ss-name").value = "";'
-        + '      document.getElementById("ss-keywords").value = "";'
-        + '      document.getElementById("ss-location").value = "";'
-        + '      document.getElementById("ss-minsalary").value = "";'
-        + '      setStatus("Saved.");'
-        + '      await load();'
-        + '    } catch (e) { setStatus("Save failed", true); }'
-        + '  });'
-        + '  load();'
-        + '})();'
-        + '</script>'
-        + '</div></main></div>'
-    )
+          '<fieldset style="margin-top:18px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;">',
+          '<legend style="font-weight:600;padding:0 6px;">Daily Digest</legend>',
+          '<div class="grid two-col">',
+          '<label><span>Enabled</span><select name="digest_enabled">',
+          ('<option value="true"' + (' selected' if vm.digest_enabled else '') + '>Yes</option>'),
+          ('<option value="false"' + ('' if vm.digest_enabled else ' selected') + '>No</option>'),
+          '</select></label>',
+          '<label><span>Show jobs scoring ≥ (0–100)</span><input name="digest_threshold" type="number" min="0" max="100" value="',   escape(str(vm.digest_threshold)),   '"></label>',
+          '<label><span>Run time (HH:MM, local)</span><input name="digest_run_time" value="',   escape(vm.digest_run_time),   '" placeholder="07:00"></label>',
+          '<label><span>Max jobs per saved search (1–200)</span><input name="digest_max_per_source" type="number" min="1" max="200" value="',   escape(str(vm.digest_max_per_source)),   '"></label>',
+          '<label><span>AI analysis on top matches</span><select name="digest_llm_enabled">',
+          ('<option value="true"' + (' selected' if vm.digest_llm_enabled else '') + '>Yes</option>'),
+          ('<option value="false"' + ('' if vm.digest_llm_enabled else ' selected') + '>No</option>'),
+          '</select></label>',
+          '<label><span>Max AI calls queued per run (0–100)</span><input name="digest_max_llm_per_run" type="number" min="0" max="100" value="',   escape(str(vm.digest_max_llm_per_run)),   '"></label>',
+          '<label><span>AI calls/min (1–60)</span><input name="digest_llm_rpm" type="number" min="1" max="60" value="',   escape(str(vm.digest_llm_rpm)),   '"></label>',
+          '<label><span>AI calls/day (1–1000)</span><input name="digest_llm_rpd" type="number" min="1" max="1000" value="',   escape(str(vm.digest_llm_rpd)),   '"></label>',
+          '<label><span>AI batch size (1–50)</span><input name="digest_llm_batch_size" type="number" min="1" max="50" value="',   escape(str(vm.digest_llm_batch_size)),   '"></label>',
+          '<label><span>AI batch interval min (1–1440)</span><input name="digest_llm_batch_interval_min" type="number" min="1" max="1440" value="',   escape(str(vm.digest_llm_batch_interval_min)),   '"></label>',
+          '</div>',
+          '<p style="font-size:0.8rem;color:var(--ink-faint);margin-top:6px;">AI rate limits apply to the paced LLM worker (Daily Digest D6). Keep calls/min under your Gemini model\'s RPM and calls/day under the free-tier cap.</p>',
+          '</fieldset>',
+          '<div style="margin-top:16px;">',
+          '<button type="submit" id="profile-save-btn">Save Profile</button>',
+          '<span id="profile-save-status" style="margin-left:16px;"></span>',
+          '</div>',
+          '</form>',
+          '</section>',
+          saved_searches_section,
+          scoring_preset_section,
+          '</div>',
+          '<script>',
+          '(function () {',
+          'var fileInput = document.getElementById("cv-file-input");',
+          'var uploadBtn = document.getElementById("cv-upload-btn");',
+          'var statusEl = document.getElementById("cv-upload-status");',
+          'var previewEl = document.getElementById("cv-parsed-preview");',
+          'var cvTextarea = document.querySelector("textarea[name=master_cv_text]");',
+          'var cvFilenameField = document.getElementById("cv-filename-field");',
+          'function setStatus(msg, isError) {',
+          'if (!statusEl) return;',
+          'statusEl.textContent = msg;',
+          'statusEl.style.color = isError ? "#b91c1c" : "#2563eb";',
+          '}',
+          'uploadBtn && uploadBtn.addEventListener("click", async function() {',
+          'var file = fileInput && fileInput.files && fileInput.files[0];',
+          'if (!file) { setStatus("Please select a file first.", true); return; }',
+          'if (file.size > 5 * 1024 * 1024) { setStatus("File too large. Maximum is 5 MB.", true); return; }',
+          'var ext = file.name.split(".").pop().toLowerCase();',
+          'if (!["txt","pdf","docx"].includes(ext)) { setStatus("Unsupported file type. Use .txt, .pdf, or .docx", true); return; }',
+          'setStatus("Uploading and parsing...");',
+          'var formData = new FormData();',
+          'formData.append("cv_file", file);',
+          'var pidInput = document.querySelector("input[name=\'profile_id\']");',
+          'if (pidInput && pidInput.value) formData.append("profile_id", pidInput.value);',
+          'try {',
+          'var response = await fetch("/profile/parse-cv", { method: "POST", body: formData });',
+          'var data = await response.json();',
+          'if (!response.ok || !data.ok) throw new Error(data.error || "Parse failed");',
+          'if (cvTextarea) cvTextarea.value = data.master_cv_text || "";',
+          'if (cvFilenameField) cvFilenameField.value = data.filename || file.name;',
+          'if (previewEl) previewEl.hidden = false;',
+          'var added = 0;',
+          'if (data.suggested_skills && data.suggested_skills.length) {',
+          '  var tbody = document.getElementById("skills-tbody");',
+          '  if (tbody && typeof makeRow === "function") {',
+          '    var existing = new Set();',
+          '    var rows = tbody.rows;',
+          '    for (var ri = 0; ri < rows.length; ri++) {',
+          '      var inp = rows[ri].cells[0] && rows[ri].cells[0].querySelector("input");',
+          '      if (inp && inp.value.trim()) existing.add(inp.value.trim().toLowerCase());',
+          '    }',
+          '    data.suggested_skills.forEach(function(name) {',
+          '      if (!existing.has(name.toLowerCase())) {',
+          '        tbody.appendChild(makeRow({ name: name, level: "unspecified", years: null }));',
+          '        existing.add(name.toLowerCase());',
+          '        added++;',
+          '      }',
+          '    });',
+          '  }',
+          '}',
+          'var skillMsg = added > 0 ? " Added " + added + " skill(s) — set levels then save." : (data.skill_extraction_warning ? " Skill extraction: " + data.skill_extraction_warning : "");',
+          'var saveMsg = data.auto_saved ? " CV saved automatically." : (data.auto_save_error ? " Auto-save FAILED: " + data.auto_save_error + ". Save manually below." : " Review and save below.");',
+          'setStatus("CV parsed successfully." + saveMsg + skillMsg);',
+          '} catch(err) {',
+          'setStatus(err.message || "Parse failed", true);',
+          '}',
+          '});',
+          '})();',
+          '(function () {',
+          'var LEVELS = ["unspecified","junior","mid","senior","expert"];',
+          'var tbody = document.getElementById("skills-tbody");',
+          'var hiddenField = document.getElementById("skills_json");',
+          'var form = document.getElementById("profile-form");',
+          'function makeRow(skill) {',
+          '  var tr = document.createElement("tr");',
+          '  var tdName = document.createElement("td"); tdName.style.padding = "4px 8px";',
+          '  var nameInput = document.createElement("input");',
+          '  nameInput.type = "text"; nameInput.placeholder = "e.g. Python"; nameInput.value = skill.name || "";',
+          '  nameInput.style.cssText = "width:100%;box-sizing:border-box;";',
+          '  tdName.appendChild(nameInput);',
+          '  var tdLevel = document.createElement("td"); tdLevel.style.padding = "4px 8px";',
+          '  var levelSel = document.createElement("select");',
+          '  LEVELS.forEach(function(l) {',
+          '    var opt = document.createElement("option"); opt.value = l; opt.textContent = l;',
+          '    if (l === (skill.level || "unspecified")) opt.selected = true;',
+          '    levelSel.appendChild(opt);',
+          '  });',
+          '  tdLevel.appendChild(levelSel);',
+          '  var tdYears = document.createElement("td"); tdYears.style.padding = "4px 8px";',
+          '  var yearsInput = document.createElement("input");',
+          '  yearsInput.type = "number"; yearsInput.min = "0"; yearsInput.step = "1"; yearsInput.style.width = "60px";',
+          '  yearsInput.value = (skill.years != null) ? String(skill.years) : "";',
+          '  tdYears.appendChild(yearsInput);',
+          '  var tdDel = document.createElement("td"); tdDel.style.padding = "4px 8px";',
+          '  var delBtn = document.createElement("button"); delBtn.type = "button"; delBtn.textContent = "✕";',
+          '  delBtn.style.cssText = "background:none;border:none;cursor:pointer;color:#b91c1c;font-size:1rem;padding:0 4px;";',
+          '  delBtn.onclick = function() { tr.remove(); };',
+          '  tdDel.appendChild(delBtn);',
+          '  tr.appendChild(tdName); tr.appendChild(tdLevel); tr.appendChild(tdYears); tr.appendChild(tdDel);',
+          '  return tr;',
+          '}',
+          'window.makeRow = makeRow;',
+          'function initTable() {',
+          '  var raw = hiddenField ? hiddenField.value : "[]";',
+          '  var skills = [];',
+          '  try { skills = JSON.parse(raw) || []; } catch(e) {}',
+          '  skills.forEach(function(s) { tbody.appendChild(makeRow(s)); });',
+          '}',
+          'function serializeTable() {',
+          '  var rows = tbody ? tbody.rows : [];',
+          '  var result = [];',
+          '  for (var i = 0; i < rows.length; i++) {',
+          '    var cells = rows[i].cells;',
+          '    var name = cells[0].querySelector("input").value.trim();',
+          '    if (!name) continue;',
+          '    var level = cells[1].querySelector("select").value;',
+          '    var yearsVal = cells[2].querySelector("input").value.trim();',
+          '    var years = yearsVal !== "" ? parseInt(yearsVal, 10) : null;',
+          '    result.push({ name: name, level: level, years: years, evidence_type: "self-reported" });',
+          '  }',
+          '  return JSON.stringify(result);',
+          '}',
+          'document.getElementById("add-skill-btn") && document.getElementById("add-skill-btn").addEventListener("click", function() {',
+          '  tbody.appendChild(makeRow({ name: "", level: "unspecified", years: null }));',
+          '});',
+          'form && form.addEventListener("submit", function() {',
+          '  if (hiddenField) hiddenField.value = serializeTable();',
+          '});',
+          'initTable();',
+          '})();',
+          '</script>',
+          '<script>',
+          '(function() {',
+          '  var sel = document.getElementById("remote_pref_select");',
+          '  var hid = document.getElementById("remote_pref_hidden");',
+          '  var profileForm = document.querySelector("form[action=\'/profile/save\']");',
+          '  if (sel && hid && profileForm) {',
+          '    profileForm.addEventListener("submit", function() {',
+          '      var vals = Array.from(sel.selectedOptions).map(function(o){return o.value;});',
+          '      hid.value = vals.join(",");',
+          '    });',
+          '  }',
+          '})();',
+          '</script>',
+          '<script>',
+          '(function () {',
+          '  var listEl = document.getElementById("saved-searches-list");',
+          '  var statusEl = document.getElementById("ss-status");',
+          '  var addBtn = document.getElementById("ss-add-btn");',
+          '  if (!listEl) return;',
+          '  function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }',
+          '  function setStatus(msg, isErr) { if (statusEl) { statusEl.textContent = msg || ""; statusEl.style.color = isErr ? "#b91c1c" : "#475569"; } }',
+          '  function paramsSummary(p) {',
+          '    p = p || {}; var bits = [];',
+          '    if (p.keywords) bits.push(esc(p.keywords));',
+          '    if (p.locationName) bits.push(esc(p.locationName));',
+          '    if (p.minimumSalary) bits.push("\\u00a3" + esc(p.minimumSalary) + "+");',
+          '    return bits.join(" \\u00b7 ");',
+          '  }',
+          '  function render(searches) {',
+          '    if (!searches.length) { listEl.innerHTML = "<p style=\'color:#64748b;\'><em>No saved searches yet.</em></p>"; return; }',
+          '    var html = searches.map(function(s) {',
+          '      var badge = s.enabled',
+          '        ? "<span style=\'color:#16a34a;font-weight:600;\'>\\u25cf Enabled</span>"',
+          '        : "<span style=\'color:#94a3b8;font-weight:600;\'>\\u25cb Disabled</span>";',
+          '      var lastRun = s.last_run_at ? (" \\u00b7 last run " + esc(s.last_run_at) + " (" + s.last_run_count + ")") : "";',
+          '      return "<div class=\'panel\' style=\'padding:10px 14px;margin-bottom:8px;\' data-id=\'" + esc(s.search_id) + "\'>"',
+          '        + "<div style=\'display:flex;justify-content:space-between;align-items:center;gap:8px;\'>"',
+          '        + "<div><strong>" + esc(s.name) + "</strong> &nbsp;<small style=\'color:#64748b;\'>" + esc(s.source_id) + "</small><br>"',
+          '        + "<small style=\'color:#475569;\'>" + paramsSummary(s.params) + lastRun + "</small></div>"',
+          '        + "<div style=\'white-space:nowrap;\'>" + badge',
+          '        + " <button type=\'button\' class=\'ss-run\' style=\'font-size:0.8rem;padding:3px 8px;\'>Run now</button>"',
+          '        + " <button type=\'button\' class=\'ss-toggle\' style=\'font-size:0.8rem;padding:3px 8px;\'>" + (s.enabled ? "Disable" : "Enable") + "</button>"',
+          '        + " <button type=\'button\' class=\'ss-delete\' style=\'font-size:0.8rem;padding:3px 8px;color:#b91c1c;\'>Delete</button>"',
+          '        + "</div></div></div>";',
+          '    }).join("");',
+          '    listEl.innerHTML = html;',
+          '    listEl.querySelectorAll(".ss-run").forEach(function(b) {',
+          '      b.addEventListener("click", function() { runNow(b.closest("[data-id]").getAttribute("data-id"), b); });',
+          '    });',
+          '    listEl.querySelectorAll(".ss-toggle").forEach(function(b) {',
+          '      b.addEventListener("click", function() { mutate(b.closest("[data-id]").getAttribute("data-id"), "toggle"); });',
+          '    });',
+          '    listEl.querySelectorAll(".ss-delete").forEach(function(b) {',
+          '      b.addEventListener("click", function() { if (confirm("Delete this saved search?")) mutate(b.closest("[data-id]").getAttribute("data-id"), "delete"); });',
+          '    });',
+          '  }',
+          '  async function runNow(id, btn) {',
+          '    setStatus("Running… (this may take a few seconds)");',
+          '    if (btn) btn.disabled = true;',
+          '    try {',
+          '      var r = await fetch("/saved-searches/" + encodeURIComponent(id) + "/run-now", { method: "POST" });',
+          '      var d = await r.json().catch(function(){return {};});',
+          '      if (!r.ok || !d.ok) { setStatus(d.error || "Run failed", true); return; }',
+          '      setStatus("Run done \\u2014 " + d.jobs_new + " new, " + d.jobs_llm_queued + " queued for AI, " + d.jobs_skipped + " skipped, " + d.jobs_already_seen + " already seen.");',
+          '      await load();',
+          '    } catch (e) { setStatus("Run failed", true); }',
+          '    finally { if (btn) btn.disabled = false; }',
+          '  }',
+          '  async function load() {',
+          '    try { var r = await fetch("/saved-searches"); var d = await r.json(); render(d.searches || []); }',
+          '    catch (e) { listEl.innerHTML = "<p style=\'color:#b91c1c;\'>Could not load saved searches.</p>"; }',
+          '  }',
+          '  async function mutate(id, action) {',
+          '    try {',
+          '      var r = await fetch("/saved-searches/" + encodeURIComponent(id) + "/" + action, { method: "POST" });',
+          '      if (!r.ok) { var e = await r.json().catch(function(){return {};}); setStatus(e.error || (action + " failed"), true); return; }',
+          '      await load();',
+          '    } catch (e) { setStatus(action + " failed", true); }',
+          '  }',
+          '  addBtn && addBtn.addEventListener("click", async function() {',
+          '    var name = (document.getElementById("ss-name").value || "").trim();',
+          '    var source = document.getElementById("ss-source").value;',
+          '    var params = {};',
+          '    var kw = (document.getElementById("ss-keywords").value || "").trim();',
+          '    var loc = (document.getElementById("ss-location").value || "").trim();',
+          '    var sal = (document.getElementById("ss-minsalary").value || "").trim();',
+          '    if (kw) params.keywords = kw;',
+          '    if (loc) params.locationName = loc;',
+          '    if (sal) params.minimumSalary = sal;',
+          '    if (!name) { setStatus("Name is required.", true); return; }',
+          '    if (!source) { setStatus("Pick a source.", true); return; }',
+          '    setStatus("Saving…");',
+          '    try {',
+          '      var r = await fetch("/saved-searches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name, source_id: source, params: params }) });',
+          '      var d = await r.json().catch(function(){return {};});',
+          '      if (!r.ok || !d.ok) { setStatus(d.error || "Save failed", true); return; }',
+          '      document.getElementById("ss-name").value = "";',
+          '      document.getElementById("ss-keywords").value = "";',
+          '      document.getElementById("ss-location").value = "";',
+          '      document.getElementById("ss-minsalary").value = "";',
+          '      setStatus("Saved.");',
+          '      await load();',
+          '    } catch (e) { setStatus("Save failed", true); }',
+          '  });',
+          '  load();',
+          '})();',
+          '</script>',
+          '</div></main></div>',
+    ])
     return render_page(f"My Profile — {escape(profile_id)}", body, model_label=model_label)
 
 
@@ -2331,7 +2584,6 @@ def render_digest_page(
                 bits.append(escape(e.location))
             if e.salary_display:
                 bits.append(escape(e.salary_display))
-            meta = " · ".join(b for b in bits if b)
             sub_bits = []
             if e.saved_search_id:
                 sub_bits.append(escape(e.saved_search_id))
@@ -2364,56 +2616,84 @@ def render_digest_page(
         "saved_search_id": f_search or None,
     })
 
-    body = (
-        '<div class="app-shell">'
-        + _render_sidebar("digest")
-        + '<main class="main-content"><div class="content-inner">'
-        + '<section class="panel">'
-        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
-        + '<h1 style="margin:0;">Daily Digest</h1>'
-        + '<div style="display:flex;gap:8px;align-items:center;">'
-        + '<button type="button" id="reeval-btn" title="Re-score every digest job against your current profile and threshold">Re-evaluate all</button>'
-        + '<button type="button" id="mark-all-seen-btn">Mark all seen</button>'
-        + '</div>'
-        + '</div>'
-        + '<p id="reeval-status" style="color:#6366f1;margin:6px 0 0;display:none;"></p>'
-        + f'<p style="color:#475569;">{len(entries)} shown · {unseen_n} unseen</p>'
-        + filter_bar
-        + '<div id="digest-list">' + cards_html + '</div>'
-        + '</section>'
-        + '</div></main></div>'
-        + '<script>'
-        + '(function(){'
-        + '  var FILT = ' + filt_json + ';'
-        + '  async function markSeen(body){ try{ var r= await fetch("/digest/mark-seen",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); return r.ok; }catch(e){ return false; } }'
-        + '  var allBtn=document.getElementById("mark-all-seen-btn");'
-        + '  allBtn && allBtn.addEventListener("click", async function(){ allBtn.disabled=true; var ok=await markSeen(Object.assign({all:true},FILT)); if(ok){ location.reload(); } else { allBtn.disabled=false; alert("Could not mark all seen."); } });'
-        + '  var reBtn=document.getElementById("reeval-btn");'
-        + '  var reStatus=document.getElementById("reeval-status");'
-        + '  reBtn && reBtn.addEventListener("click", async function(){'
-        + '    if(!confirm("Re-score every digest job against your current profile and threshold? Jobs that now qualify will reappear as unread and may be queued for AI.")) return;'
-        + '    reBtn.disabled=true; reStatus.style.display="block"; reStatus.textContent="Re-evaluating…";'
-        + '    try{'
-        + '      var r=await fetch("/digest/reevaluate",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});'
-        + '      var d=await r.json();'
-        + '      if(r.ok && d && d.ok!==false){'
-        + '        reStatus.textContent="Re-scored "+d.jobs_rescored+" · "+d.jobs_resurfaced+" resurfaced · "+d.jobs_llm_requeued+" queued for AI"+(d.jobs_dequeued?(" · "+d.jobs_dequeued+" de-queued"):"")+(d.jobs_errored?(" · "+d.jobs_errored+" errors"):"");'
-        + '        setTimeout(function(){ location.reload(); }, 1200);'
-        + '      } else { reBtn.disabled=false; reStatus.textContent="Re-evaluate failed: "+((d&&d.error)||"unknown error"); }'
-        + '    }catch(e){ reBtn.disabled=false; reStatus.textContent="Re-evaluate failed: "+e; }'
-        + '  });'
-        + '  document.querySelectorAll(".digest-open").forEach(function(a){'
-        + '    a.addEventListener("click", async function(ev){'
-        + '      if(ev.metaKey||ev.ctrlKey||ev.shiftKey||ev.button!==0) return;'
-        + '      ev.preventDefault();'
-        + '      var card=a.closest("[data-id]"); var id=card?card.getAttribute("data-id"):null;'
-        + '      if(id){ await markSeen({job_ids:[id]}); }'
-        + '      window.location.href=a.getAttribute("href");'
-        + '    });'
-        + '  });'
-        + '})();'
-        + '</script>'
-    )
+    body = "".join([
+        '<div class="app-shell">',
+          _render_sidebar("digest"),
+          '<main class="main-content"><div class="content-inner">',
+          '<section class="panel">',
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">',
+          '<h1 style="margin:0;">Daily Digest</h1>',
+          '<div style="display:flex;gap:8px;align-items:center;">',
+          '<button type="button" id="reeval-btn" title="Re-score every digest job against your current profile and threshold">Re-evaluate all</button>',
+          '<button type="button" id="mark-all-seen-btn">Mark all seen</button>',
+          '</div>',
+          '</div>',
+          '<p id="reeval-status" style="color:#6366f1;margin:6px 0 0;display:none;"></p>',
+          '<div id="digest-health" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:8px 0;padding:8px 12px;border:1px solid var(--line,#e2e8f0);border-radius:8px;font-size:13px;">',
+          '<span id="health-quota">Gemini quota: loading…</span>',
+          '<span id="health-scheduler">Scheduler: loading…</span>',
+          '<button type="button" id="run-llm-batch-btn" title="Process one paced batch of queued AI assessments now">Run LLM batch</button>',
+          '<span id="run-llm-batch-status" style="color:#6366f1;"></span>',
+          '</div>',
+          f'<p style="color:#475569;">{len(entries)} shown · {unseen_n} unseen</p>',
+          filter_bar,
+          '<div id="digest-list">',   cards_html,   '</div>',
+          '</section>',
+          '</div></main></div>',
+          '<script>',
+          '(function(){',
+          '  var FILT = ',   filt_json,   ';',
+          '  async function markSeen(body){ try{ var r= await fetch("/digest/mark-seen",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); return r.ok; }catch(e){ return false; } }',
+          '  var allBtn=document.getElementById("mark-all-seen-btn");',
+          '  allBtn && allBtn.addEventListener("click", async function(){ allBtn.disabled=true; var ok=await markSeen(Object.assign({all:true},FILT)); if(ok){ location.reload(); } else { allBtn.disabled=false; alert("Could not mark all seen."); } });',
+          '  var reBtn=document.getElementById("reeval-btn");',
+          '  var reStatus=document.getElementById("reeval-status");',
+          '  reBtn && reBtn.addEventListener("click", async function(){',
+          '    if(!confirm("Re-score every digest job against your current profile and threshold? Jobs that now qualify will reappear as unread and may be queued for AI.")) return;',
+          '    reBtn.disabled=true; reStatus.style.display="block"; reStatus.textContent="Re-evaluating…";',
+          '    try{',
+          '      var r=await fetch("/digest/reevaluate",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});',
+          '      var d=await r.json();',
+          '      if(r.ok && d && d.ok!==false){',
+          '        reStatus.textContent="Re-scored "+d.jobs_rescored+" · "+d.jobs_resurfaced+" resurfaced · "+d.jobs_llm_requeued+" queued for AI"+(d.jobs_dequeued?(" · "+d.jobs_dequeued+" de-queued"):"")+(d.jobs_errored?(" · "+d.jobs_errored+" errors"):"");',
+          '        setTimeout(function(){ location.reload(); }, 1200);',
+          '      } else { reBtn.disabled=false; reStatus.textContent="Re-evaluate failed: "+((d&&d.error)||"unknown error"); }',
+          '    }catch(e){ reBtn.disabled=false; reStatus.textContent="Re-evaluate failed: "+e; }',
+          '  });',
+          '  var hq=document.getElementById("health-quota"), hs=document.getElementById("health-scheduler");',
+          '  function loadHealth(){',
+          '    fetch("/digest/llm-queue").then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); }).then(function(d){',
+          '      var lim=(d.rpd_limit==null)?"?":d.rpd_limit;',
+          '      hq.textContent="Gemini quota: "+d.rpd_used_today+"/"+lim+" today · queue "+d.pending+" pending, "+d.failed+" failed";',
+          '    }).catch(function(e){ hq.textContent="Gemini quota: unavailable ("+e.message+")"; });',
+          '    fetch("/scheduler/status").then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); }).then(function(d){',
+          '      hs.textContent="Scheduler: "+(d.state||(d.running?"running":"idle"))+(d.reason?" ("+d.reason+")":"")+(d.next_run?(" · next "+d.next_run):"")+(d.last_error?(" · last error: "+d.last_error):"");',
+          '    }).catch(function(e){ hs.textContent="Scheduler: unavailable ("+e.message+")"; });',
+          '  }',
+          '  loadHealth();',
+          '  var lbBtn=document.getElementById("run-llm-batch-btn"), lbStatus=document.getElementById("run-llm-batch-status");',
+          '  lbBtn && lbBtn.addEventListener("click", async function(){',
+          '    lbBtn.disabled=true; lbStatus.textContent="Running… ⏳";',
+          '    try{',
+          '      var r=await fetch("/digest/run-llm-batch",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});',
+          '      var d=await r.json();',
+          '      if(r.ok && d && d.ok!==false){ lbStatus.textContent="Done: "+d.processed+" processed, "+d.failed+" failed, "+d.requeued+" requeued"+(d.skipped_rpd?" (daily cap reached)":""); loadHealth(); }',
+          '      else { lbStatus.textContent="Failed: "+((d&&d.error)||"unknown error"); }',
+          '    }catch(e){ lbStatus.textContent="Failed: "+e; }',
+          '    lbBtn.disabled=false;',
+          '  });',
+          '  document.querySelectorAll(".digest-open").forEach(function(a){',
+          '    a.addEventListener("click", async function(ev){',
+          '      if(ev.metaKey||ev.ctrlKey||ev.shiftKey||ev.button!==0) return;',
+          '      ev.preventDefault();',
+          '      var card=a.closest("[data-id]"); var id=card?card.getAttribute("data-id"):null;',
+          '      if(id){ await markSeen({job_ids:[id]}); }',
+          '      window.location.href=a.getAttribute("href");',
+          '    });',
+          '  });',
+          '})();',
+          '</script>',
+    ])
     return render_page("Daily Digest", body, model_label=model_label)
 
 
@@ -2443,8 +2723,8 @@ def _render_sidebar(active_tab: str = "") -> str:
     }
     nav_items = [
         ("search",   "Find Jobs",   "/?tab=search",   "search"),
-        ("evaluate", "Evaluate",    "/?tab=evaluate",  "evaluate"),
-        ("add_job",  "Add Job",     "/?tab=add_job",  "add"),
+        ("add_job",  "Add & Evaluate", "/?tab=add_job",  "add"),
+        ("evaluate", "Advanced Review", "/?tab=evaluate",  "evaluate"),
         ("history",  "History",     "/?tab=history",  "history"),
         ("board",    "Board View",  "/board/view",    "board"),
         ("digest",   "Digest",      "/digest",        "digest"),
@@ -2453,11 +2733,17 @@ def _render_sidebar(active_tab: str = "") -> str:
     items_html = ""
     for key, label, href, icon_name in nav_items:
         is_active = active_tab == key
+        # NOTE (D3, 2026-09-20): role="tab"/aria-selected on these anchors was tried and
+        # reverted. It replaces the link role, which tests/test_ui.py
+        # (test_shared_shell_has_no_mobile_document_overflow) and assistive-tech users
+        # rely on, because each item is a real navigation to a server-rendered page.
+        # The correct semantic for the current item is aria-current="page".
+        aria_attrs = ' aria-current="page"' if is_active else ""
         badge = ('<span id="digest-badge" style="display:none;margin-left:auto;background:#16a34a;'
                  'color:#fff;border-radius:999px;font-size:0.7rem;padding:1px 7px;"></span>'
                  if key == "digest" else "")
         items_html += (
-            f'<a href="{href}" class="nav-item{"  nav-active" if is_active else ""}">'
+            f'<a href="{href}" class="nav-item{"  nav-active" if is_active else ""}"{aria_attrs}>'
             f'<span class="nav-icon">{_svg(icons[icon_name])}</span>'
             f'{escape(label)}{badge}</a>\n'
         )
@@ -2490,7 +2776,7 @@ def _render_sidebar(active_tab: str = "") -> str:
         <div class="sidebar-privacy-title">{lock_svg} Local-first</div>
         <div class="sidebar-privacy-body">Profile, jobs &amp; outcomes stay on this device. Nothing auto-applies.</div>
       </div>
-      <div style="padding:8px 18px 14px;font-size:10px;color:var(--ink-faint);letter-spacing:.02em;">
+      <div class="sidebar-updated" style="padding:8px 18px 14px;font-size:10px;color:var(--ink-faint);letter-spacing:.02em;">
         Page updated {_PAGE_UPDATED.get(active_tab, "—")}
       </div>
     </nav>"""
@@ -2700,6 +2986,38 @@ _PAGE_CSS = """    /* ── Design tokens — mirrors Claude deliverable ──
       line-height: 1.5; transition: opacity .3s;
     }
     .ai-loading-hint { font-size: 11.5px; color: var(--ink-faint); margin-top: 14px; }
+
+    /* ── Mobile shell ── */
+    @media (max-width: 640px) {
+      :root { --pad: 16px; --gap: 12px; }
+      html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
+      .app-shell { flex-direction: column; height: 100dvh; width: 100%; }
+      .sidebar {
+        width: 100%; max-width: 100vw; padding: 8px;
+        flex-direction: row; align-items: center; gap: 4px;
+        border-right: 0; border-bottom: 1px solid var(--line);
+        overflow-x: auto; overflow-y: hidden;
+        scrollbar-width: thin;
+      }
+      .sidebar-logo, .sidebar-spacer, .sidebar-privacy, .sidebar-updated { display: none; }
+      .nav-item {
+        flex: 0 0 auto; min-height: 44px; padding: 9px 11px; margin: 0;
+        white-space: nowrap;
+      }
+      .main-content { width: 100%; min-height: 0; overflow-x: hidden; }
+      .content-inner { width: 100%; padding: 16px 12px 28px; }
+      .panel { min-width: 0; }
+      .two-col, .summary-grid, .detail-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      form[action="/digest"] { grid-template-columns: minmax(0, 1fr) !important; }
+      table {
+        display: block; max-width: 100%; overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .actions > button, .actions > a { max-width: 100%; }
+      pre { max-width: 100%; overflow-wrap: anywhere; }
+    }
 """
 
 _PAGE_JS = """    /* ── Reed select loading overlay ── */

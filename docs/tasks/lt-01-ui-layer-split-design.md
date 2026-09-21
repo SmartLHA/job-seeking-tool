@@ -1,9 +1,9 @@
 # LT-01 Design — Split `job_hunt_ui.py` into Layers
 
 <!-- STATUS -->
-> **Implementation status:** ✅ Implemented 2026-06-19 — 291 tests green
-> **Divergences from spec:** `raw_input_payload_from_form` kept in `ui_handlers` (Reed-coupled, not pure); `render_select_options` + nonce helpers placed in `ui_utils` rather than `ui_render` (to break the reed↔ui circular import); `render_page`/page renderers take `model_label: str` instead of the whole `config`; QW-7 `_upsert_job_to_index` consolidation and Step 7 re-export cleanup deferred.
-> **Key files:** `ui_state.py`, `ui_utils.py`, `ui_render.py` (view-models `JobPageViewModel`/`ProfilePageViewModel`/`ReviewQueueViewModel`), `ui_handlers.py` (standalone `handle_*`/`render_*` fns), `ui_routes.py` (`UIRequest`/`UIResponder`/`_parse_request`/`_build_handler`/`main`), `job_sources/reed_source.py`; `job_hunt_ui.py` → 48-line shell.
+> **Implementation status:** ✅ Implemented; hardened 2026-07-27 — 167 Critical regression tests green
+> **Divergences from spec:** `raw_input_payload_from_form` kept in `ui_handlers` (Reed-coupled, not pure); `render_select_options` + nonce helpers placed in `ui_utils` rather than `ui_render` (to break the reed↔ui circular import); `render_page`/page renderers take `model_label: str` instead of the whole `config`. Step 7 re-export cleanup is complete.
+> **Key files:** `ui_state.py`, `ui_utils.py`, `ui_render.py` (view-models plus `render_board_page`, responsive styles), `ui_handlers.py` (standalone `handle_*`/`render_*` fns), `ui_routes.py` (`UIRequest`/`UIResponder`/`_parse_request`/`_build_handler`/`main`, loopback/POST protections), `job_sources/reed_source.py`; `job_hunt_ui.py` → 19-line shell.
 > **Routes:** all routes (unchanged); new `GET /sources` handler `handle_sources`.
 <!-- /STATUS -->
 

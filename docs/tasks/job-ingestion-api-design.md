@@ -354,7 +354,7 @@ Log and count occurrences of `unknown` values per field per run:
 | match_score | Decision |
 |-------------|----------|
 | >= 80 | `apply` |
-| 65–79 | `review` |
+| ≥65 and <80 | `review` |
 | < 65 | `skip` |
 
 ### 7.2 New: Source Quality Gating
@@ -560,7 +560,7 @@ Load config (keywords, location, thresholds)
 
 **Decision matrix:**
 
-| | match_score < 65 | match_score 65–79 | match_score >= 80 |
+| | match_score < 65 | match_score ≥65 and <80 | match_score >= 80 |
 |--|--|--|--|
 | **quality >= 70** | skip | review | apply |
 | **quality 40–69** | skip | review | **review** (overridden) |

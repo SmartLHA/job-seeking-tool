@@ -7,8 +7,8 @@ Global rules live in ~/.claude/CLAUDE.md and apply here. Project-specific below.
 - `PROJECT_CONTEXT.md` — where things stand
 Do NOT bulk-read src/ to orient; dispatch a scout (see ~/.claude/rules/dispatch.md).
 
-## Skill routing — Cowork ONLY (confirmed by Mike 2026-07-03)
-The gstack skills below are installed in Cowork, NOT in plain Claude Code CLI.
+## Skill routing — by surface
+gstack: NOT installed. A reference source checkout exists at ~/gstack only. gstack is Claude Code-native (installable via its setup script into ~/.claude/skills/) — the earlier note that gstack is Cowork-only was incorrect. Do not run gstack's setup without Mike's explicit instruction. The design-council skill uses a built-in gstack-style fallback and does not require gstack. gstack skills, if ever installed, must comply with the Loop policy in dispatch.md.
 In Cowork: route as listed. In CLI: these skills are absent — say so, then do
 the work directly under ~/.claude/rules/ instead of hunting for the skill.
 - Product ideas / "worth building?" → office-hours

@@ -94,6 +94,47 @@ def update_outcome(
     )
 
 
+def reset_terminal_outcome(
+    outcome: ApplicationOutcome,
+    *,
+    reason: str | None = None,
+    updated_at: str | None = None,
+) -> ApplicationOutcome:
+    """Return an auditable recovery from a mistaken terminal outcome.
+
+    This is deliberately separate from :func:`update_outcome`: ordinary status
+    changes continue to obey the state machine, while only ``rejected`` and
+    ``withdrawn`` can be recovered to ``not_applied``.  The original terminal
+    event remains in ``history`` and the new event records both its prior status
+    and the user's reason.
+    """
+    if outcome.status not in {"rejected", "withdrawn"}:
+        raise OutcomeValidationError(
+            "only rejected or withdrawn outcomes can be reset"
+        )
+
+    resolved_timestamp = _normalise_timestamp(updated_at)
+    resolved_reason = _normalise_optional_notes(reason)
+    audit_note = f"Reset from {outcome.status}."
+    if resolved_reason:
+        audit_note = f"{audit_note} Reason: {resolved_reason}"
+    else:
+        audit_note = f"{audit_note} Reason: Marked by mistake."
+
+    event = OutcomeEvent(
+        status="not_applied",
+        updated_at=resolved_timestamp,
+        notes=audit_note,
+    )
+    return ApplicationOutcome(
+        job_id=outcome.job_id,
+        status="not_applied",
+        updated_at=resolved_timestamp,
+        notes=audit_note,
+        history=[*outcome.history, event],
+    )
+
+
 def outcome_to_dict(outcome: ApplicationOutcome) -> dict[str, Any]:
     """Convert an outcome record into a JSON-friendly mapping."""
     return {
@@ -224,4 +265,4 @@ def allowed_next_statuses(current_status: OutcomeStatus | None) -> list[OutcomeS
     return [s for s in ALLOWED_OUTCOME_STATUSES if s in allowed]
 
 
-__all__ = ["OutcomeValidationError", "allowed_next_statuses", "create_outcome_record", "update_outcome", "outcome_to_dict", "outcome_from_dict"]
+__all__ = ["OutcomeValidationError", "allowed_next_statuses", "create_outcome_record", "reset_terminal_outcome", "update_outcome", "outcome_to_dict", "outcome_from_dict"]

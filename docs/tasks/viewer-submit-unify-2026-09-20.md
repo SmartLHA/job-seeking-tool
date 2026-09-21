@@ -1,0 +1,9 @@
+# Unify viewer job-submit storage with the main UI — 2026-09-20
+
+Mike approved ("要統一", 2026-09-20). Problem: viewer/viewer_server.py `/api/job-submit` (via the adapter `submit_parsed_job` in `_import_ui_module()`, ~1999-2030) writes `data/<job_id>.json`, while the main UI `POST /job-submit` (src/ui_handlers.py, route in src/ui_routes.py) stores jobs through intake evaluation and the SQLite index (src/job_hunt_index.py, src/job_hunt_storage.py, `data/state/`). Jobs submitted from the viewer therefore never appear in the main UI's History/Board/Digest.
+
+Goal: viewer job-submit goes through the SAME persistence path as the main UI's job-submit handler, by calling the shared function(s), not by duplicating logic. Read the main handler first and reuse whatever function it delegates to (extract a small shared helper in src/ if the logic is inline in the handler; keep the main UI behaviour byte-for-byte the same).
+
+Decisions to keep: viewer keeps the same request/response JSON shape for /api/job-submit (returns job id). Keep the path-sanitising of job_id. Do not delete existing data/<job_id>.json files; if any exist, list them in your report (count + names) but do not migrate or delete.
+
+AC: (1) test in tests/ submits a job via the viewer handler with PROJECT_ROOT/state root monkeypatched to tmp dirs and then finds it via the main UI's query path (index / get_jobs / history), proving it appears where the main UI looks; (2) existing tests/test_viewer_paste_handlers.py updated for the new behaviour, still meaningful; (3) main UI /job-submit tests unchanged and passing; (4) `python3 -m pytest tests/ -q` not worse than baseline 10 failed (bs4/dotenv) / 1036 passed / 1 skipped, ignoring the known flaky tests/test_ui.py::test_hidden_jobs_filter_browser_smoke; (5) nothing written into the real data/ during tests. Back up every edited file to backups/ (timestamped). Do not commit. Do not touch swarm/session_guard/shared_bus or anything under ~/.openclaw.
