@@ -221,7 +221,7 @@ one registration import in `src/ui_routes.py` (not the thin `job_hunt_ui.py` ent
 **Status:** ✅ Done 2026-06-22 — 408 passed / 1 skipped (+25 tests). **Design doc:** `docs/tasks/F1_v2_recheck_design.md` (rev 3, Codex-reviewed).
 **What:** "Re-check against tailored CV" button on the keyword panel → `POST /job/{id}/ats-recheck` re-scores against the latest saved tailored CV (`{job_id}_ai_reviewed.md` → `{job_id}.md`) and shows `was X% → now Y%`. New `load_latest_tailored_cv()` loader + `EmptyTailoredCVError`; 2 new `JobAnalysis` fields (`keyword_match_baseline_rate`, `keyword_match_source`); `handle_ats_recheck` with per-job lock; AJAX panel rendered through the same view-model path as reload.
 **Effort:** M
-**Other researched candidates (not yet designed):** F2 interview-prep pack, F3 follow-up nudges, F4 application-package export, F5 salary benchmark (Adzuna histogram/salary endpoints — base Adzuna source now wired in P5-1).
+**Other researched candidates (not yet designed):** F2 interview-prep pack, F3 follow-up nudges, F4 application-package export, F5 salary benchmark (**done 2026-09-22**, see below; base Adzuna source wired in P5-1).
 
 ---
 
@@ -387,6 +387,10 @@ Since the Status dropdown is now filtered to legal transitions, a mistakenly sav
 ### ✅ CAREER-F1 · Bulk URL/JD paste input for batch assessment
 **Status:** ✅ Done 2026-09-22 (uncommitted) — spec `docs/tasks/bulk-paste-2026-09-22.md`. "Bulk" mode on Add & Evaluate: client-side sequential loop over existing `/prefill` + `/job-submit`, max 15 items, no LLM assessment queued (assessment stays the explicit Review-queue step). Tests `tests/test_bulk_paste.py`.
 Batch-assess v1 input is review-queue selection only (Mike-approved 2026-07-08, `docs/tasks/career-ops-absorption-design.md` §10). Bulk URL/JD paste was originally slice-4 "polish" scope but was deferred rather than pulled forward (unlike cancel/retry-caps/stale-reset, which were absorbed into slice 3). Route through the existing `/prefill` ingestion path when picked up.
+
+### ✅ F5 · Adzuna salary benchmark panel (advisory)
+**Status:** ✅ Done 2026-09-22 (uncommitted) — spec `docs/tasks/salary-benchmark-2026-09-22.md`. Job page "Salary benchmark" panel, lazy button "Check market salary" -> `GET /job/{id}/salary-benchmark` (Adzuna UK histogram, nationwide, title-based). Shows sample size, median range, percentile of the job's midpoint salary and of the salary floor, "as of" date, Source: Adzuna. 24h file cache + 200/day call budget. Tests `tests/test_adzuna_salary.py`.
+**Terms note:** Adzuna terms allow personal research use; Adzuna is acknowledged as the source in the panel; data is not for redistribution or publication (publishing aggregates needs Adzuna's written consent). Advisory only: no effect on score, decision or grade. Caveat: histogram may include estimated salaries (UNVERIFIED).
 
 ### ⬜ CAREER-F2 · Comp-vs-market dimension
 **Status:** ⬜ Pending

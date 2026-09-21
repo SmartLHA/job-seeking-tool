@@ -47,6 +47,7 @@ from src.ui_handlers import (
     handle_save_profile,
     handle_set_scoring_preset,
     handle_job_explain,
+    handle_job_salary_benchmark,
     handle_qualitative_assess,
     handle_evaluate_form,
     handle_source_search,
@@ -310,6 +311,10 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             explain_match = re.match(r"^/job/([^/]+)/explain$", parsed.path)
             if explain_match:
                 handle_job_explain(req, config, responder, explain_match.group(1))
+                return
+            salary_match = re.match(r"^/job/([^/]+)/salary-benchmark$", parsed.path)
+            if salary_match:
+                handle_job_salary_benchmark(req, config, responder, salary_match.group(1))
                 return
             evaluate_form_match = re.match(r"^/job/([^/]+)/evaluate-form$", parsed.path)
             if evaluate_form_match:

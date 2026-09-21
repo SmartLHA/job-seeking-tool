@@ -1133,6 +1133,61 @@ _QUAL_ASSESS_JS = (
 
 
 
+_SALARY_BENCHMARK_JS = """<script>/* salary-benchmark */
+(function(){
+var root=document.getElementById("sb-panel");if(!root)return;
+var btn=document.getElementById("sb-btn"),out=document.getElementById("sb-out");
+var url="/job/"+encodeURIComponent(root.getAttribute("data-job-id"))+"/salary-benchmark";
+function money(n){return "\\u00a3"+Math.round(n).toLocaleString("en-GB");}
+function line(text){var d=document.createElement("div");d.textContent=text;d.style.margin="3px 0";return d;}
+function show(nodes,isError){out.textContent="";out.style.color=isError?"var(--skip)":"var(--ink-soft)";
+nodes.forEach(function(n){out.appendChild(n);});}
+function pct(p){return p===null||p===undefined?"n/a":Math.round(p)+"th percentile";}
+function render(d){
+if(d.status==="unavailable"){show([line("Adzuna is not configured (missing credentials).")],true);return;}
+if(d.status==="error"){show([line("Could not fetch salary data: "+(d.error||"unknown error"))],true);return;}
+if(d.status==="no_data"||!d.summary){show([line("No Adzuna data for this title ("+d.query+").")],false);return;}
+var s=d.summary,rows=[];
+rows.push(line("Title searched: "+d.query+" (UK-wide)"));
+rows.push(line("Sample size: "+s.total+" advertised vacancies"));
+var upper=s.median_bucket_upper===null?"+":" to "+money(s.median_bucket_upper);
+rows.push(line("Median falls in the "+money(s.median_bucket_lower)+upper+" range"));
+rows.push(line(d.job_salary===null?"This job: no salary advertised":"This job ("+money(d.job_salary)+" midpoint): "+pct(s.job_percentile)));
+rows.push(line(d.floor===null?"Your salary floor: not set":"Your salary floor ("+money(d.floor)+"): "+pct(s.floor_percentile)));
+var meta=line("As of "+(d.fetched_at||"").slice(0,10)+(d.cached?" (cached, refreshes daily)":"")+". Source: ");
+var a=document.createElement("a");a.href="https://www.adzuna.co.uk";a.target="_blank";a.rel="noopener noreferrer";a.textContent="Adzuna";
+meta.appendChild(a);meta.style.color="var(--ink-faint)";meta.style.fontSize="11.5px";rows.push(meta);
+show(rows,false);}
+btn.addEventListener("click",function(){
+btn.disabled=true;show([line("Checking...")],false);
+fetch(url).then(function(r){return r.json();}).then(render)
+.catch(function(){show([line("Could not reach the server.")],true);})
+.then(function(){btn.disabled=false;btn.textContent="Check again";});});
+})();
+</script>"""
+
+
+def render_salary_benchmark_panel(job_id: str) -> str:
+    """Advisory 'Salary benchmark' panel; fetches lazily via GET /job/{id}/salary-benchmark."""
+    job_id_esc = escape(job_id)
+    parts = [
+        '<div id="sb-panel" data-job-id="', job_id_esc, '" style="margin-top:16px;background:var(--surface);',
+        'border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--pad);box-shadow:var(--shadow-sm);">',
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">',
+        '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;',
+        'color:var(--ink-faint);">Salary benchmark</div>',
+        '<button id="sb-btn" type="button" style="padding:4px 13px;font-size:12px;cursor:pointer;',
+        'border:1px solid var(--accent);background:transparent;color:var(--accent);',
+        'border-radius:var(--r-md);font-weight:600;font-family:inherit;">Check market salary</button></div>',
+        '<div id="sb-out" style="font-size:13px;line-height:1.6;color:var(--ink-soft);"></div>',
+        '<div style="font-size:11px;color:var(--ink-faint);margin-top:6px;">Advisory only; does not affect the score. ',
+        'Advertised salaries, may include estimates. Source: Adzuna.</div>',
+        '</div>',
+        _SALARY_BENCHMARK_JS,
+    ]
+    return "".join(parts)
+
+
 def render_job_page(vm: "JobPageViewModel") -> str:
     flash, flash_kind, embed = vm.flash, vm.flash_kind, vm.embed
 
@@ -2115,6 +2170,8 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         f'</details>'
     )
 
+    salary_panel_html = render_salary_benchmark_panel(vm.job_id)
+
     if embed:
         # Embed mode: no sidebar, no back link — used by review-queue iframe
         body = f"""
@@ -2123,6 +2180,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             {flash_html}
             {job_header_html}
             {verdict_card_html}
+            {salary_panel_html}
             {qualitative_panel_html}
             {keyword_block_html}
             {reasons_grid_html}
@@ -2154,6 +2212,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
           {flash_html}
           {job_header_html}
           {verdict_card_html}
+          {salary_panel_html}
           {qualitative_panel_html}
           {keyword_block_html}
           {reasons_grid_html}

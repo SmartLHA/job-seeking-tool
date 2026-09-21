@@ -701,6 +701,57 @@ def handle_job_explain(req, config, responder, job_id):
     responder.send_json({"ok": True, **explanation})
 
 
+_SALARY_JOB_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def handle_job_salary_benchmark(req, config, responder, job_id):
+    """GET /job/{id}/salary-benchmark — advisory Adzuna salary histogram summary (JSON).
+
+    Advisory only: never touches scoring, decision or grade. The Adzuna key is never
+    included in any response or log (the client returns fixed-text errors).
+    """
+    from src.job_sources.adzuna_client import fetch_adzuna_salary_histogram
+    from src.job_sources.adzuna_source import _ensure_adzuna_env_loaded
+    from src.job_hunt_salary_benchmark import clean_job_title, summarise_histogram
+
+    if not _SALARY_JOB_ID_RE.match(job_id or ""):
+        responder.send_json({"ok": False, "error": "Invalid job id"}, status=HTTPStatus.BAD_REQUEST)
+        return
+    try:
+        reviewed_job = load_reviewed_job(job_id, config.state_root)
+    except FileNotFoundError:
+        responder.send_json({"ok": False, "error": "Job not found"}, status=HTTPStatus.NOT_FOUND)
+        return
+    query = clean_job_title(getattr(reviewed_job, "job_title", "") or "")
+    lo = getattr(reviewed_job, "salary_min_gbp", None)
+    hi = getattr(reviewed_job, "salary_max_gbp", None)
+    known = [v for v in (lo, hi) if isinstance(v, (int, float))]
+    job_salary = sum(known) / len(known) if known else None
+    try:
+        floor = load_candidate_profile(config.profile_path).salary_floor_gbp
+    except Exception:
+        floor = None
+    _ensure_adzuna_env_loaded()
+    result = fetch_adzuna_salary_histogram(
+        query, cache_dir=Path(config.state_root) / "cache" / "adzuna_salary",
+    )
+    payload = {
+        "ok": result.status in ("ok", "no_data"),
+        "status": result.status,
+        "query": query,
+        "fetched_at": result.fetched_at,
+        "cached": result.cached,
+        "error": result.error,
+        "job_salary": job_salary,
+        "floor": floor,
+        "source": "Adzuna",
+        "source_url": "https://www.adzuna.co.uk",
+        "summary": summarise_histogram(result.buckets, job_salary, floor) if result.status == "ok" else None,
+    }
+    http_status = HTTPStatus.BAD_GATEWAY if result.status == "error" else HTTPStatus.OK
+    responder.send_json(payload, status=http_status)
+
+
 def handle_qualitative_assess(req, config, responder, job_id):
     """POST /job/{id}/qualitative-assess — idempotent advisory assessment."""
     from src.job_hunt_index import (

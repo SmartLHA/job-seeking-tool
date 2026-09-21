@@ -24,7 +24,7 @@ Source research: santifer/career-ops (MIT), raw files verified 2026-07-08; notes
 | career-ops element | Verdict | Mapping |
 |---|---|---|
 | CV match dimension | Already covered | `score_job()` required/preferred skills + experience components — no change |
-| Comp vs market (5=top quartile) | **Excluded** | Requires market data we can't fetch (no scraping, no web research). Deterministic salary-vs-floor check already exists. Never invent figures (career-ops' own rule). |
+| Comp vs market (5=top quartile) | **Excluded** | Requires market data we can't fetch (no scraping, no web research). **Update 2026-09-22:** an Adzuna histogram source now exists (`docs/tasks/salary-benchmark-2026-09-22.md`), shown as an advisory job-page panel only; it is NOT wired into the score or a comp dimension. Deterministic salary-vs-floor check already exists. Never invent figures (career-ops' own rule). |
 | North Star / archetype alignment | Port, recalibrated | Replace its 6 AI/ML archetypes with a UK IT BA/PM set derived from Mike's stored `target_roles` (proposed: Business Analyst, Senior/Lead BA, IT Project Manager, Delivery Manager, PMO/Programme, hybrid BA-PM/Product Owner, Business Change/Transformation). LLM-judged. |
 | Cultural signals + cap rules | Port | LLM-judged from JD text; deterministic Python enforces the caps (evidence contradicts → cap 2/5; no evidence → 3/5 default). Weak-evidence caveat: career-ops leans on web research we won't do — expect many 3/5 defaults. |
 | Red flags | Port | LLM-judged, evidence-quoted; advisory. Existing hard blockers remain the only auto-skip mechanism. |
