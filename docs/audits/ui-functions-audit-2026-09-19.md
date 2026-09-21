@@ -190,7 +190,7 @@ Advanced Review, History, Board View, Digest, My Profile. All seven links land o
 3. Review queue uses raw inline-styled panels (`src/ui_render.py:340-384`) outside the app shell the mobile breakpoint targets (`:2903-2932`). Likely poor on narrow screens. UNVERIFIED, inferred from code, no browser render.
 4. Digest operational data (Gemini quota via `llm_queue_stats` `src/job_hunt_scheduler.py:653`; daemon status `src/ui_handlers.py:2356-2364`) is computed but never shown on `/digest`.
 5. Blocking `alert()` on copy failure (`src/ui_render.py:1540`).
-6. Outer home tab strip has no ARIA tab roles (`src/ui_render.py:208-233`); the add-job inner tabs do (`:402`).
+6. ~~Outer home tab strip has no ARIA tab roles~~ **Withdrawn 2026-09-21:** there is no client-side tab strip. `src/ui_render.py:208-233` holds content panels, and each "tab" is a full page load from a sidebar link. The correct pattern is `aria-current="page"` on the sidebar, now applied. Extension candidate H is void.
 
 ### 6.4 Domain modules
 

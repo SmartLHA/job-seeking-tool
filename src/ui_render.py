@@ -337,10 +337,29 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
         '})();</script>'
     )
 
+    rq_css = (
+        '<style>'
+        '.rq-root{display:flex;flex-direction:column;height:100vh;overflow:hidden;}'
+        '.rq-header{flex-shrink:0;display:flex;align-items:center;gap:13px;padding:12px 20px;'
+        'border-bottom:1px solid var(--line);background:var(--surface);z-index:10;flex-wrap:wrap;}'
+        '.rq-panels{flex:1;display:flex;overflow:hidden;}'
+        '.rq-list{width:300px;flex-shrink:0;border-right:1px solid var(--line);background:var(--surface);'
+        'display:flex;flex-direction:column;overflow:hidden;}'
+        '.rq-frame{flex:1;border:none;height:100%;background:var(--bg);}'
+        '@media (max-width:640px){'
+        '.rq-root{height:auto;min-height:100vh;overflow:visible;}'
+        '.rq-header{padding:10px 12px;gap:8px;}'
+        '.rq-panels{flex-direction:column;overflow:visible;}'
+        '.rq-list{width:100%;border-right:none;border-bottom:1px solid var(--line);max-height:45vh;}'
+        '.rq-frame{flex:none;width:100%;height:80vh;min-height:420px;}'
+        '}'
+        '</style>'
+    )
+
     body = f"""
-    <div style="display:flex;flex-direction:column;height:100vh;overflow:hidden;">
-      <div style="flex-shrink:0;display:flex;align-items:center;gap:13px;padding:12px 20px;
-                  border-bottom:1px solid var(--line);background:var(--surface);z-index:10;">
+    {rq_css}
+    <div class="rq-root">
+      <div class="rq-header">
         <a href="/?tab=search"
            style="display:inline-flex;align-items:center;gap:7px;padding:8px 14px;
                   border-radius:var(--r-md);border:1px solid var(--line);background:var(--surface-2);
@@ -361,9 +380,8 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
         <div style="flex:1;"></div>
         <span style="font-size:11.5px;color:var(--ink-faint);">Sorted by fit score &#xb7; click a job to view</span>
       </div>
-      <div style="flex:1;display:flex;overflow:hidden;">
-        <div style="width:300px;flex-shrink:0;border-right:1px solid var(--line);
-                    background:var(--surface);display:flex;flex-direction:column;overflow:hidden;">
+      <div class="rq-panels">
+        <div class="rq-list">
           <form method="post" action="/jobs/batch-assess" style="display:flex;flex-direction:column;min-height:0;flex:1;">
           <div style="padding:14px 14px 8px;">
             <div style="font-size:10.5px;font-weight:700;letter-spacing:0.07em;
@@ -375,8 +393,7 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
           </div>
           </form>
         </div>
-        <iframe id="rq-iframe" src="/job/{active_id_esc}?embed=1"
-                style="flex:1;border:none;height:100%;background:var(--bg);"
+        <iframe id="rq-iframe" class="rq-frame" src="/job/{active_id_esc}?embed=1"
                 title="Job detail"></iframe>
       </div>
     </div>
@@ -839,6 +856,36 @@ _ATS_RECHECK_JS = (
 )
 
 
+# D1 (2026-09-20): progressive enhancement for the qualitative-assess form. The route is
+# unchanged (POST returns the full job page HTML with a flash); JS submits it via fetch
+# so the user sees a loading state, then swaps in the returned page. Without JS the plain
+# form POST still works.
+_QUAL_ASSESS_JS = (
+    '<script>(function(){'
+    'document.querySelectorAll("form[data-qual-assess]").forEach(function(form){'
+    'if(form.dataset.qualBound)return;form.dataset.qualBound="1";'
+    'form.addEventListener("submit",function(ev){'
+    'ev.preventDefault();'
+    'var st=form.querySelector(".qual-assess-status"),btns=form.querySelectorAll("button");'
+    'var body=new URLSearchParams();if(ev.submitter&&ev.submitter.name)body.append(ev.submitter.name,ev.submitter.value);'
+    'btns.forEach(function(b){b.disabled=true;});'
+    'if(st){st.style.color="var(--ink-faint)";st.textContent="Running assessment\u2026 this can take up to a minute.";}'
+    'fetch(form.action,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body.toString()})'
+    '.then(function(r){return r.text().then(function(t){return {ok:r.ok,status:r.status,text:t};});})'
+    '.then(function(o){'
+    'if(!o.ok)throw new Error("HTTP "+o.status);'
+    'document.open();document.write(o.text);document.close();'
+    '}).catch(function(err){'
+    'btns.forEach(function(b){b.disabled=false;});'
+    'if(st){st.style.color="var(--skip)";st.textContent="Assessment failed: "+err.message+". Please try again.";}'
+    '});'
+    '});'
+    '});'
+    '})();</script>'
+)
+
+
+
 def render_job_page(vm: "JobPageViewModel") -> str:
     flash, flash_kind, embed = vm.flash, vm.flash_kind, vm.embed
 
@@ -1005,10 +1052,13 @@ def render_job_page(vm: "JobPageViewModel") -> str:
                 f'border-radius:var(--r-md);font-weight:600;font-family:inherit;">Re-run</button>'
             )
         button = (
-            f'<form method="post" action="/job/{escape(vm.job_id)}/qualitative-assess" style="margin:0;">'
+            f'<form method="post" action="/job/{escape(vm.job_id)}/qualitative-assess" data-qual-assess="1" style="margin:0;">'
             f'<button type="submit" style="padding:6px 14px;font-size:12.5px;cursor:pointer;border:1px solid var(--accent);'
             f'background:transparent;color:var(--accent);border-radius:var(--r-md);font-weight:600;font-family:inherit;">'
-            f'Qualitative assessment (AI)</button>{force_button}</form>'
+            f'Qualitative assessment (AI)</button>{force_button}'
+            f'<span class="qual-assess-status" role="status" aria-live="polite" '
+            f'style="font-size:12px;margin-left:8px;color:var(--ink-faint);"></span></form>'
+            + _QUAL_ASSESS_JS
         )
         if not show_panel:
             return (
@@ -1329,10 +1379,10 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'btn.addEventListener("click",function(){{'
             f'var jobId=btn.dataset.jobId;var decision=btn.dataset.decision;var current=btn.dataset.current;'
             f'var payload=current===decision?{{user_decision:null}}:{{user_decision:decision}};'
-            f'fetch("/job/"+jobId+"/decision",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify(payload)}})'
+            f'fetch("/job/"+encodeURIComponent(jobId)+"/decision",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify(payload)}})'
             f'.then(function(r){{return r.json();}})'
             f'.then(function(){{setTimeout(function(){{window.location.reload();}},300);}});'
-            f'}});}})();'
+            f'}});}});}})();'
             f'</script>'
             f'<script>/* add gap skills */'
             f'function addGapSkills(jobId){{'
@@ -1537,7 +1587,12 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'navigator.clipboard.writeText(t).then(function(){{'
             f'copyBtn.textContent="Copied ✓";copyBtn.style.color="var(--apply)";'
             f'setTimeout(function(){{copyBtn.textContent="Copy";copyBtn.style.color="";}},1800);'
-            f'}}).catch(function(){{alert("Copy failed — please select the text manually.");}});'
+            f'}}).catch(function(){{'
+            f'var m=document.getElementById("ai-cv-copy-msg");'
+            f'if(!m){{m=document.createElement("span");m.id="ai-cv-copy-msg";m.setAttribute("role","status");'
+            f'm.style.cssText="font-size:12px;color:var(--skip);margin-left:8px;";copyBtn.parentNode.insertBefore(m,copyBtn.nextSibling);}}'
+            f'm.textContent="Copy failed — please select the text manually.";'
+            f'}});'
             f'}});}}'
             f'}}).catch(function(err){{'
             f'aiCvBtn.disabled=false;aiCvBtn.textContent="AI Review CV";'
@@ -2613,7 +2668,7 @@ def render_digest_page(
         + '      hq.textContent="Gemini quota: "+d.rpd_used_today+"/"+lim+" today · queue "+d.pending+" pending, "+d.failed+" failed";'
         + '    }).catch(function(e){ hq.textContent="Gemini quota: unavailable ("+e.message+")"; });'
         + '    fetch("/scheduler/status").then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); }).then(function(d){'
-        + '      hs.textContent="Scheduler: "+(d.running?"running":"not running")+(d.next_run?(" · next "+d.next_run):"")+(d.last_error?(" · last error: "+d.last_error):"");'
+        + '      hs.textContent="Scheduler: "+(d.state||(d.running?"running":"idle"))+(d.reason?" ("+d.reason+")":"")+(d.next_run?(" · next "+d.next_run):"")+(d.last_error?(" · last error: "+d.last_error):"");'
         + '    }).catch(function(e){ hs.textContent="Scheduler: unavailable ("+e.message+")"; });'
         + '  }'
         + '  loadHealth();'
@@ -2679,11 +2734,17 @@ def _render_sidebar(active_tab: str = "") -> str:
     items_html = ""
     for key, label, href, icon_name in nav_items:
         is_active = active_tab == key
+        # NOTE (D3, 2026-09-20): role="tab"/aria-selected on these anchors was tried and
+        # reverted. It replaces the link role, which tests/test_ui.py
+        # (test_shared_shell_has_no_mobile_document_overflow) and assistive-tech users
+        # rely on, because each item is a real navigation to a server-rendered page.
+        # The correct semantic for the current item is aria-current="page".
+        aria_attrs = ' aria-current="page"' if is_active else ""
         badge = ('<span id="digest-badge" style="display:none;margin-left:auto;background:#16a34a;'
                  'color:#fff;border-radius:999px;font-size:0.7rem;padding:1px 7px;"></span>'
                  if key == "digest" else "")
         items_html += (
-            f'<a href="{href}" class="nav-item{"  nav-active" if is_active else ""}">'
+            f'<a href="{href}" class="nav-item{"  nav-active" if is_active else ""}"{aria_attrs}>'
             f'<span class="nav-icon">{_svg(icons[icon_name])}</span>'
             f'{escape(label)}{badge}</a>\n'
         )

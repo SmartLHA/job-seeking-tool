@@ -863,14 +863,45 @@ class DigestScheduler:
 
     # -- status snapshot (lock-guarded; read by HTTP threads) --
     def status(self) -> dict:
+        state, reason, enabled = self._describe_state()
         with self._lock:
             return {
+                # NOTE: "running" means a digest RUN is in progress right now, not that
+                # the daemon thread is alive (that is "alive"). Idle between runs is
+                # running=False by design; use "state"/"reason" for the explanation.
                 "running": self._running,
+                "alive": bool(self._thread is not None and self._thread.is_alive()),
+                "enabled": enabled,
+                "state": state,
+                "reason": reason,
                 "last_run": self._last_result.to_dict() if self._last_result else None,
                 "last_run_date": self._last_run_date,
                 "last_error": self._last_error,
                 "next_run": self._compute_next_run_iso(),
             }
+
+    def _describe_state(self) -> tuple[str, str, bool | None]:
+        """Return (state, reason, digest_enabled): state is one of running / disabled /
+        stopped / idle. ``enabled`` mirrors the profile toggle independently of thread
+        liveness; it is None only when the profile cannot be read (genuinely unknown)."""
+        try:
+            profile = self._get_profile()
+            enabled: bool | None = bool(getattr(profile, "digest_enabled", False))
+            run_time = str(getattr(profile, "digest_run_time", ""))
+            profile_error = None
+        except Exception as exc:
+            enabled, run_time, profile_error = None, "", exc
+        if self._thread is None or not self._thread.is_alive():
+            return "stopped", "Scheduler thread is not alive.", enabled
+        if profile_error is not None:
+            return "idle", f"Could not read profile: {profile_error}", None
+        if self._running:
+            return "running", "A digest run is in progress.", enabled
+        if not enabled:
+            return "disabled", "Daily digest is disabled in My Profile.", False
+        if self._last_run_date == datetime.now().date().isoformat():
+            return "idle", f"Idle: today's digest already ran; next run at {run_time} tomorrow.", True
+        return "idle", f"Idle: waiting for today's run at {run_time}.", True
 
     def _compute_next_run_iso(self) -> str | None:
         try:

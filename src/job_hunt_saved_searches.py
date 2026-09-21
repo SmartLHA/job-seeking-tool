@@ -25,6 +25,8 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -168,18 +170,46 @@ def _db_path(state_root: str | Path) -> Path:
     return Path(state_root) / "job_hunt_index.db"
 
 
+# Root cause of the flaky concurrent-create test (2026-09-21, 2 of 30 solo runs failed
+# before this fix): on a fresh DB every thread ran `PRAGMA journal_mode=WAL` and
+# `CREATE TABLE` at once. Switching the journal mode needs an exclusive lock and SQLite
+# can return SQLITE_BUSY for it immediately, without consulting busy_timeout. So the
+# setup is serialised in-process, skipped when the DB is already WAL, and retried
+# briefly for cross-process contention.
+_INIT_LOCK = threading.Lock()
+_INIT_RETRY_SECONDS = 10.0
+
+
+def _init_connection(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA busy_timeout=5000")
+    mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+    if str(mode).lower() != "wal":
+        conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(_TABLE_SQL)
+    conn.commit()
+
+
 def _connect(state_root: str | Path) -> sqlite3.Connection:
     db_path = _db_path(state_root)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=5.0)
     conn.row_factory = sqlite3.Row
     try:
-        # Match the index layer's concurrency settings so contention on the shared
-        # DB waits rather than raising `database is locked` (Codex MED).
-        conn.execute("PRAGMA busy_timeout=5000")
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute(_TABLE_SQL)
-        conn.commit()
+        deadline = time.monotonic() + _INIT_RETRY_SECONDS
+        delay = 0.01
+        while True:
+            try:
+                with _INIT_LOCK:
+                    _init_connection(conn)
+                break
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc).lower() and "busy" not in str(exc).lower():
+                    raise
+                if time.monotonic() >= deadline:
+                    raise
+                conn.rollback()
+                time.sleep(delay)
+                delay = min(delay * 2, 0.25)
     except Exception:
         conn.close()   # never leak a connection the caller never received
         raise

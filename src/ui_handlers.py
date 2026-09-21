@@ -2363,7 +2363,9 @@ def handle_scheduler_status(req, config, responder):
         responder.send_json(_DIGEST_SCHEDULER.status())
         return
     responder.send_json({
-        "running": False, "last_run": None, "next_run": None, "last_error": None,
+        "running": False, "alive": False, "enabled": False, "state": "stopped",
+        "reason": "Scheduler daemon not started in this server process.",
+        "last_run": None, "next_run": None, "last_error": None,
         "note": "Scheduler daemon not running; use Run now per saved search.",
     })
 

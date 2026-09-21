@@ -1068,7 +1068,7 @@ def test_search_keyword_chips_add_remove_and_backspace_browser_smoke(tmp_path: P
 def test_hidden_jobs_filter_browser_smoke(tmp_path: Path, monkeypatch) -> None:
     try:
         from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import expect, sync_playwright
     except ModuleNotFoundError:
         from unittest import SkipTest
 
@@ -1109,14 +1109,16 @@ def test_hidden_jobs_filter_browser_smoke(tmp_path: Path, monkeypatch) -> None:
                 page.goto(f"{base_url}/search/reed?{query}")
                 page.get_by_role("button", name=re.compile(r"Hidden jobs")).click()
                 page.locator("#jst-hidden-filter").fill("acme")
-                assert page.locator("#jst-hidden-filter-count").inner_text() == "1 of 2 hidden jobs"
+                # The hidden list loads via fetch after the modal opens; use retrying
+                # assertions so the test does not race the network response.
+                expect(page.locator("#jst-hidden-filter-count")).to_have_text("1 of 2 hidden jobs")
                 hidden_text = page.locator("#jst-hidden-list").inner_text()
                 assert "Business Analyst" in hidden_text
                 assert "Acme Partners" in hidden_text
                 assert "Delivery Manager" not in hidden_text
 
                 page.locator("#jst-hidden-filter").fill("no match")
-                assert page.locator("#jst-hidden-list").inner_text() == "No hidden jobs match this filter."
+                expect(page.locator("#jst-hidden-list")).to_have_text("No hidden jobs match this filter.")
                 assert page_errors == []
             finally:
                 browser.close()

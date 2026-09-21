@@ -275,7 +275,7 @@ MULTISELECT_JS = (
     '.then(function(d){'
     'if(!d.ok){list.textContent="Could not load hidden jobs.";return;}'
     '_setHidCount(d.count);'
-    'window._jst_hidden_jobs=d.jobs;jstFilterHidden("");'
+    'window._jst_hidden_jobs=d.jobs;jstFilterHidden(input?input.value:"");'
     '})'
     '.catch(function(){list.textContent="Could not load hidden jobs.";});'
     '};'
