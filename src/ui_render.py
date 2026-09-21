@@ -2151,368 +2151,368 @@ def render_profile_page(
     # Build body via string concat - each piece is a single-quoted Python string
     # inner double-quotes inside HTML work via string concatenation: "<attr " + "value" + ">"
     _sidebar_html = _render_sidebar("profile")
-    body = (
-        '<div class="app-shell">'
-        + _sidebar_html
-        + '<main class="main-content"><div class="content-inner">'
-        + flash_banner
-        + error_banner
-        + summary_section
-        + '<section class="panel">'
-        + '<h2>Upload CV</h2>'
-        + cv_status_strip
-        + '<p>Upload a .txt, .pdf, or .docx file (max 5 MB) to extract your CV text, then edit and save your profile.</p>'
-        + '<div style="margin-bottom: 16px;">'
-        + '<input type="file" id="cv-file-input" accept=".txt,.pdf,.docx">'
-        + '<button type="button" id="cv-upload-btn" style="margin-top:8px;">Parse CV</button>'
-        + '<p id="cv-upload-status" style="min-height:1.25rem; margin-top:4px; color:#475569;"></p>'
-        + '</div>'
-        + '<div id="cv-parsed-preview" hidden style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:16px;">'
-        + '<p style="color:#2563eb;font-weight:600;">CV parsed! Review the text below and fill in the rest of the form.</p>'
-        + '<p style="font-size:0.9em;color:#64748b;">Filename: '
-        + cv_filename_val
-        + '</p></div></section>'
-        + '<section class="panel">'
-        + '<h2>Profile details</h2>'
-        + '<form method="post" action="/profile/save" id="profile-form">'
-        + '<input type="hidden" name="profile_id" value="'
-        + escape(profile_id)
-        + '">'
-        + '<input type="hidden" name="_cv_filename" id="cv-filename-field" value="'
-        + cv_filename_val
-        + '">'
-        + '<fieldset class="profile-section" style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;">'
-        + '<legend style="font-weight:600;padding:0 6px;">Job search preferences</legend>'
-        + '<div class="grid two-col">'
-        + '<label><span>Name</span><input name="name" value="'
-        + fvget("name", objval("name"))
-        + '"></label>'
-        + '<label><span>Target roles (comma-separated)</span><input name="target_roles" value="'
-        + fvget("target_roles", ", ".join(getattr(vm, "target_roles", []) or []))
-        + '" placeholder="e.g. Business Analyst, Data Analyst"></label>'
-        + '<label><span>Locations (comma-separated)</span><input name="locations" value="'
-        + fvget("locations", ", ".join(getattr(vm, "locations", []) or []))
-        + '" placeholder="e.g. London, Manchester, Remote"></label>'
-        + '<label><span>Remote preference <small style="color:var(--ink-faint);font-weight:400">(hold Cmd/Ctrl to multi-select)</small></span>'
-        + '<select multiple id="remote_pref_select" size="4" style="height:auto">'
-        + sel_opt_multi("remote_only", "Remote only")
-        + sel_opt_multi("hybrid", "Hybrid (remote + office)")
-        + sel_opt_multi("flexible", "Flexible (any mode)")
-        + sel_opt_multi("onsite", "Office / Onsite")
-        + '</select>'
-        + '<input type="hidden" name="remote_preference" id="remote_pref_hidden">'
-        + '</label>'
-        + '<label><span>Salary floor (GBP)</span><input name="salary_floor_gbp" type="number" min="0" value="'
-        + fvget("salary_floor_gbp", objval("salary_floor_gbp"))
-        + '"></label>'
-        + '<label><span>Years experience</span><input name="years_experience" type="number" min="0" step="0.5" value="'
-        + fvget("years_experience", objval("years_experience"))
-        + '"></label>'
-        + '<label><span>Right to work UK</span>'
-        + '<select name="right_to_work_uk">'
-        + ('<option value="">— not set —</option>'
+    body = "".join([
+        '<div class="app-shell">',
+          _sidebar_html,
+          '<main class="main-content"><div class="content-inner">',
+          flash_banner,
+          error_banner,
+          summary_section,
+          '<section class="panel">',
+          '<h2>Upload CV</h2>',
+          cv_status_strip,
+          '<p>Upload a .txt, .pdf, or .docx file (max 5 MB) to extract your CV text, then edit and save your profile.</p>',
+          '<div style="margin-bottom: 16px;">',
+          '<input type="file" id="cv-file-input" accept=".txt,.pdf,.docx">',
+          '<button type="button" id="cv-upload-btn" style="margin-top:8px;">Parse CV</button>',
+          '<p id="cv-upload-status" style="min-height:1.25rem; margin-top:4px; color:#475569;"></p>',
+          '</div>',
+          '<div id="cv-parsed-preview" hidden style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:16px;">',
+          '<p style="color:#2563eb;font-weight:600;">CV parsed! Review the text below and fill in the rest of the form.</p>',
+          '<p style="font-size:0.9em;color:#64748b;">Filename: ',
+          cv_filename_val,
+          '</p></div></section>',
+          '<section class="panel">',
+          '<h2>Profile details</h2>',
+          '<form method="post" action="/profile/save" id="profile-form">',
+          '<input type="hidden" name="profile_id" value="',
+          escape(profile_id),
+          '">',
+          '<input type="hidden" name="_cv_filename" id="cv-filename-field" value="',
+          cv_filename_val,
+          '">',
+          '<fieldset class="profile-section" style="border:1px solid var(--line);border-radius:8px;padding:12px 14px;">',
+          '<legend style="font-weight:600;padding:0 6px;">Job search preferences</legend>',
+          '<div class="grid two-col">',
+          '<label><span>Name</span><input name="name" value="',
+          fvget("name", objval("name")),
+          '"></label>',
+          '<label><span>Target roles (comma-separated)</span><input name="target_roles" value="',
+          fvget("target_roles", ", ".join(getattr(vm, "target_roles", []) or [])),
+          '" placeholder="e.g. Business Analyst, Data Analyst"></label>',
+          '<label><span>Locations (comma-separated)</span><input name="locations" value="',
+          fvget("locations", ", ".join(getattr(vm, "locations", []) or [])),
+          '" placeholder="e.g. London, Manchester, Remote"></label>',
+          '<label><span>Remote preference <small style="color:var(--ink-faint);font-weight:400">(hold Cmd/Ctrl to multi-select)</small></span>',
+          '<select multiple id="remote_pref_select" size="4" style="height:auto">',
+          sel_opt_multi("remote_only", "Remote only"),
+          sel_opt_multi("hybrid", "Hybrid (remote + office)"),
+          sel_opt_multi("flexible", "Flexible (any mode)"),
+          sel_opt_multi("onsite", "Office / Onsite"),
+          '</select>',
+          '<input type="hidden" name="remote_preference" id="remote_pref_hidden">',
+          '</label>',
+          '<label><span>Salary floor (GBP)</span><input name="salary_floor_gbp" type="number" min="0" value="',
+          fvget("salary_floor_gbp", objval("salary_floor_gbp")),
+          '"></label>',
+          '<label><span>Years experience</span><input name="years_experience" type="number" min="0" step="0.5" value="',
+          fvget("years_experience", objval("years_experience")),
+          '"></label>',
+          '<label><span>Right to work UK</span>',
+          '<select name="right_to_work_uk">',
+          ('<option value="">— not set —</option>'
            '<option value="true"' + (' selected' if (fv.get("right_to_work_uk") or str(getattr(vm, "right_to_work_uk", None))) in ("true","True","1","yes") else '') + '>Yes</option>'
-           '<option value="false"' + (' selected' if (fv.get("right_to_work_uk") or str(getattr(vm, "right_to_work_uk", None))) in ("false","False","0","no") else '') + '>No</option>')
-        + '</select></label>'
-        + '</div>'
-        + '</fieldset>'
-        + '<fieldset class="profile-section" style="margin-top:16px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;">'
-        + '<legend style="font-weight:600;padding:0 6px;">Experience and evidence</legend>'
-        + '<div class="grid two-col" style="margin-top:4px;">'
-        + '<div style="grid-column:1/-1;">'
-        + '<span style="font-weight:600;font-size:0.875rem;display:block;margin-bottom:4px;">Skills</span>'
-        + '<table id="skills-table" style="width:100%;border-collapse:collapse;font-size:0.875rem;">'
-        + '<thead><tr>'
-        + '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Name</th>'
-        + '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Level</th>'
-        + '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Years</th>'
-        + '<th style="border-bottom:1px solid #e2e8f0;width:40px;"></th>'
-        + '</tr></thead>'
-        + '<tbody id="skills-tbody"></tbody>'
-        + '</table>'
-        + '<button type="button" id="add-skill-btn" style="margin-top:6px;font-size:0.8rem;padding:4px 10px;">+ Add skill</button>'
-        + '<input type="hidden" name="skills_json" id="skills_json" value="'
-        + _skills_init_json
-        + '">'
-        + '</div>'
-        + '<label><span>Industries (comma-separated)</span><input name="industries" value="'
-        + fvget("industries", ", ".join(getattr(vm, "industries", []) or []))
-        + '" placeholder="Finance, Technology"></label>'
-        + '<label><span>Certifications (comma-separated)</span><input name="certifications" value="'
-        + fvget("certifications", ", ".join(getattr(vm, "certifications", []) or []))
-        + '" placeholder="AWS, PMP, CFA"></label>'
-        + '</div>'
-        + '<label style="margin-top:12px;"><span>Achievements (one per line)</span>'
-        + '<textarea name="achievements" rows="4">'
-        + escape(fv.get("achievements") if "achievements" in fv else "\n".join(getattr(vm, "achievements", []) or []))
-        + '</textarea>'
-        + '</label>'
-        + '<label><span>Master CV text</span><textarea name="master_cv_text" rows="8" placeholder="Extracted CV text will appear here after upload, or paste manually...">'
-        + cv_text
-        + '</textarea></label>'
-        + '</fieldset>'
+           '<option value="false"' + (' selected' if (fv.get("right_to_work_uk") or str(getattr(vm, "right_to_work_uk", None))) in ("false","False","0","no") else '') + '>No</option>'),
+          '</select></label>',
+          '</div>',
+          '</fieldset>',
+          '<fieldset class="profile-section" style="margin-top:16px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;">',
+          '<legend style="font-weight:600;padding:0 6px;">Experience and evidence</legend>',
+          '<div class="grid two-col" style="margin-top:4px;">',
+          '<div style="grid-column:1/-1;">',
+          '<span style="font-weight:600;font-size:0.875rem;display:block;margin-bottom:4px;">Skills</span>',
+          '<table id="skills-table" style="width:100%;border-collapse:collapse;font-size:0.875rem;">',
+          '<thead><tr>',
+          '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Name</th>',
+          '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Level</th>',
+          '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e2e8f0;">Years</th>',
+          '<th style="border-bottom:1px solid #e2e8f0;width:40px;"></th>',
+          '</tr></thead>',
+          '<tbody id="skills-tbody"></tbody>',
+          '</table>',
+          '<button type="button" id="add-skill-btn" style="margin-top:6px;font-size:0.8rem;padding:4px 10px;">+ Add skill</button>',
+          '<input type="hidden" name="skills_json" id="skills_json" value="',
+          _skills_init_json,
+          '">',
+          '</div>',
+          '<label><span>Industries (comma-separated)</span><input name="industries" value="',
+          fvget("industries", ", ".join(getattr(vm, "industries", []) or [])),
+          '" placeholder="Finance, Technology"></label>',
+          '<label><span>Certifications (comma-separated)</span><input name="certifications" value="',
+          fvget("certifications", ", ".join(getattr(vm, "certifications", []) or [])),
+          '" placeholder="AWS, PMP, CFA"></label>',
+          '</div>',
+          '<label style="margin-top:12px;"><span>Achievements (one per line)</span>',
+          '<textarea name="achievements" rows="4">',
+          escape(fv.get("achievements") if "achievements" in fv else "\n".join(getattr(vm, "achievements", []) or [])),
+          '</textarea>',
+          '</label>',
+          '<label><span>Master CV text</span><textarea name="master_cv_text" rows="8" placeholder="Extracted CV text will appear here after upload, or paste manually...">',
+          cv_text,
+          '</textarea></label>',
+          '</fieldset>',
         # --- Daily Digest settings (D3) — saved with the profile ---
-        + '<fieldset style="margin-top:18px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;">'
-        + '<legend style="font-weight:600;padding:0 6px;">Daily Digest</legend>'
-        + '<div class="grid two-col">'
-        + '<label><span>Enabled</span><select name="digest_enabled">'
-        + ('<option value="true"' + (' selected' if vm.digest_enabled else '') + '>Yes</option>')
-        + ('<option value="false"' + ('' if vm.digest_enabled else ' selected') + '>No</option>')
-        + '</select></label>'
-        + '<label><span>Show jobs scoring ≥ (0–100)</span><input name="digest_threshold" type="number" min="0" max="100" value="' + escape(str(vm.digest_threshold)) + '"></label>'
-        + '<label><span>Run time (HH:MM, local)</span><input name="digest_run_time" value="' + escape(vm.digest_run_time) + '" placeholder="07:00"></label>'
-        + '<label><span>Max jobs per saved search (1–200)</span><input name="digest_max_per_source" type="number" min="1" max="200" value="' + escape(str(vm.digest_max_per_source)) + '"></label>'
-        + '<label><span>AI analysis on top matches</span><select name="digest_llm_enabled">'
-        + ('<option value="true"' + (' selected' if vm.digest_llm_enabled else '') + '>Yes</option>')
-        + ('<option value="false"' + ('' if vm.digest_llm_enabled else ' selected') + '>No</option>')
-        + '</select></label>'
-        + '<label><span>Max AI calls queued per run (0–100)</span><input name="digest_max_llm_per_run" type="number" min="0" max="100" value="' + escape(str(vm.digest_max_llm_per_run)) + '"></label>'
-        + '<label><span>AI calls/min (1–60)</span><input name="digest_llm_rpm" type="number" min="1" max="60" value="' + escape(str(vm.digest_llm_rpm)) + '"></label>'
-        + '<label><span>AI calls/day (1–1000)</span><input name="digest_llm_rpd" type="number" min="1" max="1000" value="' + escape(str(vm.digest_llm_rpd)) + '"></label>'
-        + '<label><span>AI batch size (1–50)</span><input name="digest_llm_batch_size" type="number" min="1" max="50" value="' + escape(str(vm.digest_llm_batch_size)) + '"></label>'
-        + '<label><span>AI batch interval min (1–1440)</span><input name="digest_llm_batch_interval_min" type="number" min="1" max="1440" value="' + escape(str(vm.digest_llm_batch_interval_min)) + '"></label>'
-        + '</div>'
-        + '<p style="font-size:0.8rem;color:var(--ink-faint);margin-top:6px;">AI rate limits apply to the paced LLM worker (Daily Digest D6). Keep calls/min under your Gemini model\'s RPM and calls/day under the free-tier cap.</p>'
-        + '</fieldset>'
-        + '<div style="margin-top:16px;">'
-        + '<button type="submit" id="profile-save-btn">Save Profile</button>'
-        + '<span id="profile-save-status" style="margin-left:16px;"></span>'
-        + '</div>'
-        + '</form>'
-        + '</section>'
-        + saved_searches_section
-        + scoring_preset_section
-        + '</div>'
-        + '<script>'
-        + '(function () {'
-        + 'var fileInput = document.getElementById("cv-file-input");'
-        + 'var uploadBtn = document.getElementById("cv-upload-btn");'
-        + 'var statusEl = document.getElementById("cv-upload-status");'
-        + 'var previewEl = document.getElementById("cv-parsed-preview");'
-        + 'var cvTextarea = document.querySelector("textarea[name=master_cv_text]");'
-        + 'var cvFilenameField = document.getElementById("cv-filename-field");'
-        + 'function setStatus(msg, isError) {'
-        + 'if (!statusEl) return;'
-        + 'statusEl.textContent = msg;'
-        + 'statusEl.style.color = isError ? "#b91c1c" : "#2563eb";'
-        + '}'
-        + 'uploadBtn && uploadBtn.addEventListener("click", async function() {'
-        + 'var file = fileInput && fileInput.files && fileInput.files[0];'
-        + 'if (!file) { setStatus("Please select a file first.", true); return; }'
-        + 'if (file.size > 5 * 1024 * 1024) { setStatus("File too large. Maximum is 5 MB.", true); return; }'
-        + 'var ext = file.name.split(".").pop().toLowerCase();'
-        + 'if (!["txt","pdf","docx"].includes(ext)) { setStatus("Unsupported file type. Use .txt, .pdf, or .docx", true); return; }'
-        + 'setStatus("Uploading and parsing...");'
-        + 'var formData = new FormData();'
-        + 'formData.append("cv_file", file);'
-        + 'var pidInput = document.querySelector("input[name=\'profile_id\']");'
-        + 'if (pidInput && pidInput.value) formData.append("profile_id", pidInput.value);'
-        + 'try {'
-        + 'var response = await fetch("/profile/parse-cv", { method: "POST", body: formData });'
-        + 'var data = await response.json();'
-        + 'if (!response.ok || !data.ok) throw new Error(data.error || "Parse failed");'
-        + 'if (cvTextarea) cvTextarea.value = data.master_cv_text || "";'
-        + 'if (cvFilenameField) cvFilenameField.value = data.filename || file.name;'
-        + 'if (previewEl) previewEl.hidden = false;'
-        + 'var added = 0;'
-        + 'if (data.suggested_skills && data.suggested_skills.length) {'
-        + '  var tbody = document.getElementById("skills-tbody");'
-        + '  if (tbody && typeof makeRow === "function") {'
-        + '    var existing = new Set();'
-        + '    var rows = tbody.rows;'
-        + '    for (var ri = 0; ri < rows.length; ri++) {'
-        + '      var inp = rows[ri].cells[0] && rows[ri].cells[0].querySelector("input");'
-        + '      if (inp && inp.value.trim()) existing.add(inp.value.trim().toLowerCase());'
-        + '    }'
-        + '    data.suggested_skills.forEach(function(name) {'
-        + '      if (!existing.has(name.toLowerCase())) {'
-        + '        tbody.appendChild(makeRow({ name: name, level: "unspecified", years: null }));'
-        + '        existing.add(name.toLowerCase());'
-        + '        added++;'
-        + '      }'
-        + '    });'
-        + '  }'
-        + '}'
-        + 'var skillMsg = added > 0 ? " Added " + added + " skill(s) — set levels then save." : (data.skill_extraction_warning ? " Skill extraction: " + data.skill_extraction_warning : "");'
-        + 'var saveMsg = data.auto_saved ? " CV saved automatically." : (data.auto_save_error ? " Auto-save FAILED: " + data.auto_save_error + ". Save manually below." : " Review and save below.");'
-        + 'setStatus("CV parsed successfully." + saveMsg + skillMsg);'
-        + '} catch(err) {'
-        + 'setStatus(err.message || "Parse failed", true);'
-        + '}'
-        + '});'
-        + '})();'
-        + '(function () {'
-        + 'var LEVELS = ["unspecified","junior","mid","senior","expert"];'
-        + 'var tbody = document.getElementById("skills-tbody");'
-        + 'var hiddenField = document.getElementById("skills_json");'
-        + 'var form = document.getElementById("profile-form");'
-        + 'function makeRow(skill) {'
-        + '  var tr = document.createElement("tr");'
-        + '  var tdName = document.createElement("td"); tdName.style.padding = "4px 8px";'
-        + '  var nameInput = document.createElement("input");'
-        + '  nameInput.type = "text"; nameInput.placeholder = "e.g. Python"; nameInput.value = skill.name || "";'
-        + '  nameInput.style.cssText = "width:100%;box-sizing:border-box;";'
-        + '  tdName.appendChild(nameInput);'
-        + '  var tdLevel = document.createElement("td"); tdLevel.style.padding = "4px 8px";'
-        + '  var levelSel = document.createElement("select");'
-        + '  LEVELS.forEach(function(l) {'
-        + '    var opt = document.createElement("option"); opt.value = l; opt.textContent = l;'
-        + '    if (l === (skill.level || "unspecified")) opt.selected = true;'
-        + '    levelSel.appendChild(opt);'
-        + '  });'
-        + '  tdLevel.appendChild(levelSel);'
-        + '  var tdYears = document.createElement("td"); tdYears.style.padding = "4px 8px";'
-        + '  var yearsInput = document.createElement("input");'
-        + '  yearsInput.type = "number"; yearsInput.min = "0"; yearsInput.step = "1"; yearsInput.style.width = "60px";'
-        + '  yearsInput.value = (skill.years != null) ? String(skill.years) : "";'
-        + '  tdYears.appendChild(yearsInput);'
-        + '  var tdDel = document.createElement("td"); tdDel.style.padding = "4px 8px";'
-        + '  var delBtn = document.createElement("button"); delBtn.type = "button"; delBtn.textContent = "✕";'
-        + '  delBtn.style.cssText = "background:none;border:none;cursor:pointer;color:#b91c1c;font-size:1rem;padding:0 4px;";'
-        + '  delBtn.onclick = function() { tr.remove(); };'
-        + '  tdDel.appendChild(delBtn);'
-        + '  tr.appendChild(tdName); tr.appendChild(tdLevel); tr.appendChild(tdYears); tr.appendChild(tdDel);'
-        + '  return tr;'
-        + '}'
-        + 'window.makeRow = makeRow;'
-        + 'function initTable() {'
-        + '  var raw = hiddenField ? hiddenField.value : "[]";'
-        + '  var skills = [];'
-        + '  try { skills = JSON.parse(raw) || []; } catch(e) {}'
-        + '  skills.forEach(function(s) { tbody.appendChild(makeRow(s)); });'
-        + '}'
-        + 'function serializeTable() {'
-        + '  var rows = tbody ? tbody.rows : [];'
-        + '  var result = [];'
-        + '  for (var i = 0; i < rows.length; i++) {'
-        + '    var cells = rows[i].cells;'
-        + '    var name = cells[0].querySelector("input").value.trim();'
-        + '    if (!name) continue;'
-        + '    var level = cells[1].querySelector("select").value;'
-        + '    var yearsVal = cells[2].querySelector("input").value.trim();'
-        + '    var years = yearsVal !== "" ? parseInt(yearsVal, 10) : null;'
-        + '    result.push({ name: name, level: level, years: years, evidence_type: "self-reported" });'
-        + '  }'
-        + '  return JSON.stringify(result);'
-        + '}'
-        + 'document.getElementById("add-skill-btn") && document.getElementById("add-skill-btn").addEventListener("click", function() {'
-        + '  tbody.appendChild(makeRow({ name: "", level: "unspecified", years: null }));'
-        + '});'
-        + 'form && form.addEventListener("submit", function() {'
-        + '  if (hiddenField) hiddenField.value = serializeTable();'
-        + '});'
-        + 'initTable();'
-        + '})();'
-        + '</script>'
-        + '<script>'
-        + '(function() {'
-        + '  var sel = document.getElementById("remote_pref_select");'
-        + '  var hid = document.getElementById("remote_pref_hidden");'
-        + '  var profileForm = document.querySelector("form[action=\'/profile/save\']");'
-        + '  if (sel && hid && profileForm) {'
-        + '    profileForm.addEventListener("submit", function() {'
-        + '      var vals = Array.from(sel.selectedOptions).map(function(o){return o.value;});'
-        + '      hid.value = vals.join(",");'
-        + '    });'
-        + '  }'
-        + '})();'
-        + '</script>'
-        + '<script>'
-        + '(function () {'
-        + '  var listEl = document.getElementById("saved-searches-list");'
-        + '  var statusEl = document.getElementById("ss-status");'
-        + '  var addBtn = document.getElementById("ss-add-btn");'
-        + '  if (!listEl) return;'
-        + '  function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }'
-        + '  function setStatus(msg, isErr) { if (statusEl) { statusEl.textContent = msg || ""; statusEl.style.color = isErr ? "#b91c1c" : "#475569"; } }'
-        + '  function paramsSummary(p) {'
-        + '    p = p || {}; var bits = [];'
-        + '    if (p.keywords) bits.push(esc(p.keywords));'
-        + '    if (p.locationName) bits.push(esc(p.locationName));'
-        + '    if (p.minimumSalary) bits.push("\\u00a3" + esc(p.minimumSalary) + "+");'
-        + '    return bits.join(" \\u00b7 ");'
-        + '  }'
-        + '  function render(searches) {'
-        + '    if (!searches.length) { listEl.innerHTML = "<p style=\'color:#64748b;\'><em>No saved searches yet.</em></p>"; return; }'
-        + '    var html = searches.map(function(s) {'
-        + '      var badge = s.enabled'
-        + '        ? "<span style=\'color:#16a34a;font-weight:600;\'>\\u25cf Enabled</span>"'
-        + '        : "<span style=\'color:#94a3b8;font-weight:600;\'>\\u25cb Disabled</span>";'
-        + '      var lastRun = s.last_run_at ? (" \\u00b7 last run " + esc(s.last_run_at) + " (" + s.last_run_count + ")") : "";'
-        + '      return "<div class=\'panel\' style=\'padding:10px 14px;margin-bottom:8px;\' data-id=\'" + esc(s.search_id) + "\'>"'
-        + '        + "<div style=\'display:flex;justify-content:space-between;align-items:center;gap:8px;\'>"'
-        + '        + "<div><strong>" + esc(s.name) + "</strong> &nbsp;<small style=\'color:#64748b;\'>" + esc(s.source_id) + "</small><br>"'
-        + '        + "<small style=\'color:#475569;\'>" + paramsSummary(s.params) + lastRun + "</small></div>"'
-        + '        + "<div style=\'white-space:nowrap;\'>" + badge'
-        + '        + " <button type=\'button\' class=\'ss-run\' style=\'font-size:0.8rem;padding:3px 8px;\'>Run now</button>"'
-        + '        + " <button type=\'button\' class=\'ss-toggle\' style=\'font-size:0.8rem;padding:3px 8px;\'>" + (s.enabled ? "Disable" : "Enable") + "</button>"'
-        + '        + " <button type=\'button\' class=\'ss-delete\' style=\'font-size:0.8rem;padding:3px 8px;color:#b91c1c;\'>Delete</button>"'
-        + '        + "</div></div></div>";'
-        + '    }).join("");'
-        + '    listEl.innerHTML = html;'
-        + '    listEl.querySelectorAll(".ss-run").forEach(function(b) {'
-        + '      b.addEventListener("click", function() { runNow(b.closest("[data-id]").getAttribute("data-id"), b); });'
-        + '    });'
-        + '    listEl.querySelectorAll(".ss-toggle").forEach(function(b) {'
-        + '      b.addEventListener("click", function() { mutate(b.closest("[data-id]").getAttribute("data-id"), "toggle"); });'
-        + '    });'
-        + '    listEl.querySelectorAll(".ss-delete").forEach(function(b) {'
-        + '      b.addEventListener("click", function() { if (confirm("Delete this saved search?")) mutate(b.closest("[data-id]").getAttribute("data-id"), "delete"); });'
-        + '    });'
-        + '  }'
-        + '  async function runNow(id, btn) {'
-        + '    setStatus("Running… (this may take a few seconds)");'
-        + '    if (btn) btn.disabled = true;'
-        + '    try {'
-        + '      var r = await fetch("/saved-searches/" + encodeURIComponent(id) + "/run-now", { method: "POST" });'
-        + '      var d = await r.json().catch(function(){return {};});'
-        + '      if (!r.ok || !d.ok) { setStatus(d.error || "Run failed", true); return; }'
-        + '      setStatus("Run done \\u2014 " + d.jobs_new + " new, " + d.jobs_llm_queued + " queued for AI, " + d.jobs_skipped + " skipped, " + d.jobs_already_seen + " already seen.");'
-        + '      await load();'
-        + '    } catch (e) { setStatus("Run failed", true); }'
-        + '    finally { if (btn) btn.disabled = false; }'
-        + '  }'
-        + '  async function load() {'
-        + '    try { var r = await fetch("/saved-searches"); var d = await r.json(); render(d.searches || []); }'
-        + '    catch (e) { listEl.innerHTML = "<p style=\'color:#b91c1c;\'>Could not load saved searches.</p>"; }'
-        + '  }'
-        + '  async function mutate(id, action) {'
-        + '    try {'
-        + '      var r = await fetch("/saved-searches/" + encodeURIComponent(id) + "/" + action, { method: "POST" });'
-        + '      if (!r.ok) { var e = await r.json().catch(function(){return {};}); setStatus(e.error || (action + " failed"), true); return; }'
-        + '      await load();'
-        + '    } catch (e) { setStatus(action + " failed", true); }'
-        + '  }'
-        + '  addBtn && addBtn.addEventListener("click", async function() {'
-        + '    var name = (document.getElementById("ss-name").value || "").trim();'
-        + '    var source = document.getElementById("ss-source").value;'
-        + '    var params = {};'
-        + '    var kw = (document.getElementById("ss-keywords").value || "").trim();'
-        + '    var loc = (document.getElementById("ss-location").value || "").trim();'
-        + '    var sal = (document.getElementById("ss-minsalary").value || "").trim();'
-        + '    if (kw) params.keywords = kw;'
-        + '    if (loc) params.locationName = loc;'
-        + '    if (sal) params.minimumSalary = sal;'
-        + '    if (!name) { setStatus("Name is required.", true); return; }'
-        + '    if (!source) { setStatus("Pick a source.", true); return; }'
-        + '    setStatus("Saving…");'
-        + '    try {'
-        + '      var r = await fetch("/saved-searches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name, source_id: source, params: params }) });'
-        + '      var d = await r.json().catch(function(){return {};});'
-        + '      if (!r.ok || !d.ok) { setStatus(d.error || "Save failed", true); return; }'
-        + '      document.getElementById("ss-name").value = "";'
-        + '      document.getElementById("ss-keywords").value = "";'
-        + '      document.getElementById("ss-location").value = "";'
-        + '      document.getElementById("ss-minsalary").value = "";'
-        + '      setStatus("Saved.");'
-        + '      await load();'
-        + '    } catch (e) { setStatus("Save failed", true); }'
-        + '  });'
-        + '  load();'
-        + '})();'
-        + '</script>'
-        + '</div></main></div>'
-    )
+          '<fieldset style="margin-top:18px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;">',
+          '<legend style="font-weight:600;padding:0 6px;">Daily Digest</legend>',
+          '<div class="grid two-col">',
+          '<label><span>Enabled</span><select name="digest_enabled">',
+          ('<option value="true"' + (' selected' if vm.digest_enabled else '') + '>Yes</option>'),
+          ('<option value="false"' + ('' if vm.digest_enabled else ' selected') + '>No</option>'),
+          '</select></label>',
+          '<label><span>Show jobs scoring ≥ (0–100)</span><input name="digest_threshold" type="number" min="0" max="100" value="',   escape(str(vm.digest_threshold)),   '"></label>',
+          '<label><span>Run time (HH:MM, local)</span><input name="digest_run_time" value="',   escape(vm.digest_run_time),   '" placeholder="07:00"></label>',
+          '<label><span>Max jobs per saved search (1–200)</span><input name="digest_max_per_source" type="number" min="1" max="200" value="',   escape(str(vm.digest_max_per_source)),   '"></label>',
+          '<label><span>AI analysis on top matches</span><select name="digest_llm_enabled">',
+          ('<option value="true"' + (' selected' if vm.digest_llm_enabled else '') + '>Yes</option>'),
+          ('<option value="false"' + ('' if vm.digest_llm_enabled else ' selected') + '>No</option>'),
+          '</select></label>',
+          '<label><span>Max AI calls queued per run (0–100)</span><input name="digest_max_llm_per_run" type="number" min="0" max="100" value="',   escape(str(vm.digest_max_llm_per_run)),   '"></label>',
+          '<label><span>AI calls/min (1–60)</span><input name="digest_llm_rpm" type="number" min="1" max="60" value="',   escape(str(vm.digest_llm_rpm)),   '"></label>',
+          '<label><span>AI calls/day (1–1000)</span><input name="digest_llm_rpd" type="number" min="1" max="1000" value="',   escape(str(vm.digest_llm_rpd)),   '"></label>',
+          '<label><span>AI batch size (1–50)</span><input name="digest_llm_batch_size" type="number" min="1" max="50" value="',   escape(str(vm.digest_llm_batch_size)),   '"></label>',
+          '<label><span>AI batch interval min (1–1440)</span><input name="digest_llm_batch_interval_min" type="number" min="1" max="1440" value="',   escape(str(vm.digest_llm_batch_interval_min)),   '"></label>',
+          '</div>',
+          '<p style="font-size:0.8rem;color:var(--ink-faint);margin-top:6px;">AI rate limits apply to the paced LLM worker (Daily Digest D6). Keep calls/min under your Gemini model\'s RPM and calls/day under the free-tier cap.</p>',
+          '</fieldset>',
+          '<div style="margin-top:16px;">',
+          '<button type="submit" id="profile-save-btn">Save Profile</button>',
+          '<span id="profile-save-status" style="margin-left:16px;"></span>',
+          '</div>',
+          '</form>',
+          '</section>',
+          saved_searches_section,
+          scoring_preset_section,
+          '</div>',
+          '<script>',
+          '(function () {',
+          'var fileInput = document.getElementById("cv-file-input");',
+          'var uploadBtn = document.getElementById("cv-upload-btn");',
+          'var statusEl = document.getElementById("cv-upload-status");',
+          'var previewEl = document.getElementById("cv-parsed-preview");',
+          'var cvTextarea = document.querySelector("textarea[name=master_cv_text]");',
+          'var cvFilenameField = document.getElementById("cv-filename-field");',
+          'function setStatus(msg, isError) {',
+          'if (!statusEl) return;',
+          'statusEl.textContent = msg;',
+          'statusEl.style.color = isError ? "#b91c1c" : "#2563eb";',
+          '}',
+          'uploadBtn && uploadBtn.addEventListener("click", async function() {',
+          'var file = fileInput && fileInput.files && fileInput.files[0];',
+          'if (!file) { setStatus("Please select a file first.", true); return; }',
+          'if (file.size > 5 * 1024 * 1024) { setStatus("File too large. Maximum is 5 MB.", true); return; }',
+          'var ext = file.name.split(".").pop().toLowerCase();',
+          'if (!["txt","pdf","docx"].includes(ext)) { setStatus("Unsupported file type. Use .txt, .pdf, or .docx", true); return; }',
+          'setStatus("Uploading and parsing...");',
+          'var formData = new FormData();',
+          'formData.append("cv_file", file);',
+          'var pidInput = document.querySelector("input[name=\'profile_id\']");',
+          'if (pidInput && pidInput.value) formData.append("profile_id", pidInput.value);',
+          'try {',
+          'var response = await fetch("/profile/parse-cv", { method: "POST", body: formData });',
+          'var data = await response.json();',
+          'if (!response.ok || !data.ok) throw new Error(data.error || "Parse failed");',
+          'if (cvTextarea) cvTextarea.value = data.master_cv_text || "";',
+          'if (cvFilenameField) cvFilenameField.value = data.filename || file.name;',
+          'if (previewEl) previewEl.hidden = false;',
+          'var added = 0;',
+          'if (data.suggested_skills && data.suggested_skills.length) {',
+          '  var tbody = document.getElementById("skills-tbody");',
+          '  if (tbody && typeof makeRow === "function") {',
+          '    var existing = new Set();',
+          '    var rows = tbody.rows;',
+          '    for (var ri = 0; ri < rows.length; ri++) {',
+          '      var inp = rows[ri].cells[0] && rows[ri].cells[0].querySelector("input");',
+          '      if (inp && inp.value.trim()) existing.add(inp.value.trim().toLowerCase());',
+          '    }',
+          '    data.suggested_skills.forEach(function(name) {',
+          '      if (!existing.has(name.toLowerCase())) {',
+          '        tbody.appendChild(makeRow({ name: name, level: "unspecified", years: null }));',
+          '        existing.add(name.toLowerCase());',
+          '        added++;',
+          '      }',
+          '    });',
+          '  }',
+          '}',
+          'var skillMsg = added > 0 ? " Added " + added + " skill(s) — set levels then save." : (data.skill_extraction_warning ? " Skill extraction: " + data.skill_extraction_warning : "");',
+          'var saveMsg = data.auto_saved ? " CV saved automatically." : (data.auto_save_error ? " Auto-save FAILED: " + data.auto_save_error + ". Save manually below." : " Review and save below.");',
+          'setStatus("CV parsed successfully." + saveMsg + skillMsg);',
+          '} catch(err) {',
+          'setStatus(err.message || "Parse failed", true);',
+          '}',
+          '});',
+          '})();',
+          '(function () {',
+          'var LEVELS = ["unspecified","junior","mid","senior","expert"];',
+          'var tbody = document.getElementById("skills-tbody");',
+          'var hiddenField = document.getElementById("skills_json");',
+          'var form = document.getElementById("profile-form");',
+          'function makeRow(skill) {',
+          '  var tr = document.createElement("tr");',
+          '  var tdName = document.createElement("td"); tdName.style.padding = "4px 8px";',
+          '  var nameInput = document.createElement("input");',
+          '  nameInput.type = "text"; nameInput.placeholder = "e.g. Python"; nameInput.value = skill.name || "";',
+          '  nameInput.style.cssText = "width:100%;box-sizing:border-box;";',
+          '  tdName.appendChild(nameInput);',
+          '  var tdLevel = document.createElement("td"); tdLevel.style.padding = "4px 8px";',
+          '  var levelSel = document.createElement("select");',
+          '  LEVELS.forEach(function(l) {',
+          '    var opt = document.createElement("option"); opt.value = l; opt.textContent = l;',
+          '    if (l === (skill.level || "unspecified")) opt.selected = true;',
+          '    levelSel.appendChild(opt);',
+          '  });',
+          '  tdLevel.appendChild(levelSel);',
+          '  var tdYears = document.createElement("td"); tdYears.style.padding = "4px 8px";',
+          '  var yearsInput = document.createElement("input");',
+          '  yearsInput.type = "number"; yearsInput.min = "0"; yearsInput.step = "1"; yearsInput.style.width = "60px";',
+          '  yearsInput.value = (skill.years != null) ? String(skill.years) : "";',
+          '  tdYears.appendChild(yearsInput);',
+          '  var tdDel = document.createElement("td"); tdDel.style.padding = "4px 8px";',
+          '  var delBtn = document.createElement("button"); delBtn.type = "button"; delBtn.textContent = "✕";',
+          '  delBtn.style.cssText = "background:none;border:none;cursor:pointer;color:#b91c1c;font-size:1rem;padding:0 4px;";',
+          '  delBtn.onclick = function() { tr.remove(); };',
+          '  tdDel.appendChild(delBtn);',
+          '  tr.appendChild(tdName); tr.appendChild(tdLevel); tr.appendChild(tdYears); tr.appendChild(tdDel);',
+          '  return tr;',
+          '}',
+          'window.makeRow = makeRow;',
+          'function initTable() {',
+          '  var raw = hiddenField ? hiddenField.value : "[]";',
+          '  var skills = [];',
+          '  try { skills = JSON.parse(raw) || []; } catch(e) {}',
+          '  skills.forEach(function(s) { tbody.appendChild(makeRow(s)); });',
+          '}',
+          'function serializeTable() {',
+          '  var rows = tbody ? tbody.rows : [];',
+          '  var result = [];',
+          '  for (var i = 0; i < rows.length; i++) {',
+          '    var cells = rows[i].cells;',
+          '    var name = cells[0].querySelector("input").value.trim();',
+          '    if (!name) continue;',
+          '    var level = cells[1].querySelector("select").value;',
+          '    var yearsVal = cells[2].querySelector("input").value.trim();',
+          '    var years = yearsVal !== "" ? parseInt(yearsVal, 10) : null;',
+          '    result.push({ name: name, level: level, years: years, evidence_type: "self-reported" });',
+          '  }',
+          '  return JSON.stringify(result);',
+          '}',
+          'document.getElementById("add-skill-btn") && document.getElementById("add-skill-btn").addEventListener("click", function() {',
+          '  tbody.appendChild(makeRow({ name: "", level: "unspecified", years: null }));',
+          '});',
+          'form && form.addEventListener("submit", function() {',
+          '  if (hiddenField) hiddenField.value = serializeTable();',
+          '});',
+          'initTable();',
+          '})();',
+          '</script>',
+          '<script>',
+          '(function() {',
+          '  var sel = document.getElementById("remote_pref_select");',
+          '  var hid = document.getElementById("remote_pref_hidden");',
+          '  var profileForm = document.querySelector("form[action=\'/profile/save\']");',
+          '  if (sel && hid && profileForm) {',
+          '    profileForm.addEventListener("submit", function() {',
+          '      var vals = Array.from(sel.selectedOptions).map(function(o){return o.value;});',
+          '      hid.value = vals.join(",");',
+          '    });',
+          '  }',
+          '})();',
+          '</script>',
+          '<script>',
+          '(function () {',
+          '  var listEl = document.getElementById("saved-searches-list");',
+          '  var statusEl = document.getElementById("ss-status");',
+          '  var addBtn = document.getElementById("ss-add-btn");',
+          '  if (!listEl) return;',
+          '  function esc(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }',
+          '  function setStatus(msg, isErr) { if (statusEl) { statusEl.textContent = msg || ""; statusEl.style.color = isErr ? "#b91c1c" : "#475569"; } }',
+          '  function paramsSummary(p) {',
+          '    p = p || {}; var bits = [];',
+          '    if (p.keywords) bits.push(esc(p.keywords));',
+          '    if (p.locationName) bits.push(esc(p.locationName));',
+          '    if (p.minimumSalary) bits.push("\\u00a3" + esc(p.minimumSalary) + "+");',
+          '    return bits.join(" \\u00b7 ");',
+          '  }',
+          '  function render(searches) {',
+          '    if (!searches.length) { listEl.innerHTML = "<p style=\'color:#64748b;\'><em>No saved searches yet.</em></p>"; return; }',
+          '    var html = searches.map(function(s) {',
+          '      var badge = s.enabled',
+          '        ? "<span style=\'color:#16a34a;font-weight:600;\'>\\u25cf Enabled</span>"',
+          '        : "<span style=\'color:#94a3b8;font-weight:600;\'>\\u25cb Disabled</span>";',
+          '      var lastRun = s.last_run_at ? (" \\u00b7 last run " + esc(s.last_run_at) + " (" + s.last_run_count + ")") : "";',
+          '      return "<div class=\'panel\' style=\'padding:10px 14px;margin-bottom:8px;\' data-id=\'" + esc(s.search_id) + "\'>"',
+          '        + "<div style=\'display:flex;justify-content:space-between;align-items:center;gap:8px;\'>"',
+          '        + "<div><strong>" + esc(s.name) + "</strong> &nbsp;<small style=\'color:#64748b;\'>" + esc(s.source_id) + "</small><br>"',
+          '        + "<small style=\'color:#475569;\'>" + paramsSummary(s.params) + lastRun + "</small></div>"',
+          '        + "<div style=\'white-space:nowrap;\'>" + badge',
+          '        + " <button type=\'button\' class=\'ss-run\' style=\'font-size:0.8rem;padding:3px 8px;\'>Run now</button>"',
+          '        + " <button type=\'button\' class=\'ss-toggle\' style=\'font-size:0.8rem;padding:3px 8px;\'>" + (s.enabled ? "Disable" : "Enable") + "</button>"',
+          '        + " <button type=\'button\' class=\'ss-delete\' style=\'font-size:0.8rem;padding:3px 8px;color:#b91c1c;\'>Delete</button>"',
+          '        + "</div></div></div>";',
+          '    }).join("");',
+          '    listEl.innerHTML = html;',
+          '    listEl.querySelectorAll(".ss-run").forEach(function(b) {',
+          '      b.addEventListener("click", function() { runNow(b.closest("[data-id]").getAttribute("data-id"), b); });',
+          '    });',
+          '    listEl.querySelectorAll(".ss-toggle").forEach(function(b) {',
+          '      b.addEventListener("click", function() { mutate(b.closest("[data-id]").getAttribute("data-id"), "toggle"); });',
+          '    });',
+          '    listEl.querySelectorAll(".ss-delete").forEach(function(b) {',
+          '      b.addEventListener("click", function() { if (confirm("Delete this saved search?")) mutate(b.closest("[data-id]").getAttribute("data-id"), "delete"); });',
+          '    });',
+          '  }',
+          '  async function runNow(id, btn) {',
+          '    setStatus("Running… (this may take a few seconds)");',
+          '    if (btn) btn.disabled = true;',
+          '    try {',
+          '      var r = await fetch("/saved-searches/" + encodeURIComponent(id) + "/run-now", { method: "POST" });',
+          '      var d = await r.json().catch(function(){return {};});',
+          '      if (!r.ok || !d.ok) { setStatus(d.error || "Run failed", true); return; }',
+          '      setStatus("Run done \\u2014 " + d.jobs_new + " new, " + d.jobs_llm_queued + " queued for AI, " + d.jobs_skipped + " skipped, " + d.jobs_already_seen + " already seen.");',
+          '      await load();',
+          '    } catch (e) { setStatus("Run failed", true); }',
+          '    finally { if (btn) btn.disabled = false; }',
+          '  }',
+          '  async function load() {',
+          '    try { var r = await fetch("/saved-searches"); var d = await r.json(); render(d.searches || []); }',
+          '    catch (e) { listEl.innerHTML = "<p style=\'color:#b91c1c;\'>Could not load saved searches.</p>"; }',
+          '  }',
+          '  async function mutate(id, action) {',
+          '    try {',
+          '      var r = await fetch("/saved-searches/" + encodeURIComponent(id) + "/" + action, { method: "POST" });',
+          '      if (!r.ok) { var e = await r.json().catch(function(){return {};}); setStatus(e.error || (action + " failed"), true); return; }',
+          '      await load();',
+          '    } catch (e) { setStatus(action + " failed", true); }',
+          '  }',
+          '  addBtn && addBtn.addEventListener("click", async function() {',
+          '    var name = (document.getElementById("ss-name").value || "").trim();',
+          '    var source = document.getElementById("ss-source").value;',
+          '    var params = {};',
+          '    var kw = (document.getElementById("ss-keywords").value || "").trim();',
+          '    var loc = (document.getElementById("ss-location").value || "").trim();',
+          '    var sal = (document.getElementById("ss-minsalary").value || "").trim();',
+          '    if (kw) params.keywords = kw;',
+          '    if (loc) params.locationName = loc;',
+          '    if (sal) params.minimumSalary = sal;',
+          '    if (!name) { setStatus("Name is required.", true); return; }',
+          '    if (!source) { setStatus("Pick a source.", true); return; }',
+          '    setStatus("Saving…");',
+          '    try {',
+          '      var r = await fetch("/saved-searches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name, source_id: source, params: params }) });',
+          '      var d = await r.json().catch(function(){return {};});',
+          '      if (!r.ok || !d.ok) { setStatus(d.error || "Save failed", true); return; }',
+          '      document.getElementById("ss-name").value = "";',
+          '      document.getElementById("ss-keywords").value = "";',
+          '      document.getElementById("ss-location").value = "";',
+          '      document.getElementById("ss-minsalary").value = "";',
+          '      setStatus("Saved.");',
+          '      await load();',
+          '    } catch (e) { setStatus("Save failed", true); }',
+          '  });',
+          '  load();',
+          '})();',
+          '</script>',
+          '</div></main></div>',
+    ])
     return render_page(f"My Profile — {escape(profile_id)}", body, model_label=model_label)
 
 
@@ -2584,7 +2584,6 @@ def render_digest_page(
                 bits.append(escape(e.location))
             if e.salary_display:
                 bits.append(escape(e.salary_display))
-            meta = " · ".join(b for b in bits if b)
             sub_bits = []
             if e.saved_search_id:
                 sub_bits.append(escape(e.saved_search_id))
@@ -2617,84 +2616,84 @@ def render_digest_page(
         "saved_search_id": f_search or None,
     })
 
-    body = (
-        '<div class="app-shell">'
-        + _render_sidebar("digest")
-        + '<main class="main-content"><div class="content-inner">'
-        + '<section class="panel">'
-        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
-        + '<h1 style="margin:0;">Daily Digest</h1>'
-        + '<div style="display:flex;gap:8px;align-items:center;">'
-        + '<button type="button" id="reeval-btn" title="Re-score every digest job against your current profile and threshold">Re-evaluate all</button>'
-        + '<button type="button" id="mark-all-seen-btn">Mark all seen</button>'
-        + '</div>'
-        + '</div>'
-        + '<p id="reeval-status" style="color:#6366f1;margin:6px 0 0;display:none;"></p>'
-        + '<div id="digest-health" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:8px 0;padding:8px 12px;border:1px solid var(--line,#e2e8f0);border-radius:8px;font-size:13px;">'
-        + '<span id="health-quota">Gemini quota: loading…</span>'
-        + '<span id="health-scheduler">Scheduler: loading…</span>'
-        + '<button type="button" id="run-llm-batch-btn" title="Process one paced batch of queued AI assessments now">Run LLM batch</button>'
-        + '<span id="run-llm-batch-status" style="color:#6366f1;"></span>'
-        + '</div>'
-        + f'<p style="color:#475569;">{len(entries)} shown · {unseen_n} unseen</p>'
-        + filter_bar
-        + '<div id="digest-list">' + cards_html + '</div>'
-        + '</section>'
-        + '</div></main></div>'
-        + '<script>'
-        + '(function(){'
-        + '  var FILT = ' + filt_json + ';'
-        + '  async function markSeen(body){ try{ var r= await fetch("/digest/mark-seen",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); return r.ok; }catch(e){ return false; } }'
-        + '  var allBtn=document.getElementById("mark-all-seen-btn");'
-        + '  allBtn && allBtn.addEventListener("click", async function(){ allBtn.disabled=true; var ok=await markSeen(Object.assign({all:true},FILT)); if(ok){ location.reload(); } else { allBtn.disabled=false; alert("Could not mark all seen."); } });'
-        + '  var reBtn=document.getElementById("reeval-btn");'
-        + '  var reStatus=document.getElementById("reeval-status");'
-        + '  reBtn && reBtn.addEventListener("click", async function(){'
-        + '    if(!confirm("Re-score every digest job against your current profile and threshold? Jobs that now qualify will reappear as unread and may be queued for AI.")) return;'
-        + '    reBtn.disabled=true; reStatus.style.display="block"; reStatus.textContent="Re-evaluating…";'
-        + '    try{'
-        + '      var r=await fetch("/digest/reevaluate",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});'
-        + '      var d=await r.json();'
-        + '      if(r.ok && d && d.ok!==false){'
-        + '        reStatus.textContent="Re-scored "+d.jobs_rescored+" · "+d.jobs_resurfaced+" resurfaced · "+d.jobs_llm_requeued+" queued for AI"+(d.jobs_dequeued?(" · "+d.jobs_dequeued+" de-queued"):"")+(d.jobs_errored?(" · "+d.jobs_errored+" errors"):"");'
-        + '        setTimeout(function(){ location.reload(); }, 1200);'
-        + '      } else { reBtn.disabled=false; reStatus.textContent="Re-evaluate failed: "+((d&&d.error)||"unknown error"); }'
-        + '    }catch(e){ reBtn.disabled=false; reStatus.textContent="Re-evaluate failed: "+e; }'
-        + '  });'
-        + '  var hq=document.getElementById("health-quota"), hs=document.getElementById("health-scheduler");'
-        + '  function loadHealth(){'
-        + '    fetch("/digest/llm-queue").then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); }).then(function(d){'
-        + '      var lim=(d.rpd_limit==null)?"?":d.rpd_limit;'
-        + '      hq.textContent="Gemini quota: "+d.rpd_used_today+"/"+lim+" today · queue "+d.pending+" pending, "+d.failed+" failed";'
-        + '    }).catch(function(e){ hq.textContent="Gemini quota: unavailable ("+e.message+")"; });'
-        + '    fetch("/scheduler/status").then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); }).then(function(d){'
-        + '      hs.textContent="Scheduler: "+(d.state||(d.running?"running":"idle"))+(d.reason?" ("+d.reason+")":"")+(d.next_run?(" · next "+d.next_run):"")+(d.last_error?(" · last error: "+d.last_error):"");'
-        + '    }).catch(function(e){ hs.textContent="Scheduler: unavailable ("+e.message+")"; });'
-        + '  }'
-        + '  loadHealth();'
-        + '  var lbBtn=document.getElementById("run-llm-batch-btn"), lbStatus=document.getElementById("run-llm-batch-status");'
-        + '  lbBtn && lbBtn.addEventListener("click", async function(){'
-        + '    lbBtn.disabled=true; lbStatus.textContent="Running… ⏳";'
-        + '    try{'
-        + '      var r=await fetch("/digest/run-llm-batch",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});'
-        + '      var d=await r.json();'
-        + '      if(r.ok && d && d.ok!==false){ lbStatus.textContent="Done: "+d.processed+" processed, "+d.failed+" failed, "+d.requeued+" requeued"+(d.skipped_rpd?" (daily cap reached)":""); loadHealth(); }'
-        + '      else { lbStatus.textContent="Failed: "+((d&&d.error)||"unknown error"); }'
-        + '    }catch(e){ lbStatus.textContent="Failed: "+e; }'
-        + '    lbBtn.disabled=false;'
-        + '  });'
-        + '  document.querySelectorAll(".digest-open").forEach(function(a){'
-        + '    a.addEventListener("click", async function(ev){'
-        + '      if(ev.metaKey||ev.ctrlKey||ev.shiftKey||ev.button!==0) return;'
-        + '      ev.preventDefault();'
-        + '      var card=a.closest("[data-id]"); var id=card?card.getAttribute("data-id"):null;'
-        + '      if(id){ await markSeen({job_ids:[id]}); }'
-        + '      window.location.href=a.getAttribute("href");'
-        + '    });'
-        + '  });'
-        + '})();'
-        + '</script>'
-    )
+    body = "".join([
+        '<div class="app-shell">',
+          _render_sidebar("digest"),
+          '<main class="main-content"><div class="content-inner">',
+          '<section class="panel">',
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">',
+          '<h1 style="margin:0;">Daily Digest</h1>',
+          '<div style="display:flex;gap:8px;align-items:center;">',
+          '<button type="button" id="reeval-btn" title="Re-score every digest job against your current profile and threshold">Re-evaluate all</button>',
+          '<button type="button" id="mark-all-seen-btn">Mark all seen</button>',
+          '</div>',
+          '</div>',
+          '<p id="reeval-status" style="color:#6366f1;margin:6px 0 0;display:none;"></p>',
+          '<div id="digest-health" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:8px 0;padding:8px 12px;border:1px solid var(--line,#e2e8f0);border-radius:8px;font-size:13px;">',
+          '<span id="health-quota">Gemini quota: loading…</span>',
+          '<span id="health-scheduler">Scheduler: loading…</span>',
+          '<button type="button" id="run-llm-batch-btn" title="Process one paced batch of queued AI assessments now">Run LLM batch</button>',
+          '<span id="run-llm-batch-status" style="color:#6366f1;"></span>',
+          '</div>',
+          f'<p style="color:#475569;">{len(entries)} shown · {unseen_n} unseen</p>',
+          filter_bar,
+          '<div id="digest-list">',   cards_html,   '</div>',
+          '</section>',
+          '</div></main></div>',
+          '<script>',
+          '(function(){',
+          '  var FILT = ',   filt_json,   ';',
+          '  async function markSeen(body){ try{ var r= await fetch("/digest/mark-seen",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); return r.ok; }catch(e){ return false; } }',
+          '  var allBtn=document.getElementById("mark-all-seen-btn");',
+          '  allBtn && allBtn.addEventListener("click", async function(){ allBtn.disabled=true; var ok=await markSeen(Object.assign({all:true},FILT)); if(ok){ location.reload(); } else { allBtn.disabled=false; alert("Could not mark all seen."); } });',
+          '  var reBtn=document.getElementById("reeval-btn");',
+          '  var reStatus=document.getElementById("reeval-status");',
+          '  reBtn && reBtn.addEventListener("click", async function(){',
+          '    if(!confirm("Re-score every digest job against your current profile and threshold? Jobs that now qualify will reappear as unread and may be queued for AI.")) return;',
+          '    reBtn.disabled=true; reStatus.style.display="block"; reStatus.textContent="Re-evaluating…";',
+          '    try{',
+          '      var r=await fetch("/digest/reevaluate",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});',
+          '      var d=await r.json();',
+          '      if(r.ok && d && d.ok!==false){',
+          '        reStatus.textContent="Re-scored "+d.jobs_rescored+" · "+d.jobs_resurfaced+" resurfaced · "+d.jobs_llm_requeued+" queued for AI"+(d.jobs_dequeued?(" · "+d.jobs_dequeued+" de-queued"):"")+(d.jobs_errored?(" · "+d.jobs_errored+" errors"):"");',
+          '        setTimeout(function(){ location.reload(); }, 1200);',
+          '      } else { reBtn.disabled=false; reStatus.textContent="Re-evaluate failed: "+((d&&d.error)||"unknown error"); }',
+          '    }catch(e){ reBtn.disabled=false; reStatus.textContent="Re-evaluate failed: "+e; }',
+          '  });',
+          '  var hq=document.getElementById("health-quota"), hs=document.getElementById("health-scheduler");',
+          '  function loadHealth(){',
+          '    fetch("/digest/llm-queue").then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); }).then(function(d){',
+          '      var lim=(d.rpd_limit==null)?"?":d.rpd_limit;',
+          '      hq.textContent="Gemini quota: "+d.rpd_used_today+"/"+lim+" today · queue "+d.pending+" pending, "+d.failed+" failed";',
+          '    }).catch(function(e){ hq.textContent="Gemini quota: unavailable ("+e.message+")"; });',
+          '    fetch("/scheduler/status").then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); }).then(function(d){',
+          '      hs.textContent="Scheduler: "+(d.state||(d.running?"running":"idle"))+(d.reason?" ("+d.reason+")":"")+(d.next_run?(" · next "+d.next_run):"")+(d.last_error?(" · last error: "+d.last_error):"");',
+          '    }).catch(function(e){ hs.textContent="Scheduler: unavailable ("+e.message+")"; });',
+          '  }',
+          '  loadHealth();',
+          '  var lbBtn=document.getElementById("run-llm-batch-btn"), lbStatus=document.getElementById("run-llm-batch-status");',
+          '  lbBtn && lbBtn.addEventListener("click", async function(){',
+          '    lbBtn.disabled=true; lbStatus.textContent="Running… ⏳";',
+          '    try{',
+          '      var r=await fetch("/digest/run-llm-batch",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});',
+          '      var d=await r.json();',
+          '      if(r.ok && d && d.ok!==false){ lbStatus.textContent="Done: "+d.processed+" processed, "+d.failed+" failed, "+d.requeued+" requeued"+(d.skipped_rpd?" (daily cap reached)":""); loadHealth(); }',
+          '      else { lbStatus.textContent="Failed: "+((d&&d.error)||"unknown error"); }',
+          '    }catch(e){ lbStatus.textContent="Failed: "+e; }',
+          '    lbBtn.disabled=false;',
+          '  });',
+          '  document.querySelectorAll(".digest-open").forEach(function(a){',
+          '    a.addEventListener("click", async function(ev){',
+          '      if(ev.metaKey||ev.ctrlKey||ev.shiftKey||ev.button!==0) return;',
+          '      ev.preventDefault();',
+          '      var card=a.closest("[data-id]"); var id=card?card.getAttribute("data-id"):null;',
+          '      if(id){ await markSeen({job_ids:[id]}); }',
+          '      window.location.href=a.getAttribute("href");',
+          '    });',
+          '  });',
+          '})();',
+          '</script>',
+    ])
     return render_page("Daily Digest", body, model_label=model_label)
 
 

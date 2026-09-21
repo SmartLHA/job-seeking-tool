@@ -48,14 +48,13 @@ from src.ui_render import (
     render_keyword_match_panel,
     render_profile_page,
     render_review_queue_page,
-    _render_sidebar,
     _render_profile_tab_section,
     _normalize_home_tab,
 )
 
 from src.job_hunt_orchestrator import run_local_evaluation_flow_from_payload
 from src.job_hunt_parsing import parse_job_from_text, parse_job_from_url
-from src.job_hunt_outcomes import ALLOWED_OUTCOME_STATUSES, allowed_next_statuses, create_outcome_record, reset_terminal_outcome, update_outcome
+from src.job_hunt_outcomes import allowed_next_statuses, create_outcome_record, reset_terminal_outcome, update_outcome
 from src.job_hunt_profile import load_candidate_profile, save_candidate_profile, ProfileValidationError, parse_cv_file, candidate_profile_from_dict
 from src.job_hunt_models import JobPosting, Skill
 from src.job_hunt_config import get_enabled_sources, DEFAULT_TAILORING_POLICY
@@ -722,7 +721,7 @@ def handle_qualitative_assess(req, config, responder, job_id):
         )
         return
     try:
-        reviewed_job = load_reviewed_job(job_id, config.state_root)
+        load_reviewed_job(job_id, config.state_root)
     except FileNotFoundError:
         responder.send_html(
             render_page("Job not found", "<p>No saved job was found for that id.</p>", model_label=config.model_label),
@@ -1004,7 +1003,6 @@ def handle_source_search(req, config, responder, source_id):
         _any_full_page = False
     # Filter out not-interested jobs (display-only: paging math below stays on
     # the RAW count so the skip cursor still advances one full source page).
-    _raw_count = len(results)
     # Relevance-bucket (Slice A, 2026-07-21 plan): split into title-matching
     # "main" results and a non-matching "Other results" bucket BEFORE dedup,
     # per the pipeline order (fetch -> normalise -> relevance-bucket -> dedup
@@ -1015,7 +1013,7 @@ def handle_source_search(req, config, responder, source_id):
         results, other_results = bucket_jobs_by_relevance(results, search_values.get("keywords", ""))
     # Dedup (Slice B): collapse duplicate cards within each bucket before any
     # other display-only filter runs. Display-only like the filters below —
-    # paging math stays on _raw_count above so the skip cursor still advances
+    # paging math stays on the RAW result count so the skip cursor still advances
     # a full source page.
     if not error and results:
         from src.job_sources.dedup import deduplicate_jobs
@@ -2013,7 +2011,7 @@ def handle_get_batch(req, config, responder, batch_id: str):
         )
     body = (
         refresh
-        + f'<section class="panel"><h2>Assessment batch</h2>'
+        + '<section class="panel"><h2>Assessment batch</h2>'
         + f'<p><strong>{done}</strong> done / <strong>{total}</strong> total. '
         + 'Cancel affects pending jobs only; a running job may complete before the page updates.</p>'
         + note

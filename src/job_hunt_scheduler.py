@@ -488,7 +488,6 @@ def rpd_date_key(now: datetime | None = None) -> str:
     now = now or datetime.now()
     try:
         from zoneinfo import ZoneInfo
-        from datetime import datetime as _dt, timezone as _tz
         # Interpret a naive `now` as local time, then convert to Pacific.
         aware = now if now.tzinfo else now.astimezone()
         return aware.astimezone(ZoneInfo("America/Los_Angeles")).date().isoformat()

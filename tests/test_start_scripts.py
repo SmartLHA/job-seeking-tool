@@ -2,6 +2,8 @@
 import os
 import shutil
 import subprocess
+import sys
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,12 +17,18 @@ def test_scripts_use_venv_python_not_system():
         assert "exec python3" not in text
 
 
-def test_dry_run_prints_venv_interpreter():
+def test_dry_run_prints_venv_interpreter(tmp_path):
+    """Self-contained: a tmp copy of each script with tmp/venv/bin/python -> sys.executable."""
+    venv_bin = tmp_path / "venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    fake_py = venv_bin / "python"
+    fake_py.symlink_to(sys.executable)
     for name in SCRIPTS:
-        r = subprocess.run(["bash", str(ROOT / name)], capture_output=True, text=True,
+        shutil.copy(ROOT / name, tmp_path / name)
+        r = subprocess.run(["bash", str(tmp_path / name)], capture_output=True, text=True,
                            env={**os.environ, "DRY_RUN": "1"})
         assert r.returncode == 0, r.stderr
-        assert str(ROOT / "venv" / "bin" / "python") in r.stdout
+        assert f"Interpreter: {fake_py}" in r.stdout.splitlines()
         assert "Python 3" in r.stdout
 
 
