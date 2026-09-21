@@ -704,6 +704,38 @@ def handle_job_explain(req, config, responder, job_id):
 _SALARY_JOB_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
+def handle_job_export(req, config, responder, job_id):
+    """GET /job/{id}/export.zip — one job's application package (CV, letter, analysis, job data).
+
+    400 bad id (before any file access), 404 unknown job, 200 zip otherwise. Read-only:
+    works for Apply/Review/Skip jobs alike; a missing part is listed in the README
+    inside the zip rather than failing.
+    """
+    from src.job_hunt_export import build_package, package_filename, validate_job_id
+    from src.job_hunt_storage import StorageError
+
+    try:
+        validate_job_id(job_id)
+    except ValueError:
+        responder.send_json({"ok": False, "error": "Invalid job id"}, status=HTTPStatus.BAD_REQUEST)
+        return
+    try:
+        profile = load_candidate_profile(config.profile_path)
+    except Exception:
+        profile = None
+    try:
+        data, _manifest = build_package(job_id, profile, state_root=config.state_root)
+    except (FileNotFoundError, StorageError):
+        responder.send_json({"ok": False, "error": "Job not found"}, status=HTTPStatus.NOT_FOUND)
+        return
+    responder.send_bytes(
+        HTTPStatus.OK,
+        data,
+        "application/zip",
+        {"Content-Disposition": f'attachment; filename="{package_filename(job_id)}"'},
+    )
+
+
 def handle_job_salary_benchmark(req, config, responder, job_id):
     """GET /job/{id}/salary-benchmark — advisory Adzuna salary histogram summary (JSON).
 

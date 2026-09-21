@@ -140,7 +140,7 @@ earlier monolithic checkout or unimplemented planning notes.
 - Tracker statuses are `not_applied`, `applied`, `interview`, `offer`, `rejected`,
   and `withdrawn`.
 - Remaining product work is additive: saved searches/daily digest, Gap Coach,
-  additional source adapters, and packaging/export improvements.
+  additional source adapters, and packaging/export improvements (application-package zip done 2026-09-22: `GET /job/{id}/export.zip`, `src/job_hunt_export.py`).
 - Test baseline (2026-07-08 coverage audit): 79% line coverage; the 60 functions
   found with zero coverage are down to 3 after 10 new test files / 257 tests
   (independently verified). Only `ui_routes.main` (needs refactor) and the

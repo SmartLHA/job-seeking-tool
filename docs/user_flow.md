@@ -93,6 +93,7 @@ Decision branches:
 3. **Cover letter** → `POST /cover-letter` (requires `why_company_text`; supported tone/length; grounded points only).
 4. **View original posting / Apply** — when `source_ref` is an HTTP(S) URL. **User opens it and submits manually.** Portal never submits.
    - Gate: tailor/letter are decision-gated; Skip blocks them.
+5. **Download package** -> `GET /job/<id>/export.zip` -> one zip with `cv.md`, `cover_letter.txt`, `analysis.md`, `job.json` and a `README.txt` listing anything not generated yet. Read-only, not decision-gated (works for Skip jobs too); no `.env`, raw inputs or profile personal fields.
 
 ---
 

@@ -73,6 +73,7 @@ from src.ui_handlers import (
     handle_jobs_save,
     handle_tailor,
     handle_cover_letter,
+    handle_job_export,
     handle_saved_searches_list,
     handle_saved_searches_create,
     handle_saved_search_delete,
@@ -316,6 +317,10 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             if salary_match:
                 handle_job_salary_benchmark(req, config, responder, salary_match.group(1))
                 return
+            export_match = re.match(r"^/job/([^/]+)/export\.zip$", parsed.path)
+            if export_match:
+                handle_job_export(req, config, responder, export_match.group(1))
+                return
             evaluate_form_match = re.match(r"^/job/([^/]+)/evaluate-form$", parsed.path)
             if evaluate_form_match:
                 handle_evaluate_form(req, config, responder, evaluate_form_match.group(1))
@@ -480,6 +485,26 @@ class UIResponder:
         self.handler.send_header("Content-Length", str(len(encoded)))
         self.handler.end_headers()
         self.handler.wfile.write(encoded)
+
+    def send_bytes(
+        self,
+        status: HTTPStatus,
+        data: bytes,
+        content_type: str,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        """Send a binary body (e.g. a zip download). Header values must be single-line."""
+        extra = dict(headers or {})
+        for name, value in [("Content-Type", content_type), *extra.items()]:
+            if any(ch in f"{name}{value}" for ch in "\r\n\x00"):
+                raise ValueError("invalid header value")
+        self.handler.send_response(status)
+        self.handler.send_header("Content-Type", content_type)
+        self.handler.send_header("Content-Length", str(len(data)))
+        for name, value in extra.items():
+            self.handler.send_header(name, value)
+        self.handler.end_headers()
+        self.handler.wfile.write(data)
 
     def redirect(self, location: str) -> None:
         self.handler.send_response(HTTPStatus.SEE_OTHER)
