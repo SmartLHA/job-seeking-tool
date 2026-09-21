@@ -384,8 +384,8 @@ Since the Status dropdown is now filtered to legal transitions, a mistakenly sav
 
 ## Follow-ups — Career-ops absorption (2026-07-09)
 
-### ⬜ CAREER-F1 · Bulk URL/JD paste input for batch assessment
-**Status:** ⬜ Pending
+### ✅ CAREER-F1 · Bulk URL/JD paste input for batch assessment
+**Status:** ✅ Done 2026-09-22 (uncommitted) — spec `docs/tasks/bulk-paste-2026-09-22.md`. "Bulk" mode on Add & Evaluate: client-side sequential loop over existing `/prefill` + `/job-submit`, max 15 items, no LLM assessment queued (assessment stays the explicit Review-queue step). Tests `tests/test_bulk_paste.py`.
 Batch-assess v1 input is review-queue selection only (Mike-approved 2026-07-08, `docs/tasks/career-ops-absorption-design.md` §10). Bulk URL/JD paste was originally slice-4 "polish" scope but was deferred rather than pulled forward (unlike cancel/retry-caps/stale-reset, which were absorbed into slice 3). Route through the existing `/prefill` ingestion path when picked up.
 
 ### ⬜ CAREER-F2 · Comp-vs-market dimension
