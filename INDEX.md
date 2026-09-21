@@ -121,7 +121,6 @@ Used by SilverHand to brief Handy/Scout precisely, and by any agent to orient qu
 | `tests/test_linkedin_source.py` | **NEW (P5-2); hardened 2026-07-11; MEDIUM fixes 2026-07-17.** 44 tests: 25-card parse, blocked variants (login-wall/authwall/short-page/HTTP-429/HTTP-403/timeout), empty results, XSS title escaping + `javascript:` href blocked, duplicate job-id dedup, `normalize_search_params` defaults/clamping/invalid-work-mode/`None` keyword+location, cache-hit skips HTTP, cache TTL expiry (stale row deleted → re-fetch), `render_results` edge cases + error-HTML escaping; `select_handler` (18 tests: happy path, all default-form-values keys, wrong source, field-length limits, work_mode/employment_type normalisation incl. `unknown→""`, lazy fetch triggered/skipped/failed, config/state_root, source_ref/job_id); URL origin check (4 tests). |
 | `tests/test_track_store.py` | **NEW (coverage audit 2026-07-08).** 22 tests: `job_hunt_track_store` full round-trip (upsert/get_all/update_status/delete/get_by_status/_gen_id), corrupt-JSON + missing-file `_load_data`, atomic `_save_data`. Exposed + now guards the `delete()` persistence bug. |
 | `tests/test_llm_queue_worker.py` | **NEW (2026-07-08).** 14 tests: `LLMQueueWorker` lifecycle (init/start/stop), `_has_key` env variants, `_loop` drain/exception/stop paths — real `_loop` body executed with `drain_llm_batch` mocked. |
-| `tests/test_shared_bus_getters.py` | **NEW (2026-07-08).** 13 tests: `shared_bus` `get_pipeline_runs` / `get_active_pipelines` / `get_agent_executions` on empty + populated temp SQLite DBs, ordering + limit. |
 | `tests/test_misc_uncovered.py` | **NEW (2026-07-08).** 34 tests: `_parse_json_from_text` (fences/prose/invalid), tailoring `_extract_bullet_lines`/`_extract_plain_lines`, `apply_url_from_ui_result`, `_is_fetch_allowed`. |
 | `tests/test_reed_adzuna_clients.py` | **NEW (2026-07-08).** 24 tests: `fetch_reed_jobs` / `fetch_adzuna_jobs` with `requests.get` mocked (success/empty/429/HTTP error/malformed JSON/no creds — asserts no HTTP call without creds), `save_raw_response`, env loading. |
 | `tests/test_source_forms.py` | **NEW (2026-07-08).** 59 tests: reed/adzuna/linkedin form rendering + XSS escaping, availability checks, `adzuna_selected_job_id`, `_validate_adzuna_salary_text`, `adzuna_select_form_to_evaluate_values` (10 variants). |
@@ -150,7 +149,6 @@ Used by SilverHand to brief Handy/Scout precisely, and by any agent to orient qu
 | `tests/test_lint.py` | Lint gate: pyflakes findings stay at the known-benign baseline. |
 | `tests/test_llm_client.py` | Gemini client hardening: timeout fall-through and `max_output_tokens`. |
 | `tests/test_multi_keyword_search.py` | Slice D: multi-keyword search, cursors and chip entry. |
-| `tests/test_multi_llm_chat.py` | Multi-LLM chat persistence (Rev3 QA). |
 | `tests/test_multiselect_shared.py` | Shared multi-select / load-more module regressions. |
 | `tests/test_normalize.py` | `job_sources.normalize`: HTML stripping, location normalisation, remote-type derivation. |
 | `tests/test_not_interested.py` | Persistent "not interested" store and search-flow triage UX. |
@@ -163,9 +161,6 @@ Used by SilverHand to brief Handy/Scout precisely, and by any agent to orient qu
 | `tests/test_scoring_preset_ui.py` | Slice C: `POST /scoring-preset` UI wiring. |
 | `tests/test_scoring_presets.py` | Slice C: named scoring-weight presets and persistence. |
 | `tests/test_search_dedup.py` | Slice B: dedup wired into live search and "Show more". |
-| `tests/test_session_guard.py` | Session guard: cancelled pipeline agent-execution cleanup. |
-| `tests/test_swarm_router_auto_advance.py` | Viewer swarm router: import is side-effect free, initializer idempotent, viewer startup order. |
-| `tests/test_swarm_stage_derivation.py` | Swarm stage derivation and stage timing helpers. |
 | `tests/test_tailoring.py` | CV tailoring: `TailoringPolicy`, `TailoredCVResult`, tailoring flow over evaluated jobs. |
 | `tests/test_validation.py` | Shared validation helpers (MT-2). |
 
@@ -307,3 +302,5 @@ profile.py         reviewed_input.py
 - Blockers always produce `skip` — no score threshold can override a blocker
 - Tailoring is only set `tailoring_ready=True` on `apply` decisions — review jobs must be manually shortlisted
 - Unknown fields in scoring get **neutral credit** (don't penalise score) but **reduce confidence**
+
+> 2026-09-21: swarm / shared_bus / session_guard / multi-LLM-chat code, its 5 tests (44 tests) and viewer/conversations/ moved out of this repo to `~/.openclaw/archive/2026-09-job-hunt-swarm-fork/` (move-never-delete; see MANIFEST.sha256 there). Live newer versions are in ~/.openclaw/workspace/src. Rows for those tests were removed from the test table above.

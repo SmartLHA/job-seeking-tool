@@ -17,7 +17,7 @@ Context (from `git show --stat`, facts only): commit `63a055e` (search/score/fil
 - F2 ✅ `/digest` shows a health strip (Gemini quota used/limit, scheduler running or not) and a "Run LLM batch" button posting to `/digest/run-llm-batch`. `handle_llm_queue` now also returns `rpd_limit`. New `tests/test_digest_health_strip.py`.
 - F3 ✅ Removed dead `src/job_hunt_paste_fetch.py`, `src/job_hunt_paste_ui.py` and `handle_search_reed_more` (+ its import and tests). `generate_cover_letter` kept (used by `src/job_hunt_tailoring.py`).
 - F4 ✅ INDEX.md tests table now lists every `tests/*.py`; this entry and a `docs/function_list.md` entry added.
-- ⬜ Pending (Mike's decision, not touched): audit finding 5, swarm code.
+- ⬜ Pending (Mike's decision, not touched): audit finding 5, swarm code. **Update 2026-09-21:** swarm code moved out (see QW-4 entry).
 
 
 ## Recovery Baseline — 2026-06-22
@@ -457,6 +457,7 @@ Partial-coverage list from the 2026-07-08 audit: `handle_batch_evaluate` 22%, `p
 **File:** `src/shared_bus.py`
 **What:** File has two definitions each of `_conn()` (lines 27, 257) and `DB_PATH` (lines 12, 266); second pair silently overrides the first. `DB_PATH` points to `~/.openclaw/workspace/shared_memory.db` — a path on an AI tool's machine, not this project. If the swarm feature is unused, delete the file. If needed, fix duplicates and make `DB_PATH` configurable.
 **Effort:** XS
+**2026-09-21 update:** superseded. Mike approved moving the swarm stack out of this repo. `src/shared_bus.py`, `viewer/swarm_router.py`, `viewer/session_guard.py`, the 5 related test files (44 tests), swarm HTML/task_ids/db and `viewer/conversations/` were moved (not deleted) to `~/.openclaw/archive/2026-09-job-hunt-swarm-fork/` (sha256 MANIFEST.sha256 verified). The swarm/chat/task-id code was removed from `viewer/viewer_server.py`. Spec: `docs/tasks/swarm-move-out-2026-09-21.md`.
 
 ---
 
