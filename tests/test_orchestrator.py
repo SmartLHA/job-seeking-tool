@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 
 from src.job_hunt_orchestrator import run_local_evaluation_flow, run_reed_evaluation_flow
+from src.job_hunt_storage import load_job_analysis, save_job_analysis
+import dataclasses
 
 
 def _write_profile(tmp_path: Path, *, with_master_cv: bool = True) -> Path:
@@ -305,3 +307,63 @@ def test_run_reed_evaluation_flow_does_not_require_adzuna_code(
     )
 
     assert [job.reviewed_job.job_id for job in result.evaluated_jobs] == ["reed-789"]
+
+
+# ── Market-aware salary (2026-09-22, revision 2): STICKY carry-over ──────────
+
+def test_re_evaluate_carries_market_snapshot_forward(tmp_path: Path) -> None:
+    """A "Re-evaluate" resubmit (same job_id, same state_root) must carry the
+    explicitly-saved market_snapshot forward unchanged — it is never recomputed
+    by evaluation itself."""
+    state_root = tmp_path / "state"
+    first = run_local_evaluation_flow(
+        profile_path=_write_profile(tmp_path),
+        reviewed_job_path=_write_reviewed_job(tmp_path),
+        state_root=state_root,
+        report_dir=tmp_path / "reports",
+    )
+    assert first.analysis.market_snapshot is None
+
+    snapshot = {
+        "position": "bottom", "percentile": 12.5, "sample_total": 142,
+        "histogram_date": "2026-09-20T10:00:00+00:00", "query": "business analyst",
+        "salary_used": 47500.0, "reason": None, "source": "adzuna", "version": 1,
+    }
+    stamped = dataclasses.replace(first.analysis, market_snapshot=snapshot)
+    save_job_analysis(stamped, state_root)
+    assert load_job_analysis("job-001", state_root).market_snapshot == snapshot
+
+    second = run_local_evaluation_flow(
+        profile_path=_write_profile(tmp_path),
+        reviewed_job_path=_write_reviewed_job(tmp_path),
+        state_root=state_root,
+        report_dir=tmp_path / "reports",
+    )
+    assert second.analysis.market_snapshot == snapshot
+    assert load_job_analysis("job-001", state_root).market_snapshot == snapshot
+
+
+def test_score_effect_applies_on_the_orchestrator_path_when_switch_on(tmp_path: Path, monkeypatch) -> None:
+    """single-submit / re-evaluate / batch all route through this same function —
+    proving the effect fires here proves it for all three."""
+    import src.job_hunt_config as config
+    state_root = tmp_path / "state"
+    first = run_local_evaluation_flow(
+        profile_path=_write_profile(tmp_path),
+        reviewed_job_path=_write_reviewed_job(tmp_path),
+        state_root=state_root,
+        report_dir=tmp_path / "reports",
+    )
+    raw_score = first.analysis.match_score
+    snapshot = {"position": "bottom", "sample_total": 100, "histogram_date": "2026-09-20T10:00:00+00:00"}
+    save_job_analysis(dataclasses.replace(first.analysis, market_snapshot=snapshot), state_root)
+
+    monkeypatch.setattr(config, "MARKET_SCORE_EFFECT", True)
+    second = run_local_evaluation_flow(
+        profile_path=_write_profile(tmp_path),
+        reviewed_job_path=_write_reviewed_job(tmp_path),
+        state_root=state_root,
+        report_dir=tmp_path / "reports",
+    )
+    assert second.analysis.match_score == max(0.0, raw_score - 5.0)
+    assert second.analysis.market_adjustment == -5.0

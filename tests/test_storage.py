@@ -320,3 +320,41 @@ def test_job_analysis_from_dict_backcompat_without_keyword_fields() -> None:
     assert restored.keywords_required_missing == []
     assert restored.keywords_preferred_missing == []
     assert restored.keywords_overused == []
+
+
+# ── Market-aware salary (2026-09-22, revision 2) ─────────────────────────────
+
+def test_job_analysis_from_dict_backcompat_without_market_fields() -> None:
+    # Old records (saved before this feature) must still load, defaulting to None.
+    payload = job_analysis_to_dict(build_analysis())
+    payload.pop("market_snapshot", None)
+    payload.pop("market_adjustment", None)
+    restored = job_analysis_from_dict(payload)
+    assert restored.market_snapshot is None
+    assert restored.market_adjustment is None
+
+
+def test_job_analysis_roundtrip_market_snapshot() -> None:
+    snapshot = {
+        "position": "bottom", "percentile": 12.5, "sample_total": 142,
+        "histogram_date": "2026-09-20T10:00:00+00:00", "query": "business analyst",
+        "salary_used": 47500.0, "reason": None, "source": "adzuna", "version": 1,
+    }
+    analysis = dataclasses.replace(build_analysis(), market_snapshot=snapshot, market_adjustment=-5.0)
+    restored = job_analysis_from_dict(job_analysis_to_dict(analysis))
+    assert restored.market_snapshot == snapshot
+    assert restored.market_adjustment == -5.0
+
+
+def test_job_analysis_from_dict_rejects_non_dict_market_snapshot() -> None:
+    payload = job_analysis_to_dict(build_analysis())
+    payload["market_snapshot"] = "not-a-dict"
+    with pytest.raises(StorageError):
+        job_analysis_from_dict(payload)
+
+
+def test_job_analysis_from_dict_rejects_non_numeric_market_adjustment() -> None:
+    payload = job_analysis_to_dict(build_analysis())
+    payload["market_adjustment"] = "minus five"
+    with pytest.raises(StorageError):
+        job_analysis_from_dict(payload)

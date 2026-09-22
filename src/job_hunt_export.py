@@ -67,6 +67,11 @@ def _bullets(items: list[str]) -> list[str]:
     return [f"- {_md(i)}" for i in items] or ["- None"]
 
 
+# Market-aware salary (2026-09-22, revision 2): analysis.market_snapshot and
+# analysis.market_adjustment must NEVER be read into this renderer, and no
+# "Adzuna"/"market position" wording may appear below. Adzuna's terms allow
+# personal research use only — this zip is handed to employers. Covered by
+# tests/test_export_bundle.py::test_market_snapshot_and_adzuna_wording_excluded_from_zip.
 def render_analysis_md(job: Any, analysis: Any, assessment: dict | None) -> str:
     decision = analysis.user_decision or analysis.decision
     grade = derive_grade(

@@ -242,6 +242,16 @@ class JobAnalysis:
     llm_recommended_action: str | None = None
     llm_model: str | None = None          # model that produced it (chain may fall back)
     llm_generated_at: str | None = None   # ISO datetime
+    # Market-aware salary (2026-09-22, revision 2). STICKY: set ONLY by the explicit
+    # "Save market position" user action (POST /job/{id}/market-position); NEVER
+    # recomputed by scoring, decision, re-evaluation, batch, or any pipeline — those
+    # paths must carry the existing value through unchanged. See
+    # src/job_hunt_salary_benchmark.py build_market_snapshot() for the shape.
+    market_snapshot: dict | None = None
+    # Set by evaluate_reviewed_job() from apply_market_score_effect() — None unless
+    # the optional score effect (market_score_effect_enabled(), OFF by default) is
+    # on AND market_snapshot says "bottom". The signed points applied (e.g. -5.0).
+    market_adjustment: float | None = None
 
     def __post_init__(self) -> None:
         if not self.job_id.strip():

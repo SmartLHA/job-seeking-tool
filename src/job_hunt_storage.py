@@ -232,6 +232,10 @@ def job_analysis_from_dict(payload: dict[str, Any], *, job_id: str | None = None
             ),
             llm_model=_optional_string(payload.get("llm_model"), "llm_model"),
             llm_generated_at=_optional_string(payload.get("llm_generated_at"), "llm_generated_at"),
+            # Market-aware salary (2026-09-22, revision 2) — explicit reads so a
+            # record saved before this field existed loads unchanged (None/None).
+            market_snapshot=_optional_dict(payload.get("market_snapshot"), "market_snapshot"),
+            market_adjustment=_optional_float(payload.get("market_adjustment"), "market_adjustment"),
         )
     except (TypeError, ValueError) as exc:
         raise StorageError(f"invalid analysis payload: {exc}") from exc
@@ -296,6 +300,17 @@ _required_number = partial(_v.required_number, error=StorageError)
 
 
 _optional_int = partial(_v.optional_int, error=StorageError)
+
+
+_optional_float = partial(_v.optional_float, error=StorageError)
+
+
+def _optional_dict(value: Any, field_name: str) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise StorageError(f"{field_name} must be an object when provided")
+    return value
 
 
 _optional_bool = partial(_v.optional_bool, error=StorageError)

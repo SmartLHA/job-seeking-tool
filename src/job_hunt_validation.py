@@ -140,6 +140,21 @@ def optional_non_negative_float(
     return float(value)
 
 
+def optional_float(
+    value: Any,
+    field_name: str,
+    *,
+    error: type[Exception] = ValueError,
+) -> float | None:
+    """Like optional_non_negative_float but allows negative values (e.g. a signed
+    score adjustment)."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise error(f"{field_name} must be numeric when provided")
+    return float(value)
+
+
 def optional_bool(
     value: Any,
     field_name: str,
@@ -171,6 +186,7 @@ __all__ = [
     "string_list",
     "optional_int",
     "optional_non_negative_float",
+    "optional_float",
     "optional_bool",
     "required_number",
 ]

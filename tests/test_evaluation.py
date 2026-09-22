@@ -217,3 +217,150 @@ def test_evaluate_populates_keyword_match_with_cv_and_none_without() -> None:
     assert without_cv.keyword_match_rate is None
     # advisory only: removing the CV must not change the engine decision
     assert with_cv.decision == without_cv.decision
+
+
+# ── Market-aware salary (2026-09-22, revision 2) ─────────────────────────────
+
+_BOTTOM_SNAPSHOT = {
+    "position": "bottom", "percentile": 12.5, "sample_total": 142,
+    "histogram_date": "2026-09-20T10:00:00+00:00", "query": "business analyst",
+    "salary_used": 47500.0, "reason": None, "source": "adzuna", "version": 1,
+}
+_TYPICAL_SNAPSHOT = {**_BOTTOM_SNAPSHOT, "position": "typical"}
+
+
+def test_market_snapshot_carried_but_no_effect_when_switch_off() -> None:
+    analysis = evaluate_reviewed_job(build_candidate(), build_job(), market_snapshot=_BOTTOM_SNAPSHOT)
+    assert analysis.market_snapshot == _BOTTOM_SNAPSHOT
+    assert analysis.market_adjustment is None
+    assert analysis.match_score == 100.0        # unchanged golden value (switch OFF by default)
+    assert analysis.decision == "apply"          # unchanged golden decision
+
+
+def test_market_snapshot_none_when_no_prior_analysis() -> None:
+    analysis = evaluate_reviewed_job(build_candidate(), build_job())
+    assert analysis.market_snapshot is None and analysis.market_adjustment is None
+
+
+def test_score_effect_switch_on_bottom_deducts_5_and_shifts_decision(monkeypatch) -> None:
+    import src.job_hunt_config as config
+    monkeypatch.setattr(config, "MARKET_SCORE_EFFECT", True)
+    analysis = evaluate_reviewed_job(build_candidate(), build_job(), market_snapshot=_BOTTOM_SNAPSHOT)
+    assert analysis.match_score == 95.0          # 100 (raw, already clamped) - 5
+    assert analysis.market_adjustment == -5.0
+    assert analysis.decision == "apply"          # 95 still clears the apply threshold
+    assert "Market adjustment" in " ".join(analysis.score_breakdown.notes)
+    assert "Adzuna" in " ".join(analysis.score_breakdown.notes)
+    # never folded into the salary component itself
+    assert "market" not in analysis.score_breakdown.salary_score.reason.lower()
+
+
+def test_score_effect_switch_on_typical_no_change(monkeypatch) -> None:
+    import src.job_hunt_config as config
+    monkeypatch.setattr(config, "MARKET_SCORE_EFFECT", True)
+    analysis = evaluate_reviewed_job(build_candidate(), build_job(), market_snapshot=_TYPICAL_SNAPSHOT)
+    assert analysis.match_score == 100.0 and analysis.market_adjustment is None
+
+
+def test_score_effect_grade_follows_adjusted_score_no_separate_cap(monkeypatch) -> None:
+    """Grade must derive from the ALREADY-adjusted match_score/decision — no extra
+    decision-grade cap layered on top (that would double-count the effect)."""
+    import src.job_hunt_config as config
+    from src.job_hunt_qualitative import derive_grade
+    monkeypatch.setattr(config, "MARKET_SCORE_EFFECT", True)
+    off_analysis = evaluate_reviewed_job(build_candidate(), build_job(), market_snapshot=None)
+    on_analysis = evaluate_reviewed_job(build_candidate(), build_job(), market_snapshot=_BOTTOM_SNAPSHOT)
+
+    off_grade = derive_grade(off_analysis.match_score, None, effective_decision=off_analysis.decision,
+                              has_blockers=False, confidence=off_analysis.confidence,
+                              decision_reason=off_analysis.decision_reason)
+    on_grade = derive_grade(on_analysis.match_score, None, effective_decision=on_analysis.decision,
+                             has_blockers=False, confidence=on_analysis.confidence,
+                             decision_reason=on_analysis.decision_reason)
+    # Both scores (100 and 95) map to base grade "A" — the adjustment does not
+    # move the grade here, which is the point: no separate grade cap is applied
+    # on top of the score-derived grade, so nothing double-counts.
+    assert off_grade["base_grade"] == on_grade["base_grade"] == "A"
+
+
+def test_score_effect_never_enters_risk_flags_or_blockers(monkeypatch) -> None:
+    import src.job_hunt_config as config
+    monkeypatch.setattr(config, "MARKET_SCORE_EFFECT", True)
+    analysis = evaluate_reviewed_job(build_candidate(), build_job(), market_snapshot=_BOTTOM_SNAPSHOT)
+    codes = " ".join(f.code for f in analysis.risk_flags).lower()
+    assert "market" not in codes and "adzuna" not in codes
+    assert analysis.blockers == []
+
+
+def test_score_effect_fixed_5_independent_of_scoring_preset(monkeypatch) -> None:
+    """The -5 is a FIXED absolute deduction, not a percentage or weight-scaled
+    amount — it must be identical under every scoring preset even though the
+    presets give the salary component a different weight (10 vs 25). Uses a
+    partial-match fixture (not the fully-clamped 100 fixture above) so the two
+    presets actually land on DIFFERENT off-scores — 72.5 (Balanced) vs 77.5
+    (Salary-focused) — making "always -5" distinguishable from "some formula
+    that happens to also give -5 on a clamped-to-100 case"."""
+    import src.job_hunt_config as config
+    from src.job_hunt_config import ScoringPolicy
+    from src.job_hunt_scoring_presets import PRESET_BALANCED, PRESET_SALARY_FOCUSED, PRESET_WEIGHTS
+    monkeypatch.setattr(config, "MARKET_SCORE_EFFECT", True)
+
+    # matches only 2 of 4 required skills (partial, non-bonus, non-clamped) so the
+    # two presets' different weights show up in genuinely different off-scores.
+    candidate = dataclasses.replace(
+        build_candidate(),
+        skills=[s for s in build_candidate().skills if s.name in ("Stakeholder Management", "Process Mapping")],
+    )
+    job = build_job(required_skills=["Stakeholder Management", "Process Mapping", "C", "D"],
+                     preferred_skills=[], required_years_experience=None, domain=None)
+
+    off_by_preset = {}
+    on_by_preset = {}
+    for preset_name in (PRESET_BALANCED, PRESET_SALARY_FOCUSED):
+        policy = ScoringPolicy(weights=PRESET_WEIGHTS[preset_name])
+        off_by_preset[preset_name] = evaluate_reviewed_job(
+            candidate, job, scoring_policy=policy, market_snapshot=None,
+        )
+        on_by_preset[preset_name] = evaluate_reviewed_job(
+            candidate, job, scoring_policy=policy, market_snapshot=_BOTTOM_SNAPSHOT,
+        )
+
+    # sanity: the two presets actually land on different off-scores for this
+    # fixture (no clamp collapsing them to the same 100.0) — otherwise this test
+    # could not distinguish "fixed -5" from "coincidentally always -5".
+    balanced_off = off_by_preset[PRESET_BALANCED].match_score
+    salary_focused_off = off_by_preset[PRESET_SALARY_FOCUSED].match_score
+    assert balanced_off != salary_focused_off
+    assert balanced_off < 100.0 and salary_focused_off < 100.0
+
+    for preset_name in (PRESET_BALANCED, PRESET_SALARY_FOCUSED):
+        off_score = off_by_preset[preset_name].match_score
+        on_score = on_by_preset[preset_name].match_score
+        on_analysis = on_by_preset[preset_name]
+        # the deduction itself is always exactly -5, regardless of preset/weights
+        assert on_analysis.market_adjustment == -5.0, preset_name
+        assert on_score == max(0.0, off_score - 5.0), preset_name
+
+
+def test_score_effect_applies_after_clamp_on_genuine_raw_over_100(monkeypatch) -> None:
+    """build_candidate()/build_job() score a RAW (pre-clamp) weighted sum of 101.0
+    under the Balanced preset (skills 41.0 + experience 20 + location 10 + salary 10
+    + domain 10 + work_mode 10) — real scoring, not a synthetic 100.0 fed straight to
+    the helper. Proves the -5 is applied to the CLAMPED 100, not the raw 101 (which
+    would wrongly give 96 instead of the correct 95)."""
+    import src.job_hunt_config as config
+    from src.job_hunt_scoring import score_job
+
+    raw_result = score_job(build_candidate(), build_job())
+    sb = raw_result.score_breakdown
+    raw_sum = (
+        sb.skills_score.value + sb.experience_score.value + sb.location_score.value
+        + sb.salary_score.value + sb.domain_score.value + sb.work_mode_score.value
+    )
+    assert raw_sum == 101.0          # genuine pre-clamp weighted sum, verified
+    assert raw_result.match_score == 100.0  # score_job() already clamped it
+
+    monkeypatch.setattr(config, "MARKET_SCORE_EFFECT", True)
+    analysis = evaluate_reviewed_job(build_candidate(), build_job(), market_snapshot=_BOTTOM_SNAPSHOT)
+    assert analysis.match_score == 95.0     # 100 (clamped) - 5, NOT 101 - 5 = 96
+    assert analysis.market_adjustment == -5.0

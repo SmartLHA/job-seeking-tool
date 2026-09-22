@@ -1017,6 +1017,8 @@ class JobPageViewModel:
     qualitative_assessment: dict | None
     qualitative_index: dict | None
     qualitative_grade: dict | None
+    market_snapshot: dict | None
+    market_adjustment: object | None
     flash: str | None
     flash_kind: str
     embed: bool
@@ -1182,16 +1184,37 @@ _SALARY_BENCHMARK_JS = """<script>/* salary-benchmark */
 (function(){
 var root=document.getElementById("sb-panel");if(!root)return;
 var btn=document.getElementById("sb-btn"),out=document.getElementById("sb-out");
-var url="/job/"+encodeURIComponent(root.getAttribute("data-job-id"))+"/salary-benchmark";
+var saveWrap=document.getElementById("sb-save-wrap");
+var jobId=root.getAttribute("data-job-id");
+var url="/job/"+encodeURIComponent(jobId)+"/salary-benchmark";
 function money(n){return "\\u00a3"+Math.round(n).toLocaleString("en-GB");}
 function line(text){var d=document.createElement("div");d.textContent=text;d.style.margin="3px 0";return d;}
 function show(nodes,isError){out.textContent="";out.style.color=isError?"var(--skip)":"var(--ink-soft)";
 nodes.forEach(function(n){out.appendChild(n);});}
 function pct(p){return p===null||p===undefined?"n/a":Math.round(p)+"th percentile";}
+function showSaveButton(){
+if(!saveWrap)return;
+saveWrap.textContent="";
+var b=document.createElement("button");b.type="button";b.id="sb-save-btn";
+b.textContent="Save market position to this job";
+b.style.cssText="margin-top:8px;padding:4px 13px;font-size:12px;cursor:pointer;border:1px solid var(--line);"+
+"background:var(--surface);color:var(--ink-soft);border-radius:var(--r-md);font-weight:600;font-family:inherit;";
+b.addEventListener("click",function(){
+b.disabled=true;b.textContent="Saving...";
+fetch("/job/"+encodeURIComponent(jobId)+"/market-position",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})
+.then(function(r){return r.json().then(function(d){return {ok:r.ok,body:d};});})
+.then(function(res){
+if(res.ok&&res.body&&res.body.ok){window.location.reload();}
+else{b.disabled=false;b.textContent="Save failed"+((res.body&&res.body.error)?(": "+res.body.error):"")+" \\u2013 retry";}
+})
+.catch(function(){b.disabled=false;b.textContent="Could not reach the server \\u2013 retry";});
+});
+saveWrap.appendChild(b);
+}
 function render(d){
 if(d.status==="unavailable"){show([line("Adzuna is not configured (missing credentials).")],true);return;}
 if(d.status==="error"){show([line("Could not fetch salary data: "+(d.error||"unknown error"))],true);return;}
-if(d.status==="no_data"||!d.summary){show([line("No Adzuna data for this title ("+d.query+").")],false);return;}
+if(d.status==="no_data"||!d.summary){show([line("No Adzuna data for this title ("+d.query+").")],false);showSaveButton();return;}
 var s=d.summary,rows=[];
 rows.push(line("Title searched: "+d.query+" (UK-wide)"));
 rows.push(line("Sample size: "+s.total+" advertised vacancies"));
@@ -1202,19 +1225,52 @@ rows.push(line(d.floor===null?"Your salary floor: not set":"Your salary floor ("
 var meta=line("As of "+(d.fetched_at||"").slice(0,10)+(d.cached?" (cached, refreshes daily)":"")+". Source: ");
 var a=document.createElement("a");a.href="https://www.adzuna.co.uk";a.target="_blank";a.rel="noopener noreferrer";a.textContent="Adzuna";
 meta.appendChild(a);meta.style.color="var(--ink-faint)";meta.style.fontSize="11.5px";rows.push(meta);
-show(rows,false);}
+show(rows,false);
+showSaveButton();
+}
 btn.addEventListener("click",function(){
 btn.disabled=true;show([line("Checking...")],false);
+if(saveWrap)saveWrap.textContent="";
 fetch(url).then(function(r){return r.json();}).then(render)
 .catch(function(){show([line("Could not reach the server.")],true);})
 .then(function(){btn.disabled=false;btn.textContent="Check again";});});
+var clearBtn=document.getElementById("sb-clear-btn");
+if(clearBtn){
+clearBtn.addEventListener("click",function(){
+clearBtn.disabled=true;clearBtn.textContent="Removing...";
+fetch("/job/"+encodeURIComponent(jobId)+"/market-position/clear",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})
+.then(function(r){return r.json();})
+.then(function(d){if(d&&d.ok){window.location.reload();}else{clearBtn.disabled=false;clearBtn.textContent="Remove failed \\u2013 retry";}})
+.catch(function(){clearBtn.disabled=false;clearBtn.textContent="Could not reach the server \\u2013 retry";});
+});
+}
 })();
 </script>"""
 
 
-def render_salary_benchmark_panel(job_id: str) -> str:
-    """Advisory 'Salary benchmark' panel; fetches lazily via GET /job/{id}/salary-benchmark."""
+def render_salary_benchmark_panel(job_id: str, market_snapshot: dict | None = None) -> str:
+    """Advisory 'Salary benchmark' panel; fetches lazily via GET /job/{id}/salary-benchmark.
+
+    Market-aware salary (2026-09-22, revision 2): shows the STICKY saved position
+    (if any) plus "Save market position" / "Remove market position" actions that
+    hit POST /job/{id}/market-position(/clear) — an explicit user action only,
+    never triggered by this panel's own advisory fetch.
+    """
+    from src.job_hunt_salary_benchmark import market_badge_text
     job_id_esc = escape(job_id)
+    saved_html = ""
+    if market_snapshot is not None:
+        badge_text = market_badge_text(market_snapshot) or "Saved, but not enough data to classify a position."
+        saved_html = (
+            '<div style="margin-bottom:10px;padding:8px 10px;background:var(--surface-sunk);'
+            'border:1px solid var(--line);border-radius:var(--r-md);display:flex;align-items:center;'
+            'justify-content:space-between;gap:10px;flex-wrap:wrap;">'
+            f'<span style="font-size:12.5px;color:var(--ink-soft);">Saved: {escape(badge_text)}</span>'
+            '<button id="sb-clear-btn" type="button" style="padding:3px 10px;font-size:11.5px;cursor:pointer;'
+            'border:1px solid var(--line);background:transparent;color:var(--ink-faint);'
+            'border-radius:var(--r-md);font-weight:600;font-family:inherit;">Remove market position</button>'
+            '</div>'
+        )
     parts = [
         '<div id="sb-panel" data-job-id="', job_id_esc, '" style="margin-top:16px;background:var(--surface);',
         'border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--pad);box-shadow:var(--shadow-sm);">',
@@ -1224,8 +1280,11 @@ def render_salary_benchmark_panel(job_id: str) -> str:
         '<button id="sb-btn" type="button" style="padding:4px 13px;font-size:12px;cursor:pointer;',
         'border:1px solid var(--accent);background:transparent;color:var(--accent);',
         'border-radius:var(--r-md);font-weight:600;font-family:inherit;">Check market salary</button></div>',
+        saved_html,
         '<div id="sb-out" style="font-size:13px;line-height:1.6;color:var(--ink-soft);"></div>',
-        '<div style="font-size:11px;color:var(--ink-faint);margin-top:6px;">Advisory only; does not affect the score. ',
+        '<div id="sb-save-wrap"></div>',
+        '<div style="font-size:11px;color:var(--ink-faint);margin-top:6px;">Advisory only; does not affect the score ',
+        'unless a market position is explicitly saved AND the optional market-adjustment setting is on. ',
         'Advertised salaries, may include estimates. Source: Adzuna.</div>',
         '</div>',
         _SALARY_BENCHMARK_JS,
@@ -1353,6 +1412,25 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:100px;'
             f'font-size:11.5px;font-weight:600;{ff}color:var(--ink-soft);background:var(--surface-sunk);'
             f'border:1px solid var(--line);white-space:nowrap;">{escape(text)}</span>'
+        )
+
+    def _market_badge_html() -> str:
+        """Market-aware salary (2026-09-22, revision 2): the always-on reminder
+        badge. Amber for "bottom", neutral for "typical"/"top"; nothing for
+        "unknown" or no saved snapshot at all."""
+        from src.job_hunt_salary_benchmark import market_badge_text
+        text = market_badge_text(vm.market_snapshot)
+        if not text:
+            return ""
+        is_bottom = isinstance(vm.market_snapshot, dict) and vm.market_snapshot.get("position") == "bottom"
+        if is_bottom:
+            c, bg, line = "var(--skip)", "var(--skip-bg)", "var(--skip-line)"
+        else:
+            c, bg, line = "var(--ink-soft)", "var(--surface-sunk)", "var(--line)"
+        return (
+            f'<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:100px;'
+            f'font-size:11.5px;font-weight:700;color:{c};background:{bg};border:1px solid {line};white-space:nowrap;">'
+            f'{escape(text)}</span>'
         )
 
     def _grade_badge() -> str:
@@ -1519,6 +1597,23 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         )
         grade_badge = _grade_badge()
         grade_warning = _grade_warning_banner()
+        # Market-aware salary (2026-09-22, revision 2): a "Below market" note next to
+        # the decision reason when the saved snapshot says "bottom" — informational
+        # only; it does NOT imply the score was adjusted (that's market_adjustment).
+        below_market_html = ""
+        if isinstance(vm.market_snapshot, dict) and vm.market_snapshot.get("position") == "bottom":
+            from src.job_hunt_salary_benchmark import market_badge_text
+            below_market_html = (
+                f'<p style="margin:8px 0 0;font-size:13px;color:var(--skip);font-weight:600;line-height:1.5;">'
+                f'&#9888; Below market: {escape(market_badge_text(vm.market_snapshot) or "")}</p>'
+            )
+        market_adjustment_html = ""
+        if vm.market_adjustment is not None:
+            market_adjustment_html = (
+                f'<p style="margin:8px 0 0;font-size:12.5px;color:var(--ink-faint);line-height:1.5;">'
+                f'Score includes a market adjustment of {vm.market_adjustment:+.0f} points '
+                f'(bottom quarter of market, Adzuna).</p>'
+            )
 
         verdict_card_html = (
             f'<div style="margin-top:22px;background:var(--surface);border:1px solid var(--line);'
@@ -1548,6 +1643,8 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'</div>'
             f'</div>'
             f'<p style="margin:12px 0 0;font-size:13px;color:var(--ink-faint);line-height:1.5;">{escape(vm.decision_reason)}</p>'
+            f'{below_market_html}'
+            f'{market_adjustment_html}'
             f'</div>'
             f'</div>'
             # subscores
@@ -2067,6 +2164,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         + (_tag(salary_str, mono=True) if salary_str else "")
         + (_tag(vm.work_mode) if vm.work_mode else "")
         + (_tag(vm.employment_type) if vm.employment_type else "")
+        + _market_badge_html()
         + '</div>'
         '</div>'
         + (
@@ -2221,7 +2319,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         f'</details>'
     )
 
-    salary_panel_html = render_salary_benchmark_panel(vm.job_id)
+    salary_panel_html = render_salary_benchmark_panel(vm.job_id, market_snapshot=vm.market_snapshot)
 
     if embed:
         # Embed mode: no sidebar, no back link — used by review-queue iframe

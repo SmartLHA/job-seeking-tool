@@ -746,8 +746,13 @@ def handle_job_export(req, config, responder, job_id):
 def handle_job_salary_benchmark(req, config, responder, job_id):
     """GET /job/{id}/salary-benchmark — advisory Adzuna salary histogram summary (JSON).
 
-    Advisory only: never touches scoring, decision or grade. The Adzuna key is never
-    included in any response or log (the client returns fixed-text errors).
+    This route itself is purely advisory and never touches scoring, decision or
+    grade. Revision 2 (2026-09-22) adds an EXPLICIT, separate user action —
+    "Save market position" (POST /job/{id}/market-position) — that persists a
+    STICKY snapshot on the job; only THAT snapshot, and only when the opt-in
+    market_score_effect_enabled() switch is on, can ever move the score (a fixed
+    -5 for "bottom quarter"). This GET route never saves anything. The Adzuna key
+    is never included in any response or log (the client returns fixed-text errors).
     """
     from src.job_sources.adzuna_client import fetch_adzuna_salary_histogram
     from src.job_sources.adzuna_source import _ensure_adzuna_env_loaded
@@ -794,6 +799,76 @@ def handle_job_salary_benchmark(req, config, responder, job_id):
     }
     http_status = HTTPStatus.BAD_GATEWAY if result.status == "error" else HTTPStatus.OK
     responder.send_json(payload, status=http_status)
+
+
+def _load_job_and_analysis_for_market_route(job_id, config):
+    """Shared 400/404/422 validation for the market-position routes below.
+
+    Returns (reviewed_job, analysis, error_response) where error_response is
+    ``None`` on success, else a ``(status, message)`` tuple already appropriate
+    to send straight back to the client. Never raises; never touches the network
+    or the Adzuna cache — this only loads what is already on disk.
+    """
+    from src.job_hunt_export import validate_job_id
+
+    try:
+        validate_job_id(job_id)
+    except ValueError:
+        return None, None, (HTTPStatus.BAD_REQUEST, "Invalid job id")
+    try:
+        reviewed_job = load_reviewed_job(job_id, config.state_root)
+    except Exception as exc:
+        status, message = _job_load_failure(exc)
+        return None, None, (status, message)
+    try:
+        analysis = load_job_analysis(job_id, config.state_root)
+    except Exception as exc:
+        status, message = _job_load_failure(exc)
+        return None, None, (status, message)
+    return reviewed_job, analysis, None
+
+
+def handle_set_market_position(req, config, responder, job_id):
+    """POST /job/{id}/market-position — explicit user action only. Recomputes the
+    market position from the CACHED Adzuna histogram for this job's cleaned title
+    (never a fresh fetch); trusts nothing in the request body. STICKY: only this
+    route and its /clear sibling ever write JobAnalysis.market_snapshot.
+    """
+    from src.job_hunt_salary_benchmark import build_market_snapshot, clean_job_title
+    from src.job_sources.adzuna_client import read_cached_salary_histogram
+
+    reviewed_job, analysis, error = _load_job_and_analysis_for_market_route(job_id, config)
+    if error is not None:
+        status, message = error
+        responder.send_json({"ok": False, "error": message}, status=status)
+        return
+
+    query = clean_job_title(getattr(reviewed_job, "job_title", "") or "")
+    cache_dir = Path(config.state_root) / "cache" / "adzuna_salary"
+    cached = read_cached_salary_histogram(query, cache_dir=cache_dir)
+    if cached is None or cached.status not in ("ok", "no_data"):
+        responder.send_json({"ok": False, "error": "benchmark not fetched yet"}, status=HTTPStatus.CONFLICT)
+        return
+
+    snapshot = build_market_snapshot(
+        reviewed_job.salary_min_gbp, reviewed_job.salary_max_gbp, cached.to_dict(),
+        employment_type=reviewed_job.employment_type, query=query,
+    )
+    analysis = dataclasses.replace(analysis, market_snapshot=snapshot)
+    save_job_analysis(analysis, config.state_root)
+    responder.send_json({"ok": True, "market_snapshot": snapshot})
+
+
+def handle_clear_market_position(req, config, responder, job_id):
+    """POST /job/{id}/market-position/clear — remove a saved market snapshot."""
+    reviewed_job, analysis, error = _load_job_and_analysis_for_market_route(job_id, config)
+    if error is not None:
+        status, message = error
+        responder.send_json({"ok": False, "error": message}, status=status)
+        return
+    analysis = dataclasses.replace(analysis, market_snapshot=None)
+    save_job_analysis(analysis, config.state_root)
+    responder.send_json({"ok": True, "market_snapshot": None})
 
 
 def handle_qualitative_assess(req, config, responder, job_id):
@@ -2997,6 +3072,8 @@ def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash,
                         if r.code not in _SKILL_GAP_CODES_VM],
             missing_required_skills=list(analysis.missing_required_skills),
             missing_preferred_skills=list(analysis.missing_preferred_skills),
+            market_snapshot=analysis.market_snapshot,
+            market_adjustment=analysis.market_adjustment,
             **_keyword_match_vm_fields(reviewed_job, analysis),
         )
     else:
@@ -3005,6 +3082,7 @@ def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash,
             decision=None, decision_reason=None, user_decision=None, effective_decision="skip",
             score_breakdown_rows=[], blockers=[], strengths=[], risk_items=[],
             missing_required_skills=[], missing_preferred_skills=[],
+            market_snapshot=None, market_adjustment=None,
             keyword_match_rate=None, keywords_required_matched=[], keywords_required_missing=[],
             keywords_preferred_matched=[], keywords_preferred_missing=[], keywords_overused=[],
             keyword_match_baseline_rate=None, keyword_match_source="master",

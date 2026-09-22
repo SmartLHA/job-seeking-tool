@@ -17,6 +17,8 @@ import urllib.request
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 
+import dataclasses
+
 from src.job_hunt_evaluation import evaluate_reviewed_job
 from src.job_hunt_index import (
     clear_llm_queue,
@@ -30,7 +32,7 @@ from src.job_hunt_index import (
 from src.job_hunt_profile import candidate_profile_from_dict, save_candidate_profile
 from src.job_hunt_reviewed_input import reviewed_job_from_dict
 from src.job_hunt_scheduler import reevaluate_digest_jobs
-from src.job_hunt_storage import ensure_storage_layout, save_reviewed_job
+from src.job_hunt_storage import ensure_storage_layout, load_job_analysis, save_job_analysis, save_reviewed_job
 from src.ui_routes import _build_handler
 from src.ui_state import UIServerConfig
 
@@ -313,3 +315,67 @@ def test_route_reevaluate_returns_counters(tmp_path):
         assert st == 200 and body["ok"] is True
         assert body["jobs_rescored"] == 1 and body["jobs_resurfaced"] == 1
         assert _read(db, "j1")["digest_seen"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# Market-aware salary (2026-09-22, revision 2): STICKY carry-over
+# --------------------------------------------------------------------------- #
+
+_SNAPSHOT = {
+    "position": "bottom", "percentile": 12.5, "sample_total": 142,
+    "histogram_date": "2026-09-20T10:00:00+00:00", "query": "data analyst",
+    "salary_used": 47500.0, "reason": None, "source": "adzuna", "version": 1,
+}
+
+
+def test_reevaluate_digest_jobs_carries_market_snapshot_forward(tmp_path):
+    """digest Re-evaluate all must NEVER recompute or drop an explicitly-saved
+    market_snapshot — it is carried forward on the freshly re-scored analysis."""
+    config, db = _setup(tmp_path)
+    job = _seed(config, db, "j1", old_score=50, llm_status=None, seen=False)
+    # Simulate an explicit "Save market position" that already happened.
+    prof = _profile(threshold=0)
+    analysis = evaluate_reviewed_job(prof, job)
+    save_job_analysis(dataclasses.replace(analysis, market_snapshot=_SNAPSHOT), config.state_root)
+
+    r = reevaluate_digest_jobs(config=config, profile=prof, db_path=db)
+    assert r.jobs_rescored == 1
+    restored = load_job_analysis("j1", config.state_root)
+    assert restored.market_snapshot == _SNAPSHOT
+
+
+def test_reevaluate_digest_jobs_snapshot_unchanged_by_cache_expiry(tmp_path, monkeypatch):
+    """The stored snapshot must never be refreshed/dropped by cache expiry — the
+    digest re-eval pipeline never even touches the Adzuna cache, only the stored
+    analysis, so freezing time well past any histogram TTL changes nothing."""
+    import datetime as _dt
+    import src.job_sources.adzuna_client as ac
+    monkeypatch.setattr(
+        ac, "_utc_now", lambda: _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=30)
+    )
+    config, db = _setup(tmp_path)
+    job = _seed(config, db, "j1", old_score=50, llm_status=None, seen=False)
+    prof = _profile(threshold=0)
+    analysis = evaluate_reviewed_job(prof, job)
+    save_job_analysis(dataclasses.replace(analysis, market_snapshot=_SNAPSHOT), config.state_root)
+
+    reevaluate_digest_jobs(config=config, profile=prof, db_path=db)
+    assert load_job_analysis("j1", config.state_root).market_snapshot == _SNAPSHOT
+
+
+def test_reevaluate_digest_jobs_applies_score_effect_when_switch_on(tmp_path, monkeypatch):
+    """The digest re-eval path also routes through evaluate_reviewed_job — proving
+    the effect applies there too (not just on the single-submit/orchestrator path)."""
+    import src.job_hunt_config as config
+    cfg, db = _setup(tmp_path)
+    job = _seed(cfg, db, "j1", old_score=50, llm_status=None, seen=False)
+    prof = _profile(threshold=0)
+    raw_score = evaluate_reviewed_job(prof, job).match_score
+    save_job_analysis(
+        dataclasses.replace(evaluate_reviewed_job(prof, job), market_snapshot=_SNAPSHOT), cfg.state_root,
+    )
+    monkeypatch.setattr(config, "MARKET_SCORE_EFFECT", True)
+    reevaluate_digest_jobs(config=cfg, profile=prof, db_path=db)
+    restored = load_job_analysis("j1", cfg.state_root)
+    assert restored.match_score == max(0.0, raw_score - 5.0)
+    assert restored.market_adjustment == -5.0

@@ -368,8 +368,17 @@ def _reevaluate_digest_jobs_locked(*, config: Any, profile: Any, db_path: Path) 
         except (FileNotFoundError, StorageError):
             missing += 1
             continue
+        # Market-aware salary (2026-09-22, revision 2): the STICKY market_snapshot
+        # is never recomputed by this pipeline — carry the existing one forward.
+        _market_snapshot = None
         try:
-            analysis = evaluate_reviewed_job(profile, reviewed, scoring_policy=_scoring_policy)
+            _market_snapshot = load_job_analysis(job_id, config.state_root).market_snapshot
+        except (FileNotFoundError, StorageError):
+            pass
+        try:
+            analysis = evaluate_reviewed_job(
+                profile, reviewed, scoring_policy=_scoring_policy, market_snapshot=_market_snapshot,
+            )
         except Exception as exc:
             errored += 1
             errors.append(f"{job_id}: re-score failed: {exc}")

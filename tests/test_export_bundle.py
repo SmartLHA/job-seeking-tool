@@ -341,3 +341,33 @@ def test_job_page_has_download_button():
                   model_label="m", source_type="copied_text")
     html = render_job_page(JobPageViewModel(**values))
     assert 'href="/job/job-001/export.zip"' in html and "download" in html and "Download package" in html
+
+
+# ── Market-aware salary (2026-09-22, revision 2): export exclusion ──────────
+# Adzuna's terms allow personal research use only; the zip goes to employers, so
+# neither the market_snapshot nor any Adzuna/market wording may appear in it.
+
+def _analysis_with_market(job_id="job-1"):
+    return dataclasses.replace(
+        _analysis(job_id),
+        market_snapshot={
+            "position": "bottom", "percentile": 12.5, "sample_total": 142,
+            "histogram_date": "2026-09-20T10:00:00+00:00", "query": "business analyst",
+            "salary_used": 47500.0, "reason": None, "source": "adzuna", "version": 1,
+        },
+        market_adjustment=-5.0,
+    )
+
+
+def test_market_snapshot_and_adzuna_wording_excluded_from_zip(env):
+    _write_cv(env["policy"].output_dir, "job-1", "cand-1")
+    save_cover_letter("job-1", LETTER, "cand-1", base_dir=env["out"])
+    save_job_analysis(_analysis_with_market(), env["state"])
+    data, _ = _build(env)
+    zf = _open(data)
+    blob = b"".join(zf.read(n) for n in zf.namelist()).lower()
+    for needle in (b"adzuna", b"market_snapshot", b"market position", b"bottom quarter", b"market adjustment"):
+        assert needle not in blob, needle
+
+    job_json = json.loads(zf.read("job.json"))
+    assert "market_snapshot" not in job_json and "market_adjustment" not in job_json

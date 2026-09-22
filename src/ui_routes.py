@@ -89,6 +89,8 @@ from src.ui_handlers import (
     handle_jobs_hide,
     handle_jobs_unhide,
     handle_jobs_hidden_list,
+    handle_set_market_position,
+    handle_clear_market_position,
 )
 
 # Source registration (startup side effect). Adding a source = one import line.
@@ -380,6 +382,14 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             qualitative_match = re.match(r"^/job/([^/]+)/qualitative-assess$", parsed.path)
             if qualitative_match:
                 handle_qualitative_assess(req, config, responder, qualitative_match.group(1))
+                return
+            market_clear_match = re.match(r"^/job/([^/]+)/market-position/clear$", parsed.path)
+            if market_clear_match:
+                handle_clear_market_position(req, config, responder, market_clear_match.group(1))
+                return
+            market_position_match = re.match(r"^/job/([^/]+)/market-position$", parsed.path)
+            if market_position_match:
+                handle_set_market_position(req, config, responder, market_position_match.group(1))
                 return
             if parsed.path == "/jobs/batch-evaluate":
                 handle_batch_evaluate(req, config, responder)
