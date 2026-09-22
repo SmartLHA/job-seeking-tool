@@ -38,6 +38,7 @@ Three ways in:
 1. Paste text or URL → `POST /prefill` populates the review form.
 2. URL parsing is host-allowlisted, robots-aware, SSRF-protected, fail-closed.
    - Branch — blocked/unsafe URL: fail closed with message; user pastes text instead.
+3. Bulk (Add & Evaluate → Bulk tab): paste up to 15 URLs (one per line) and/or JD texts (separated by a `---` line); each item is saved and scored one at a time; per-row failures are shown and never stop the run; Stop ends the run; "Open Review queue" appears for saved jobs whose decision is review.
 
 **C. Daily Digest (returning user)** — see Stage 6.
 
@@ -92,6 +93,7 @@ Decision branches:
 3. **Cover letter** → `POST /cover-letter` (requires `why_company_text`; supported tone/length; grounded points only).
 4. **View original posting / Apply** — when `source_ref` is an HTTP(S) URL. **User opens it and submits manually.** Portal never submits.
    - Gate: tailor/letter are decision-gated; Skip blocks them.
+5. **Download package** -> `GET /job/<id>/export.zip` -> one zip with `cv.md`, `cover_letter.txt`, `analysis.md`, `job.json` and a `README.txt` listing anything not generated yet. Read-only, not decision-gated (works for Skip jobs too); no `.env`, raw inputs or profile personal fields.
 
 ---
 

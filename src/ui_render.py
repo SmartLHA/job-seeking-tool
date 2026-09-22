@@ -410,6 +410,286 @@ def _render_profile_tab_section(current_tab: str) -> str:
     return ""
 
 
+_BULK_PASTE_JS = r"""/* bulk-paste */
+(function () {
+  var MAX_ITEMS = 15;
+  var LABEL_LEN = 60;
+  var URL_RE = /^https?:\/\/\S+$/i;
+
+  function isUrl(line) {
+    return URL_RE.test(line);
+  }
+
+  function labelOf(text) {
+    var flat = String(text).replace(/\s+/g, ' ').trim();
+    return flat.length > LABEL_LEN ? flat.slice(0, LABEL_LEN) + '...' : flat;
+  }
+
+  // Split pasted input into items. Returns {items, truncated, duplicates, total}.
+  // item: {kind: 'url'|'text'|'invalid', value, label}
+  // Without a '---' line: each non-blank line is a URL, else an 'invalid' (not a URL) row.
+  // With '---' lines: input is split into segments; a segment whose lines are all URLs
+  // yields one URL item per line, any other segment is one JD text block.
+  function classify(raw, max) {
+    var limit = max || MAX_ITEMS;
+    var lines = String(raw || '').split(/\r?\n/);
+    var hasSep = lines.some(function (l) { return l.trim() === '---'; });
+    var segments = [[]];
+    lines.forEach(function (l) {
+      if (l.trim() === '---') { segments.push([]); } else { segments[segments.length - 1].push(l); }
+    });
+    var items = [];
+    var seen = {};
+    var duplicates = 0;
+    function addUrl(u) {
+      if (seen[u]) { duplicates += 1; return; }
+      seen[u] = true;
+      items.push({ kind: 'url', value: u, label: u });
+    }
+    segments.forEach(function (seg) {
+      var nonBlank = seg.map(function (l) { return l.trim(); }).filter(function (l) { return l; });
+      if (!nonBlank.length) return;
+      if (!hasSep) {
+        nonBlank.forEach(function (l) {
+          if (isUrl(l)) { addUrl(l); }
+          else { items.push({ kind: 'invalid', value: l, label: labelOf(l), error: 'not a URL' }); }
+        });
+        return;
+      }
+      if (nonBlank.every(isUrl)) {
+        nonBlank.forEach(addUrl);
+      } else {
+        var text = seg.join('\n').trim();
+        items.push({ kind: 'text', value: text, label: labelOf(text) });
+      }
+    });
+    var total = items.length;
+    return { items: items.slice(0, limit), truncated: total > limit, duplicates: duplicates, total: total };
+  }
+
+  function formBody(obj) {
+    var p = new URLSearchParams();
+    Object.keys(obj).forEach(function (k) { p.set(k, obj[k] == null ? '' : String(obj[k])); });
+    return p.toString();
+  }
+
+  var FORM_HEADERS = { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' };
+
+  async function readJson(resp) {
+    try { return await resp.json(); } catch (e) { return null; }
+  }
+
+  function errorText(data, resp) {
+    if (data) {
+      if (data.error) return String(data.error);
+      if (data.errors) {
+        var vals = Object.keys(data.errors).map(function (k) { return String(data.errors[k]); });
+        if (vals.length) return vals.join('; ');
+      }
+    }
+    return 'HTTP ' + (resp && resp.status);
+  }
+
+  // Pull decision and score out of the /job/<id> page returned after the save redirect.
+  function scrapeResult(html) {
+    var out = { decision: '', score: '' };
+    var m = /class="jst-override-btn"[^>]*data-current="([a-z]+)"/.exec(html || '');
+    if (m) out.decision = m[1];
+    var s = />\s*(\d{1,3})\s*<\/div>\s*<div[^>]*>\s*FIT SCORE/.exec(html || '');
+    if (s) out.score = s[1];
+    return out;
+  }
+
+  function jobIdFromUrl(url) {
+    var m = /\/job\/([^/?#]+)/.exec(String(url || ''));
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  var MAX_JOB_ID = 128;
+
+  // Deterministic short digest (6 hex chars) of the posting: SHA-256 when available,
+  // else a small FNV-1a hash (crypto.subtle needs a secure context).
+  async function shortHash(key) {
+    try {
+      if (typeof crypto !== 'undefined' && crypto.subtle && typeof TextEncoder !== 'undefined') {
+        var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+        return Array.prototype.map.call(new Uint8Array(buf), function (b) {
+          return ('0' + b.toString(16)).slice(-2);
+        }).join('').slice(0, 6);
+      }
+    } catch (e) { /* fall through to the fallback hash */ }
+    var h = 0x811c9dc5;
+    for (var i = 0; i < key.length; i++) {
+      h ^= key.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return ('00000000' + h.toString(16)).slice(-8).slice(0, 6);
+  }
+
+  // Posting identity: the URL, or the whitespace-normalised pasted text.
+  function contentKey(item) {
+    return item.kind === 'url' ? item.value : String(item.value).replace(/\s+/g, ' ').trim();
+  }
+
+  // <prefill job_id>-<6 hex>, charset [A-Za-z0-9._-], at most 128 chars.
+  async function makeJobId(slug, item) {
+    var suffix = await shortHash(contentKey(item));
+    var base = String(slug || '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+|[.-]+$/g, '') || 'job';
+    return base.slice(0, MAX_JOB_ID - 7) + '-' + suffix;
+  }
+
+  // Process one item through the existing /prefill then /job-submit endpoints.
+  async function processItem(item, fetchFn) {
+    if (item.kind === 'invalid') return { ok: false, error: item.error || 'not a URL' };
+    var pre = item.kind === 'url'
+      ? { prefill_mode: 'url', job_url: item.value }
+      : { prefill_mode: 'paste', job_text: item.value };
+    var r1 = await fetchFn('/prefill', { method: 'POST', headers: FORM_HEADERS, body: formBody(pre) });
+    var d1 = await readJson(r1);
+    if (!r1.ok || !d1 || !d1.ok) return { ok: false, error: errorText(d1, r1) };
+    var values = d1.values || {};
+    values.job_id = await makeJobId(values.job_id, item);
+    // Existing job with this id = the same posting added before: still resubmit (refresh).
+    var refreshed = false;
+    try {
+      var rc = await fetchFn('/job/' + encodeURIComponent(values.job_id), { method: 'GET' });
+      refreshed = rc.status === 200;
+    } catch (e) { refreshed = false; }
+    var r2 = await fetchFn('/job-submit', { method: 'POST', headers: FORM_HEADERS, body: formBody(values) });
+    var ctype = (r2.headers && r2.headers.get && r2.headers.get('content-type')) || '';
+    if (!r2.ok || ctype.indexOf('application/json') !== -1) {
+      var d2 = await readJson(r2);
+      return { ok: false, error: errorText(d2, r2) };
+    }
+    var jobId = jobIdFromUrl(r2.url);
+    if (!jobId) return { ok: false, error: 'Saved, but no job id in the response' };
+    var scraped = scrapeResult(await r2.text());
+    return { ok: true, jobId: jobId, decision: scraped.decision, score: scraped.score,
+             refreshed: refreshed, unread: !(scraped.decision && scraped.score) };
+  }
+
+  // Sequential loop. A failed item never stops the others; stop() ends the run.
+  // hooks: {onRow(index, state), shouldStop()}. Returns {saved, refreshed, failed, stopped, reviewIds}.
+  // saved = new jobs; refreshed = the same posting was already saved and was re-submitted.
+  async function runAll(items, fetchFn, hooks) {
+    var summary = { saved: 0, refreshed: 0, failed: 0, stopped: 0, reviewIds: [] };
+    for (var i = 0; i < items.length; i++) {
+      if (hooks.shouldStop()) {
+        for (var j = i; j < items.length; j++) { hooks.onRow(j, { status: 'stopped' }); summary.stopped += 1; }
+        break;
+      }
+      hooks.onRow(i, { status: 'fetching' });
+      var res;
+      try {
+        res = await processItem(items[i], fetchFn);
+      } catch (err) {
+        res = { ok: false, error: (err && err.message) || 'Request failed' };
+      }
+      if (res.ok) {
+        if (res.refreshed) { summary.refreshed += 1; } else { summary.saved += 1; }
+        if (res.decision === 'review') summary.reviewIds.push(res.jobId);
+        hooks.onRow(i, { status: res.refreshed ? 'refreshed' : 'saved', jobId: res.jobId, decision: res.decision,
+                         score: res.score, unread: res.unread });
+      } else {
+        summary.failed += 1;
+        hooks.onRow(i, { status: 'failed', error: res.error });
+      }
+    }
+    return summary;
+  }
+
+  function summaryText(s, note) {
+    var parts = [s.saved + ' new', s.refreshed + ' refreshed', s.failed + ' failed'];
+    if (s.stopped) parts.push(s.stopped + ' not run (stopped)');
+    return parts.join(', ') + (note ? '. ' + note : '');
+  }
+
+  var api = { classify: classify, makeJobId: makeJobId, processItem: processItem, runAll: runAll, summaryText: summaryText,
+              scrapeResult: scrapeResult, MAX_ITEMS: MAX_ITEMS };
+
+  // ---- DOM wiring (skipped under node) ----
+  function el(tag, text, cls) {
+    var e = document.createElement(tag);
+    if (text != null) e.textContent = text;
+    if (cls) e.className = cls;
+    return e;
+  }
+
+  function wire() {
+    var input = document.getElementById('bulk-input');
+    var runBtn = document.getElementById('bulk-run-btn');
+    var stopBtn = document.getElementById('bulk-stop-btn');
+    var body = document.getElementById('bulk-results-body');
+    var box = document.getElementById('bulk-results');
+    var summaryEl = document.getElementById('bulk-summary');
+    var reviewLink = document.getElementById('bulk-review-link');
+    if (!input || !runBtn || !stopBtn || !body) return;
+    var stopFlag = false;
+    var rows = [];
+
+    function paint(i, item, state) {
+      var tr = rows[i];
+      while (tr.firstChild) tr.removeChild(tr.firstChild);
+      tr.setAttribute('data-status', state.status);
+      tr.appendChild(el('td', item.label));
+      tr.appendChild(el('td', state.status === 'refreshed' ? 'already saved \u2014 refreshed' : state.status));
+      var dec = el('td', state.decision ? state.decision.charAt(0).toUpperCase() + state.decision.slice(1) : '');
+      if (state.score) dec.textContent = (dec.textContent ? dec.textContent + ' ' : '') + state.score;
+      if (state.unread) dec.textContent = 'saved (decision not read)';
+      tr.appendChild(dec);
+      var last = el('td');
+      if (state.status === 'saved' || state.status === 'refreshed') {
+        var a = el('a', 'Open job');
+        a.setAttribute('href', '/job/' + encodeURIComponent(state.jobId));
+        last.appendChild(a);
+      } else if (state.status === 'failed') {
+        last.textContent = state.error || 'failed';
+      }
+      tr.appendChild(last);
+    }
+
+    runBtn.addEventListener('click', async function () {
+      var parsed = classify(input.value, MAX_ITEMS);
+      var items = parsed.items;
+      body.textContent = '';
+      reviewLink.hidden = true;
+      rows = [];
+      stopFlag = false;
+      if (!items.length) { summaryEl.textContent = 'Nothing to add. Paste job URLs (one per line) or JD texts separated by a --- line.'; return; }
+      var notes = [];
+      if (parsed.truncated) notes.push('Only the first ' + MAX_ITEMS + ' of ' + parsed.total + ' items are processed.');
+      if (parsed.duplicates) notes.push(parsed.duplicates + ' duplicate URL(s) skipped.');
+      summaryEl.textContent = notes.join(' ');
+      box.hidden = false;
+      items.forEach(function (item, i) {
+        var tr = document.createElement('tr');
+        body.appendChild(tr);
+        rows.push(tr);
+        paint(i, item, { status: 'queued' });
+      });
+      runBtn.disabled = true;
+      stopBtn.disabled = false;
+      var summary = await runAll(items, window.fetch.bind(window), {
+        onRow: function (i, state) { paint(i, items[i], state); },
+        shouldStop: function () { return stopFlag; }
+      });
+      runBtn.disabled = false;
+      stopBtn.disabled = true;
+      summaryEl.textContent = summaryText(summary, notes.join(' '));
+      if (summary.reviewIds.length) {
+        reviewLink.setAttribute('href', '/review-queue?ids=' + summary.reviewIds.map(encodeURIComponent).join(','));
+        reviewLink.hidden = false;
+      }
+    });
+    stopBtn.addEventListener('click', function () { stopFlag = true; });
+  }
+
+  if (typeof module !== 'undefined' && module.exports) { module.exports = api; }
+  if (typeof document !== 'undefined') { window.JSTBulk = api; wire(); }
+})();
+"""
+
+
 def _render_add_job_tab(values: dict[str, str]) -> str:
     return f"""
     <section class="panel">
@@ -419,6 +699,7 @@ def _render_add_job_tab(values: dict[str, str]) -> str:
         <div class="tab-row" role="tablist" aria-label="Job input method">
           <button type="button" class="tab-button active" data-add-job-tab="paste">Paste Text</button>
           <button type="button" class="tab-button" data-add-job-tab="url">Job URL</button>
+          <button type="button" class="tab-button" data-add-job-tab="bulk">Bulk</button>
         </div>
         <div class="tab-panel active" data-add-job-panel="paste">
           <label><span>Paste job text</span><textarea id="add-job-text" placeholder="Paste the raw job advert text here"></textarea></label>
@@ -427,6 +708,16 @@ def _render_add_job_tab(values: dict[str, str]) -> str:
         <div class="tab-panel" data-add-job-panel="url" hidden>
           <label><span>Job posting URL</span><input id="add-job-url" type="url" placeholder="https://example.com/job"></label>
           <div class="actions"><button type="button" id="add-job-parse-url-btn">Parse &amp; Preview</button></div>
+        </div>
+        <div class="tab-panel" data-add-job-panel="bulk" hidden>
+          <label><span>Job URLs (one per line) and/or JD texts (separate texts with a line containing only ---)</span><textarea id="bulk-input" rows="10" placeholder="https://example.com/job-1&#10;https://example.com/job-2&#10;---&#10;Pasted job advert text..."></textarea></label>
+          <p class="hint">Up to 15 items per run. Each is saved and scored through the normal flow, one at a time. LLM assessment is not started.</p>
+          <div class="actions"><button type="button" id="bulk-run-btn">Add all</button> <button type="button" id="bulk-stop-btn" disabled>Stop</button></div>
+          <p id="bulk-summary" class="prefill-status" aria-live="polite"></p>
+          <div id="bulk-results" hidden>
+            <table><thead><tr><th>Item</th><th>Status</th><th>Decision / score</th><th>Job / reason</th></tr></thead><tbody id="bulk-results-body"></tbody></table>
+          </div>
+          <p><a id="bulk-review-link" class="button" href="/review-queue" hidden>Open Review queue</a></p>
         </div>
         <p id="add-job-status" class="prefill-status" aria-live="polite"></p>
       </div>
@@ -527,6 +818,7 @@ def _render_add_job_tab(values: dict[str, str]) -> str:
       backBtn && backBtn.addEventListener('click', showInputStep);
     }})();
     </script>
+    <script>{_BULK_PASTE_JS}</script>
     """
 
 
@@ -884,6 +1176,61 @@ _QUAL_ASSESS_JS = (
     '})();</script>'
 )
 
+
+
+_SALARY_BENCHMARK_JS = """<script>/* salary-benchmark */
+(function(){
+var root=document.getElementById("sb-panel");if(!root)return;
+var btn=document.getElementById("sb-btn"),out=document.getElementById("sb-out");
+var url="/job/"+encodeURIComponent(root.getAttribute("data-job-id"))+"/salary-benchmark";
+function money(n){return "\\u00a3"+Math.round(n).toLocaleString("en-GB");}
+function line(text){var d=document.createElement("div");d.textContent=text;d.style.margin="3px 0";return d;}
+function show(nodes,isError){out.textContent="";out.style.color=isError?"var(--skip)":"var(--ink-soft)";
+nodes.forEach(function(n){out.appendChild(n);});}
+function pct(p){return p===null||p===undefined?"n/a":Math.round(p)+"th percentile";}
+function render(d){
+if(d.status==="unavailable"){show([line("Adzuna is not configured (missing credentials).")],true);return;}
+if(d.status==="error"){show([line("Could not fetch salary data: "+(d.error||"unknown error"))],true);return;}
+if(d.status==="no_data"||!d.summary){show([line("No Adzuna data for this title ("+d.query+").")],false);return;}
+var s=d.summary,rows=[];
+rows.push(line("Title searched: "+d.query+" (UK-wide)"));
+rows.push(line("Sample size: "+s.total+" advertised vacancies"));
+var upper=s.median_bucket_upper===null?"+":" to "+money(s.median_bucket_upper);
+rows.push(line("Median falls in the "+money(s.median_bucket_lower)+upper+" range"));
+rows.push(line(d.job_salary===null?"This job: no salary advertised":"This job ("+money(d.job_salary)+" midpoint): "+pct(s.job_percentile)));
+rows.push(line(d.floor===null?"Your salary floor: not set":"Your salary floor ("+money(d.floor)+"): "+pct(s.floor_percentile)));
+var meta=line("As of "+(d.fetched_at||"").slice(0,10)+(d.cached?" (cached, refreshes daily)":"")+". Source: ");
+var a=document.createElement("a");a.href="https://www.adzuna.co.uk";a.target="_blank";a.rel="noopener noreferrer";a.textContent="Adzuna";
+meta.appendChild(a);meta.style.color="var(--ink-faint)";meta.style.fontSize="11.5px";rows.push(meta);
+show(rows,false);}
+btn.addEventListener("click",function(){
+btn.disabled=true;show([line("Checking...")],false);
+fetch(url).then(function(r){return r.json();}).then(render)
+.catch(function(){show([line("Could not reach the server.")],true);})
+.then(function(){btn.disabled=false;btn.textContent="Check again";});});
+})();
+</script>"""
+
+
+def render_salary_benchmark_panel(job_id: str) -> str:
+    """Advisory 'Salary benchmark' panel; fetches lazily via GET /job/{id}/salary-benchmark."""
+    job_id_esc = escape(job_id)
+    parts = [
+        '<div id="sb-panel" data-job-id="', job_id_esc, '" style="margin-top:16px;background:var(--surface);',
+        'border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--pad);box-shadow:var(--shadow-sm);">',
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">',
+        '<div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;',
+        'color:var(--ink-faint);">Salary benchmark</div>',
+        '<button id="sb-btn" type="button" style="padding:4px 13px;font-size:12px;cursor:pointer;',
+        'border:1px solid var(--accent);background:transparent;color:var(--accent);',
+        'border-radius:var(--r-md);font-weight:600;font-family:inherit;">Check market salary</button></div>',
+        '<div id="sb-out" style="font-size:13px;line-height:1.6;color:var(--ink-soft);"></div>',
+        '<div style="font-size:11px;color:var(--ink-faint);margin-top:6px;">Advisory only; does not affect the score. ',
+        'Advertised salaries, may include estimates. Source: Adzuna.</div>',
+        '</div>',
+        _SALARY_BENCHMARK_JS,
+    ]
+    return "".join(parts)
 
 
 def render_job_page(vm: "JobPageViewModel") -> str:
@@ -1478,6 +1825,12 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer;text-decoration:none;'
             f'border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);">'
             f'&#8635; Re-evaluate</a>'
+            f'<a href="/job/{job_id_esc}/export.zip" download id="export-btn" '
+            f'title="Download CV, cover letter, analysis and job data for this job as one zip" '
+            f'style="display:inline-flex;align-items:center;gap:7px;padding:10px 15px;border-radius:var(--r-md);'
+            f'font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer;text-decoration:none;'
+            f'border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);">'
+            f'&#11015; Download package</a>'
             f'</div>'
             f'<div id="tailor-result" style="margin-top:12px;"></div>'
             f'</div>'
@@ -1868,6 +2221,8 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         f'</details>'
     )
 
+    salary_panel_html = render_salary_benchmark_panel(vm.job_id)
+
     if embed:
         # Embed mode: no sidebar, no back link — used by review-queue iframe
         body = f"""
@@ -1876,6 +2231,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             {flash_html}
             {job_header_html}
             {verdict_card_html}
+            {salary_panel_html}
             {qualitative_panel_html}
             {keyword_block_html}
             {reasons_grid_html}
@@ -1907,6 +2263,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
           {flash_html}
           {job_header_html}
           {verdict_card_html}
+          {salary_panel_html}
           {qualitative_panel_html}
           {keyword_block_html}
           {reasons_grid_html}

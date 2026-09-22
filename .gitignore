@@ -72,3 +72,6 @@ viewer/usage.json
 viewer/conversations/
 viewer/data/
 poc/**/output/
+
+# Adzuna salary benchmark cache + daily call counter (Feature B)
+data/state/cache/

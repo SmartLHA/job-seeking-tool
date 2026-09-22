@@ -395,15 +395,46 @@ def _filter_grounded_points(points: list[str], profile: CandidateProfile, master
     return grounded
 
 
-def save_cover_letter(job_id: str, letter: str, profile_id: str) -> Path:
-    """Save a cover letter to output/cover_letters/<job_id>.txt and return the path."""
+def cover_letter_dir(base_dir: str | Path | None = None) -> Path:
+    """Single source of truth for where cover letters live.
+
+    Default is ``output/cover_letters`` RELATIVE TO THE PROCESS CWD (the server is
+    always started from the project root). Pass ``base_dir`` (the parent of
+    ``cover_letters``) to make save/load independent of the cwd, e.g. in tests.
+    Both ``save_cover_letter`` and ``load_cover_letter`` use this function.
+    """
+    return (Path(base_dir) if base_dir is not None else Path("output")) / "cover_letters"
+
+
+def _validated_cover_letter_id(job_id: str) -> str:
     if not isinstance(job_id, str):
         raise ValueError("invalid job_id")
     normalized_job_id = job_id.strip()
     if not _SAFE_JOB_ID.match(normalized_job_id) or normalized_job_id in (".", ".."):
         raise ValueError("invalid job_id")
-    output_dir = Path("output") / "cover_letters"
+    return normalized_job_id
+
+
+def save_cover_letter(
+    job_id: str, letter: str, profile_id: str, base_dir: str | Path | None = None,
+) -> Path:
+    """Save a cover letter to output/cover_letters/<job_id>.txt and return the path."""
+    normalized_job_id = _validated_cover_letter_id(job_id)
+    output_dir = cover_letter_dir(base_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{normalized_job_id}.txt"
     path.write_text(letter, encoding="utf-8")
     return path
+
+
+def load_cover_letter(job_id: str, base_dir: str | Path | None = None) -> str | None:
+    """Return the saved cover letter text for a job, or None if none was saved.
+
+    Raises ``ValueError`` on a malformed job_id before any filesystem access.
+    """
+    normalized_job_id = _validated_cover_letter_id(job_id)
+    base = cover_letter_dir(base_dir).resolve()
+    path = (base / f"{normalized_job_id}.txt").resolve()
+    if path.parent != base or not path.is_file():
+        return None
+    return path.read_text(encoding="utf-8")
