@@ -268,7 +268,7 @@ def test_route_regex_registered():
     assert ui_routes.handle_job_salary_benchmark is ui_handlers.handle_job_salary_benchmark
 
 
-@pytest.mark.parametrize("bad", ["../etc/passwd", "a b", "a/b", "", "id;rm", "x%00"])
+@pytest.mark.parametrize("bad", ["../etc/passwd", "a b", "a/b", "", "id;rm", "x%00", ".", "..", "x" * 129])
 def test_route_400_bad_id_before_file_access(config, bad):
     r = _Resp()
     with patch.object(ui_handlers, "load_reviewed_job") as ld, patch("requests.get") as g:
@@ -283,6 +283,37 @@ def test_route_404_unknown(config):
     with patch("requests.get") as g:
         ui_handlers.handle_job_salary_benchmark(None, config, r, "nope-1")
     assert r.status == HTTPStatus.NOT_FOUND
+    g.assert_not_called()
+
+
+def test_route_uses_shared_validate_job_id():
+    import inspect
+    src = inspect.getsource(ui_handlers.handle_job_salary_benchmark)
+    assert "validate_job_id" in src and not hasattr(ui_handlers, "_SALARY_JOB_ID_RE")
+
+
+@pytest.mark.parametrize("content,expected", [
+    ("{not json", HTTPStatus.NOT_FOUND),
+    ("[1, 2]", HTTPStatus.NOT_FOUND),
+    ('{"job_title": 5, "bogus_field": 1}', HTTPStatus.UNPROCESSABLE_ENTITY),
+])
+def test_route_corrupt_job_file_never_500(config, content, expected):
+    next(config.state_root.rglob("reviewed_jobs/job-1.json")).write_text(content)
+    r = _Resp()
+    with patch("requests.get") as g:
+        ui_handlers.handle_job_salary_benchmark(None, config, r, "job-1")
+    assert r.status == expected and r.json_sent["ok"] is False
+    g.assert_not_called()
+
+
+def test_budget_fails_closed_when_counter_unwritable(tmp_path):
+    from datetime import datetime, timezone
+    blocker = tmp_path / "not_a_dir"
+    blocker.write_text("x")  # cache_dir path is a file -> mkdir/write raises OSError
+    with patch("requests.get") as g:
+        assert ac._take_budget(blocker / "cache", datetime.now(timezone.utc)) == "budget tracking unavailable"
+        res = ac.fetch_adzuna_salary_histogram("business analyst", cache_dir=blocker / "cache")
+    assert res.status == "error" and res.error == "budget tracking unavailable"
     g.assert_not_called()
 
 

@@ -287,6 +287,23 @@ def test_route_404_unknown_job(config):
     assert r.status == HTTPStatus.NOT_FOUND
 
 
+def _job_file(config, job_id="job-1"):
+    return next(config.state_root.rglob(f"reviewed_jobs/{job_id}.json"))
+
+
+@pytest.mark.parametrize("content,expected", [
+    ("{not json", HTTPStatus.NOT_FOUND),                 # malformed JSON
+    ("[1, 2]", HTTPStatus.NOT_FOUND),                    # valid JSON, not an object
+    ('{"job_title": 5, "bogus_field": 1}', HTTPStatus.UNPROCESSABLE_ENTITY),  # valid JSON, bad fields
+])
+def test_route_corrupt_job_file_is_clean_json_error_never_500(config, content, expected):
+    _job_file(config).write_text(content)
+    r = _Resp()
+    ui_handlers.handle_job_export(None, config, r, "job-1")
+    assert r.status == expected and r.data is None
+    assert r.json_sent["ok"] is False and isinstance(r.json_sent["error"], str)
+
+
 @pytest.mark.parametrize("decision", ["apply", "review", "skip"])
 def test_route_200_any_decision(config, env, decision):
     save_job_analysis(_analysis(decision=decision), env["state"])

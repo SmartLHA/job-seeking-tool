@@ -505,6 +505,39 @@ _BULK_PASTE_JS = r"""/* bulk-paste */
     return m ? decodeURIComponent(m[1]) : '';
   }
 
+  var MAX_JOB_ID = 128;
+
+  // Deterministic short digest (6 hex chars) of the posting: SHA-256 when available,
+  // else a small FNV-1a hash (crypto.subtle needs a secure context).
+  async function shortHash(key) {
+    try {
+      if (typeof crypto !== 'undefined' && crypto.subtle && typeof TextEncoder !== 'undefined') {
+        var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+        return Array.prototype.map.call(new Uint8Array(buf), function (b) {
+          return ('0' + b.toString(16)).slice(-2);
+        }).join('').slice(0, 6);
+      }
+    } catch (e) { /* fall through to the fallback hash */ }
+    var h = 0x811c9dc5;
+    for (var i = 0; i < key.length; i++) {
+      h ^= key.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return ('00000000' + h.toString(16)).slice(-8).slice(0, 6);
+  }
+
+  // Posting identity: the URL, or the whitespace-normalised pasted text.
+  function contentKey(item) {
+    return item.kind === 'url' ? item.value : String(item.value).replace(/\s+/g, ' ').trim();
+  }
+
+  // <prefill job_id>-<6 hex>, charset [A-Za-z0-9._-], at most 128 chars.
+  async function makeJobId(slug, item) {
+    var suffix = await shortHash(contentKey(item));
+    var base = String(slug || '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+|[.-]+$/g, '') || 'job';
+    return base.slice(0, MAX_JOB_ID - 7) + '-' + suffix;
+  }
+
   // Process one item through the existing /prefill then /job-submit endpoints.
   async function processItem(item, fetchFn) {
     if (item.kind === 'invalid') return { ok: false, error: item.error || 'not a URL' };
@@ -514,7 +547,15 @@ _BULK_PASTE_JS = r"""/* bulk-paste */
     var r1 = await fetchFn('/prefill', { method: 'POST', headers: FORM_HEADERS, body: formBody(pre) });
     var d1 = await readJson(r1);
     if (!r1.ok || !d1 || !d1.ok) return { ok: false, error: errorText(d1, r1) };
-    var r2 = await fetchFn('/job-submit', { method: 'POST', headers: FORM_HEADERS, body: formBody(d1.values || {}) });
+    var values = d1.values || {};
+    values.job_id = await makeJobId(values.job_id, item);
+    // Existing job with this id = the same posting added before: still resubmit (refresh).
+    var refreshed = false;
+    try {
+      var rc = await fetchFn('/job/' + encodeURIComponent(values.job_id), { method: 'GET' });
+      refreshed = rc.status === 200;
+    } catch (e) { refreshed = false; }
+    var r2 = await fetchFn('/job-submit', { method: 'POST', headers: FORM_HEADERS, body: formBody(values) });
     var ctype = (r2.headers && r2.headers.get && r2.headers.get('content-type')) || '';
     if (!r2.ok || ctype.indexOf('application/json') !== -1) {
       var d2 = await readJson(r2);
@@ -523,13 +564,15 @@ _BULK_PASTE_JS = r"""/* bulk-paste */
     var jobId = jobIdFromUrl(r2.url);
     if (!jobId) return { ok: false, error: 'Saved, but no job id in the response' };
     var scraped = scrapeResult(await r2.text());
-    return { ok: true, jobId: jobId, decision: scraped.decision, score: scraped.score };
+    return { ok: true, jobId: jobId, decision: scraped.decision, score: scraped.score,
+             refreshed: refreshed, unread: !(scraped.decision && scraped.score) };
   }
 
   // Sequential loop. A failed item never stops the others; stop() ends the run.
-  // hooks: {onRow(index, state), shouldStop()}. Returns {saved, failed, stopped, reviewIds}.
+  // hooks: {onRow(index, state), shouldStop()}. Returns {saved, refreshed, failed, stopped, reviewIds}.
+  // saved = new jobs; refreshed = the same posting was already saved and was re-submitted.
   async function runAll(items, fetchFn, hooks) {
-    var summary = { saved: 0, failed: 0, stopped: 0, reviewIds: [] };
+    var summary = { saved: 0, refreshed: 0, failed: 0, stopped: 0, reviewIds: [] };
     for (var i = 0; i < items.length; i++) {
       if (hooks.shouldStop()) {
         for (var j = i; j < items.length; j++) { hooks.onRow(j, { status: 'stopped' }); summary.stopped += 1; }
@@ -543,9 +586,10 @@ _BULK_PASTE_JS = r"""/* bulk-paste */
         res = { ok: false, error: (err && err.message) || 'Request failed' };
       }
       if (res.ok) {
-        summary.saved += 1;
+        if (res.refreshed) { summary.refreshed += 1; } else { summary.saved += 1; }
         if (res.decision === 'review') summary.reviewIds.push(res.jobId);
-        hooks.onRow(i, { status: 'saved', jobId: res.jobId, decision: res.decision, score: res.score });
+        hooks.onRow(i, { status: res.refreshed ? 'refreshed' : 'saved', jobId: res.jobId, decision: res.decision,
+                         score: res.score, unread: res.unread });
       } else {
         summary.failed += 1;
         hooks.onRow(i, { status: 'failed', error: res.error });
@@ -555,12 +599,12 @@ _BULK_PASTE_JS = r"""/* bulk-paste */
   }
 
   function summaryText(s, note) {
-    var parts = [s.saved + ' saved', s.failed + ' failed'];
+    var parts = [s.saved + ' new', s.refreshed + ' refreshed', s.failed + ' failed'];
     if (s.stopped) parts.push(s.stopped + ' not run (stopped)');
     return parts.join(', ') + (note ? '. ' + note : '');
   }
 
-  var api = { classify: classify, processItem: processItem, runAll: runAll, summaryText: summaryText,
+  var api = { classify: classify, makeJobId: makeJobId, processItem: processItem, runAll: runAll, summaryText: summaryText,
               scrapeResult: scrapeResult, MAX_ITEMS: MAX_ITEMS };
 
   // ---- DOM wiring (skipped under node) ----
@@ -588,12 +632,13 @@ _BULK_PASTE_JS = r"""/* bulk-paste */
       while (tr.firstChild) tr.removeChild(tr.firstChild);
       tr.setAttribute('data-status', state.status);
       tr.appendChild(el('td', item.label));
-      tr.appendChild(el('td', state.status));
+      tr.appendChild(el('td', state.status === 'refreshed' ? 'already saved \u2014 refreshed' : state.status));
       var dec = el('td', state.decision ? state.decision.charAt(0).toUpperCase() + state.decision.slice(1) : '');
       if (state.score) dec.textContent = (dec.textContent ? dec.textContent + ' ' : '') + state.score;
+      if (state.unread) dec.textContent = 'saved (decision not read)';
       tr.appendChild(dec);
       var last = el('td');
-      if (state.status === 'saved') {
+      if (state.status === 'saved' || state.status === 'refreshed') {
         var a = el('a', 'Open job');
         a.setAttribute('href', '/job/' + encodeURIComponent(state.jobId));
         last.appendChild(a);

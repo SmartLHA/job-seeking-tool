@@ -701,7 +701,13 @@ def handle_job_explain(req, config, responder, job_id):
     responder.send_json({"ok": True, **explanation})
 
 
-_SALARY_JOB_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+def _job_load_failure(exc: Exception):
+    """Map a job-load failure to (status, message): 404 missing/unreadable/malformed file, 422 invalid fields."""
+    from src.job_hunt_storage import StorageError
+
+    if isinstance(exc, (FileNotFoundError, StorageError)):
+        return HTTPStatus.NOT_FOUND, "Job not found or unreadable"
+    return HTTPStatus.UNPROCESSABLE_ENTITY, "Saved job data is invalid"
 
 
 def handle_job_export(req, config, responder, job_id):
@@ -725,8 +731,9 @@ def handle_job_export(req, config, responder, job_id):
         profile = None
     try:
         data, _manifest = build_package(job_id, profile, state_root=config.state_root)
-    except (FileNotFoundError, StorageError):
-        responder.send_json({"ok": False, "error": "Job not found"}, status=HTTPStatus.NOT_FOUND)
+    except (FileNotFoundError, StorageError, ValueError, KeyError, TypeError) as exc:
+        status, message = _job_load_failure(exc)
+        responder.send_json({"ok": False, "error": message}, status=status)
         return
     responder.send_bytes(
         HTTPStatus.OK,
@@ -746,13 +753,18 @@ def handle_job_salary_benchmark(req, config, responder, job_id):
     from src.job_sources.adzuna_source import _ensure_adzuna_env_loaded
     from src.job_hunt_salary_benchmark import clean_job_title, summarise_histogram
 
-    if not _SALARY_JOB_ID_RE.match(job_id or ""):
+    from src.job_hunt_export import validate_job_id
+
+    try:
+        validate_job_id(job_id)
+    except ValueError:
         responder.send_json({"ok": False, "error": "Invalid job id"}, status=HTTPStatus.BAD_REQUEST)
         return
     try:
         reviewed_job = load_reviewed_job(job_id, config.state_root)
-    except FileNotFoundError:
-        responder.send_json({"ok": False, "error": "Job not found"}, status=HTTPStatus.NOT_FOUND)
+    except (FileNotFoundError, ValueError, KeyError, TypeError) as exc:
+        status, message = _job_load_failure(exc)
+        responder.send_json({"ok": False, "error": message}, status=status)
         return
     query = clean_job_title(getattr(reviewed_job, "job_title", "") or "")
     lo = getattr(reviewed_job, "salary_min_gbp", None)

@@ -173,8 +173,8 @@ def _write_cache(path: Path, result: SalaryHistogramResult) -> None:
         logger.warning("Could not write Adzuna salary cache.")
 
 
-def _take_budget(cache_dir: Path, now: datetime) -> bool:
-    """Count one HTTP call against today's budget; False when the limit is reached."""
+def _take_budget(cache_dir: Path, now: datetime) -> Optional[str]:
+    """Count one HTTP call against today's budget. None = allowed, else the refusal reason (fail closed)."""
     path = Path(cache_dir) / _BUDGET_FILE
     today = now.strftime("%Y-%m-%d")
     with _budget_lock:
@@ -186,13 +186,15 @@ def _take_budget(cache_dir: Path, now: datetime) -> bool:
         except (OSError, ValueError, TypeError, AttributeError):
             count = 0
         if count >= DAILY_CALL_LIMIT:
-            return False
+            return "daily Adzuna budget reached"
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps({"date": today, "count": count + 1}), encoding="utf-8")
         except OSError:
-            logger.warning("Could not persist Adzuna daily call counter.")
-        return True
+            # Fail closed: without a persisted counter the daily budget cannot be enforced.
+            logger.warning("Could not persist Adzuna daily call counter; refusing the call.")
+            return "budget tracking unavailable"
+        return None
 
 
 def _parse_histogram(data: Any) -> Optional[List[Tuple[int, int]]]:
@@ -234,9 +236,9 @@ def fetch_adzuna_salary_histogram(
         return SalaryHistogramResult("unavailable", what_n, fetched_at=stamp.isoformat(),
                                      error="Adzuna credentials are not configured")
 
-    if not _take_budget(cache, stamp):
-        return SalaryHistogramResult("error", what_n, fetched_at=stamp.isoformat(),
-                                     error="daily Adzuna budget reached")
+    refusal = _take_budget(cache, stamp)
+    if refusal:
+        return SalaryHistogramResult("error", what_n, fetched_at=stamp.isoformat(), error=refusal)
 
     params: Dict[str, Any] = {
         "app_id": app_id, "app_key": app_key, "what": what_n,
