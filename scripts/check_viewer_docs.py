@@ -14,7 +14,7 @@ def main():
         p = f["path"]
         if p.startswith("http"):
             continue  # skip external URLs
-        resolved = p.replace("/viewer/..", BASE)
+        resolved = os.path.join(BASE, p.lstrip("/"))
         if not os.path.exists(resolved):
             errors.append(p)
     if errors:

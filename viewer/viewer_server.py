@@ -38,7 +38,7 @@ import sys
 if str(PROJECT_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT / "src"))
 PORT = 8765
-VIEWER_HOST = "0.0.0.0"
+VIEWER_HOST = "127.0.0.1"
 MAIN_SESSIONS_FILE = Path("/Users/lhaclaw/.openclaw/agents/main/sessions/sessions.json")
 
 # Cache for expensive health check (10s TTL)
@@ -1189,53 +1189,44 @@ def _handle_api_job_submit(post_body: bytes) -> bytes:
         return json.dumps({"error": str(e)}).encode()
 
 
+# Public files are code-owned: documents.json never grants file access.
+_PUBLIC_STATIC_FILES = frozenset({
+    "viewer/index.html", "viewer/styles.css", "viewer/app.js",
+    "viewer/documents.json", "viewer/linkedin_job_list.html",
+    "viewer/linkedin_job_list.js", "viewer/job_list.css",
+    "viewer/project_kanban.html", "viewer/kanban.js", "viewer/reed_jobs_v4.html",
+    "INDEX.md", "PROJECT_CONTEXT.md", "PROJECT_LOG.md",
+    "docs/product_spec.md", "docs/function_list.md", "docs/development_sequence.md",
+    "docs/development_rules.md", "docs/data_contract.md", "docs/ui_scope.md",
+    "docs/architecture_guardrails.md", "viewer/README.md", "docs/team_protocol.yaml",
+})
+
+
 def serve_file(sock: socket.socket, path: str) -> bool:
-    # OpenClaw system pages live in workspace viewer, not job_hunt viewer
-    _OC_SYSTEM_PAGES = {
-        "/viewer/openclaw_status.html",
-        "/viewer/openclaw_optimization_designs.html",
-        "/viewer/openclaw_pulse_viewer.html",
-        "/viewer/system_kanban.html",
-        "/viewer/status_debug.html",
-        "/viewer/trust_level.html",
-        "/viewer/trust_log.json",
-    }
-    if path in _OC_SYSTEM_PAGES:
-        workspace_viewer = Path.home() / ".openclaw" / "workspace" / "viewer"
-        file_path = workspace_viewer / Path(path).name
+    from urllib.parse import unquote
+
+    # Decode before checking components; never normalize traversal into a public path.
+    decoded = unquote(path)
+    if "\\" in decoded or "\x00" in decoded:
+        return False
+    components = decoded.split("/")
+    if any(part in {".", ".."} or part.startswith(".") for part in components if part):
+        return False
+    normalized = "viewer/index.html" if decoded in {"/", "/viewer", "/viewer/"} else decoded.removeprefix("/")
+    if normalized not in _PUBLIC_STATIC_FILES:
+        return False
+
+    root = PROJECT_ROOT.resolve()
+    file_path = root
+    for component in normalized.split("/"):
+        file_path = file_path / component
+        if file_path.is_symlink():
+            return False
+    try:
+        file_path.resolve().relative_to(root)
         if not file_path.is_file():
             return False
-        content = file_path.read_bytes()
-        content_type = "text/html"
-        response = (
-            b"HTTP/1.1 200 OK\r\n"
-            b"Content-Type: " + content_type.encode() + b"\r\n"
-            b"Content-Length: " + str(len(content)).encode() + b"\r\n"
-            b"Connection: close\r\n"
-            b"\r\n" + content
-        )
-        sock.sendall(response)
-        return True
-
-    if path.startswith("/viewer/"):
-        rel = path.replace("/viewer/", "", 1).replace("/viewer", "", 1)
-        normalized = os.path.normpath("viewer/" + rel).lstrip("/")
-    elif path == "/viewer":
-        normalized = "viewer/index.html"
-    elif path == "/":
-        normalized = "viewer/index.html"
-    else:
-        normalized = os.path.normpath(path).lstrip("/")
-        candidate_check = (PROJECT_ROOT / normalized).resolve()
-        if not str(candidate_check).startswith(str(PROJECT_ROOT) + os.sep):
-            return False
-
-    file_path = (PROJECT_ROOT / normalized).resolve()
-    if not str(file_path).startswith(str(PROJECT_ROOT) + os.sep):
-        return False
-    if file_path.is_dir():
-        file_path = file_path / "index.html"
-    if not file_path.is_file():
+    except (OSError, ValueError):
         return False
 
     content = file_path.read_bytes()
@@ -1246,6 +1237,8 @@ def serve_file(sock: socket.socket, path: str) -> bool:
         content_type = "text/css"
     elif normalized.endswith(".json"):
         content_type = "application/json"
+    elif normalized.endswith((".md", ".yaml")):
+        content_type = "text/plain; charset=utf-8"
 
     response = (
         b"HTTP/1.1 200 OK\r\n"
