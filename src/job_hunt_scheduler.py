@@ -370,9 +370,11 @@ def _reevaluate_digest_jobs_locked(*, config: Any, profile: Any, db_path: Path) 
             continue
         # Market-aware salary (2026-09-22, revision 2): the STICKY market_snapshot
         # is never recomputed by this pipeline — carry the existing one forward.
+        _previous_analysis = None
         _market_snapshot = None
         try:
-            _market_snapshot = load_job_analysis(job_id, config.state_root).market_snapshot
+            _previous_analysis = load_job_analysis(job_id, config.state_root)
+            _market_snapshot = _previous_analysis.market_snapshot
         except (FileNotFoundError, StorageError):
             pass
         try:
@@ -384,6 +386,12 @@ def _reevaluate_digest_jobs_locked(*, config: Any, profile: Any, db_path: Path) 
             errors.append(f"{job_id}: re-score failed: {exc}")
             logger.warning("reeval: re-score failed for %s: %s", job_id, exc)
             continue
+
+        if _previous_analysis is not None:
+            analysis = dataclasses.replace(
+                analysis, user_decision=_previous_analysis.user_decision,
+                user_decision_note=_previous_analysis.user_decision_note,
+            )
 
         new_score = analysis.match_score
 
