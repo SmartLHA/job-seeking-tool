@@ -368,3 +368,41 @@ def test_backend_batch_success_indices_retain_original_requests(tmp_path, monkey
     assert [(j['index'],j['job_id']) for j in body['jobs']]==[(0,'ok0'),(3,'ok3')]
     assert [e['index'] for e in body['errors']]==[1,2]
     assert calls==['ok0','fail','ok3']
+
+
+@pytest.mark.parametrize('source', RENDERERS)
+def test_shared_js_selection_limit_and_normal_twenty_payload(source, tmp_path):
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    rows = _cards(source, [_job(source, str(i), f'Limit job {i}') for i in range(22)]).cards
+    fixture = dict(first=rows[:20], firstOther=rows[20:], fragments={}, response={}, batchDeferred=True)
+    assert 'Maximum 20 jobs' in M.ACTION_BAR
+    script = 'const fixture=' + json.dumps(fixture) + ';\n' + _NODE_DOM + M.MULTISELECT_JS + r'''
+(async()=>{
+const ids=active().map(c=>c.dataset.jstId),alerts=[];global.alert=message=>alerts.push(message);
+ids.slice(0,20).forEach(jstToggle);assert.equal(_jst_sel.size,20);
+jstToggle(ids[20]);assert.equal(_jst_sel.size,20);assert(!_jst_sel.has(ids[20]));assert(alerts.pop().includes('Maximum 20'));
+jstToggle(ids[0]);assert.equal(_jst_sel.size,19);jstToggle(ids[20]);assert.equal(_jst_sel.size,20);assert(_jst_sel.has(ids[20]));
+jstToggle(ids[20]);jstToggle(ids[0]);assert.equal(_jst_sel.size,20);
+const fields=submissions.length;main=[]; // Selected jobs from an earlier page still count.
+jstToggle(ids[21]);assert.equal(_jst_sel.size,20);assert(!_jst_sel.has(ids[21]));
+jstEvaluateAll();assert.equal(submissions.length,fields+1);assert.equal(submissions[0].length,20);
+assert.deepEqual(submissions[0].map(row=>row.source_job_id).sort(),Array.from({length:20},(_,i)=>String(i)).sort());
+completeBatch({ok:true,jobs:[],errors:submissions[0].map((_,index)=>({index,error:'Synthetic retained'}))});await new Promise(setImmediate);
+assert.equal(_jst_sel.size,20);assert(!window.location);
+jstClearAll();jstToggle(ids[21]);jstSelectAll();assert.equal(_jst_sel.size,20);assert(_jst_sel.has(ids[21]));assert(alerts.pop().includes('left unselected'));
+jstClearAll();jstSelectAll();assert.equal(_jst_sel.size,20);assert(alerts.pop().includes('left unselected'));
+// The two current-page jobs cannot bypass the cap from earlier-page entries.
+assert.equal([..._jst_sel].filter(id=>ids.slice(20).includes(id)).length,0);
+_jst_sel.add(ids[20]);assert.equal(_jst_sel.size,21);const submitted=submissions.length;
+jstEvaluateAll();assert.equal(submissions.length,submitted);assert(alerts.pop().includes('Maximum 20'));
+jstToggle(ids[20]);assert.equal(_jst_sel.size,20); // Old oversized state remains recoverable.
+jstEvaluateAll();assert.equal(submissions.length,submitted+1);assert.equal(submissions[1].length,20);
+completeBatch({ok:true,jobs:[],errors:submissions[1].map((_,index)=>({index,error:'Synthetic retained'}))});await new Promise(setImmediate);
+})().catch(e=>{console.error(e);process.exitCode=1;});
+'''
+    path = tmp_path / 'shortlist-limit.js'
+    path.write_text(script)
+    completed = subprocess.run([node, str(path)], capture_output=True, text=True, timeout=20)
+    assert completed.returncode == 0, completed.stderr
