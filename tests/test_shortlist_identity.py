@@ -116,6 +116,8 @@ const response=fixture.response;
 class Element {
  constructor(id=''){this.id=id;this.style={};this.children=[];this.dataset={};this.className='';}
  appendChild(c){this.children.push(c);c.parentElement=this;return c;}
+ get firstChild(){return this.children[0];}
+ removeChild(c){this.children=this.children.filter(x=>x!==c);c.parentElement=null;return c;}
  setAttribute(k,v){this[k]=v;}
  getAttribute(k){return this[k];}
  querySelector(sel){return this.children.find(c=>'.'+c.className===sel)||null;}
@@ -139,12 +141,12 @@ global.document={
  querySelectorAll:()=>active().filter(c=>c.className==='jst-rc'),
  getElementById(id){if(id==='jst-cards-container')return container;if(id==='jst-more-wrap')return wrap;if(id==='jst-other-results')return other;
   const found=active().flatMap(c=>[c,c.form,c.checkbox]).filter(e=>e.id===id);assert(found.length<=1,'duplicate DOM id '+id);return found[0]||ui[id]||null;},
- createElement(){const e=new Element();Object.defineProperty(e,'innerHTML',{set(html){this.children=fixture.fragments[html].map(card);this.children.forEach(c=>c.parentElement=this);}});Object.defineProperty(e,'firstChild',{get(){return this.children[0];}});return e;}
+ createElement(){const e=new Element();Object.defineProperty(e,'innerHTML',{set(html){this.children=(fixture.fragments[html]||[]).map(card);this.children.forEach(c=>c.parentElement=this);}});Object.defineProperty(e,'firstChild',{get(){return this.children[0];}});return e;}
 };
 global.FormData=class{constructor(f){this.fields=f.fields;}forEach(fn){Object.entries(this.fields).forEach(([k,v])=>fn(v,k));}};
 global.alert=()=>{};
 global.fetch=(url,opts)=>{if(url==='/next')return Promise.resolve({json:()=>Promise.resolve(response)});
- if(url==='/jobs/batch-evaluate'){submissions.push(JSON.parse(opts.body).jobs);return Promise.resolve({json:()=>Promise.resolve({ok:false,error:'Synthetic stop'})});}
+ if(url==='/jobs/batch-evaluate'){submissions.push(JSON.parse(opts.body).jobs);if(fixture.batchDeferred)return new Promise(resolve=>{global.completeBatch=d=>resolve({json:()=>Promise.resolve(d)});});return Promise.resolve({json:()=>Promise.resolve({ok:false,error:'Synthetic stop'})});}
  assert.equal(url,'/jobs/not-interested');return Promise.resolve({json:()=>Promise.resolve({ok:true,count:0})});};
 main=fixture.first.map(card);if(!fixture.delayedOther){other=new Element('jst-other-results');fixture.firstOther.forEach(r=>other.appendChild(card(r)));}
 '''
@@ -271,3 +273,98 @@ console.log('initial Other registration assertions passed');
     completed = subprocess.run([node, str(path)], capture_output=True, text=True, timeout=20)
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip() == "initial Other registration assertions passed"
+
+
+@pytest.mark.parametrize('scenario', ['mixed', 'allfail', 'allsuccess', 'offpage',
+    'selection_changes', 'invalid_indices', 'missing_payload', 'malicious_error'])
+def test_shared_js_batch_reconciliation(scenario, tmp_path):
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    fixture = dict(first=_cards('reed', [_job('reed', str(i), f'Job {i}') for i in range(3)]).cards,
+                   firstOther=[], fragments={}, response={}, batchDeferred=True, scenario=scenario)
+    script = 'const fixture=' + json.dumps(fixture) + ';\n' + _NODE_DOM + M.MULTISELECT_JS + r'''
+(async()=>{
+const ids=main.map(c=>c.dataset.jstId),scenario=fixture.scenario;
+if(scenario==='missing_payload'){_jst_jobs.noPayload={};_jst_sel.add('noPayload');}
+jstToggle(ids[0]);jstToggle(ids[1]);
+if(scenario==='offpage')main=[];
+jstEvaluateAll();jstEvaluateAll();
+assert.equal(submissions.length,1,'inflight submission duplicated');
+assert.deepEqual(submissions[0].map(j=>j.source_job_id),['0','1']);
+const good=[{index:0,job_id:'evaluated-0'},{index:1,job_id:'evaluated-1'}];
+if(scenario==='selection_changes'){
+ main[0].form.fields.title='Edited during request';main[0].form.fields.nonce='new nonce';
+ jstToggle(ids[1]);jstToggle(ids[2]);completeBatch({ok:true,jobs:good,errors:[]});
+}else if(scenario==='allfail')completeBatch({ok:true,jobs:[],errors:[{index:0,error:'Failed zero'},{index:1,error:'Failed one'}]});
+else if(scenario==='invalid_indices')completeBatch({ok:true,jobs:[{index:0,job_id:'a'},{index:0,job_id:'b'}],errors:[]});
+else if(scenario==='allsuccess'||scenario==='missing_payload')completeBatch({ok:true,jobs:good,errors:[]});
+else completeBatch({ok:true,jobs:[good[0]],errors:[{index:1,error:scenario==='malicious_error'?'<img src=x onerror=evil()>':'Failed one'}]});
+await new Promise(setImmediate);
+if(scenario==='allsuccess'){
+ assert.equal(_jst_sel.size,0);assert.equal(window.location,'/review-queue?ids=evaluated-0%2Cevaluated-1');return;
+}
+assert(!window.location,'partial or changed selection navigated');
+if(scenario==='selection_changes'){
+ assert.deepEqual([..._jst_sel],[ids[0],ids[2]]);
+ assert.equal(main[0].form.fields.title,'Edited during request');
+ jstEvaluateAll();assert.deepEqual(submissions[1].map(j=>j.source_job_id),['0','2']);
+ assert.equal(submissions[1][0].title,'Edited during request');assert.equal(submissions[1][0].nonce,'new nonce');
+ completeBatch({ok:true,jobs:[],errors:[{index:0,error:'retry failed'},{index:1,error:'retry failed'}]});await new Promise(setImmediate);
+}else if(scenario==='missing_payload')assert.deepEqual([..._jst_sel],['noPayload']);
+else if(scenario==='allfail'||scenario==='invalid_indices')assert.deepEqual([..._jst_sel],ids.slice(0,2));
+else assert.deepEqual([..._jst_sel],[ids[1]]);
+assert.equal(ui['jst-eval-all-btn'].disabled,false);
+if(scenario==='malicious_error'){
+ const note=ui['jst-staging-list'].children.find(c=>String(c.textContent).includes('<img'));
+ assert(note);assert.equal(note.children.length,0);assert(!note.innerHTML);
+}
+if(['mixed','offpage','malicious_error'].includes(scenario)){
+ const link=ui['jst-staging-list'].children.find(c=>c.href);assert.equal(link.href,'/review-queue?ids=evaluated-0');
+ jstEvaluateAll();assert.equal(submissions.length,2);
+ assert.deepEqual(submissions[1],[submissions[0][1]],'retry must retain exact failed fields');
+ completeBatch({ok:true,jobs:[{index:0,job_id:'evaluated-1'}],errors:[]});await new Promise(setImmediate);
+ assert.equal(_jst_sel.size,0);assert.equal(window.location,'/review-queue?ids=evaluated-1');
+}
+if(scenario==='invalid_indices'){
+ for(const mapping of [[{index:-1,job_id:'x'}],[{index:9,job_id:'x'}],[{index:'0',job_id:'x'}],[{job_id:'x'}], [{index:0}],null]){
+  jstEvaluateAll();completeBatch({ok:true,jobs:mapping,errors:[]});await new Promise(setImmediate);
+  assert.deepEqual([..._jst_sel],ids.slice(0,2));assert(!window.location);
+ }
+ jstEvaluateAll();completeBatch({ok:true,jobs:[good[0]],errors:[{index:0,error:'conflict'}]});await new Promise(setImmediate);
+ assert.deepEqual([..._jst_sel],ids.slice(0,2));
+}
+})().catch(e=>{console.error(e);process.exitCode=1;});
+'''
+    path = tmp_path/'shortlist-batch.js'
+    path.write_text(script)
+    completed = subprocess.run([node, str(path)], capture_output=True, text=True, timeout=20)
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_backend_batch_success_indices_retain_original_requests(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+    from src import ui_handlers as H
+    source = SimpleNamespace(select_handler=lambda form, config: form)
+    monkeypatch.setattr('src.job_sources.source_registry.get_source', lambda _: source)
+    monkeypatch.setattr(H, 'reviewed_job_payload_from_form', lambda values: values)
+    monkeypatch.setattr(H, 'raw_input_payload_from_form', lambda values, payload: {})
+    monkeypatch.setattr(H, '_upsert_job_to_index', lambda *a, **kw: None)
+    calls=[]
+    def evaluate(**kw):
+        payload=kw['reviewed_job_payload'];calls.append(payload['job_id'])
+        if payload['job_id']=='fail':
+            raise ValueError('Synthetic failure')
+        return SimpleNamespace(reviewed_job=SimpleNamespace(job_id=payload['job_id'], job_title='Synthetic',
+            company='Test', location=None, source_type='reed', salary_min_gbp=None, salary_max_gbp=None),
+            analysis=SimpleNamespace(match_score=70, decision='review'))
+    monkeypatch.setattr(H, 'run_local_evaluation_flow_from_payload', evaluate)
+    config=SimpleNamespace(profile_path=tmp_path/'profile.json',state_root=tmp_path/'state',report_dir=tmp_path/'reports')
+    responder=Mock()
+    req=SimpleNamespace(raw_body=json.dumps({'jobs':[{'job_id':'ok0'},None,{'job_id':'fail'},{'job_id':'ok3'}]}).encode())
+    H.handle_batch_evaluate(req,config,responder)
+    body=responder.send_json.call_args.args[0]
+    assert body['ok'] is True
+    assert [(j['index'],j['job_id']) for j in body['jobs']]==[(0,'ok0'),(3,'ok3')]
+    assert [e['index'] for e in body['errors']]==[1,2]
+    assert calls==['ok0','fail','ok3']

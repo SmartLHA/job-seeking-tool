@@ -1804,6 +1804,7 @@ def handle_batch_evaluate(req, config, responder):
             if result.reviewed_job.salary_max_gbp:
                 sal_parts.append(f"£{int(result.reviewed_job.salary_max_gbp):,}")
             results.append({
+                "index": i,
                 "job_id": result.reviewed_job.job_id,
                 "title": result.reviewed_job.job_title,
                 "company": result.reviewed_job.company,
