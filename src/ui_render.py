@@ -2617,6 +2617,8 @@ def render_profile_page(
           '<h2>Upload CV</h2>',
           cv_status_strip,
           '<p>Upload a .txt, .pdf, or .docx file (max 5 MB) to extract your CV text, then edit and save your profile.</p>',
+          '<p>CV text parsing and skill suggestions run locally by default.</p>',
+          '<label><input type="checkbox" id="cv-cloud-consent"> Use Gemini for skill suggestions: send up to 12,000 characters of extracted CV text to Google Gemini.</label>',
           '<div style="margin-bottom: 16px;">',
           '<input type="file" id="cv-file-input" accept=".txt,.pdf,.docx">',
           '<button type="button" id="cv-upload-btn" style="margin-top:8px;">Parse CV</button>',
@@ -2760,6 +2762,8 @@ def render_profile_page(
           'setStatus("Uploading and parsing...");',
           'var formData = new FormData();',
           'formData.append("cv_file", file);',
+          'var cloudConsent = document.getElementById("cv-cloud-consent");',
+          'formData.append("use_cloud", cloudConsent && cloudConsent.checked ? "true" : "false");',
           'var pidInput = document.querySelector("input[name=\'profile_id\']");',
           'if (pidInput && pidInput.value) formData.append("profile_id", pidInput.value);',
           'try {',
@@ -2788,7 +2792,8 @@ def render_profile_page(
           '    });',
           '  }',
           '}',
-          'var skillMsg = added > 0 ? " Added " + added + " skill(s) — set levels then save." : (data.skill_extraction_warning ? " Skill extraction: " + data.skill_extraction_warning : "");',
+          'var skillMsg = added > 0 ? " Added " + added + " skill(s) — set levels then save." : "";',
+          'if (data.skill_extraction_warning) skillMsg += " Skill extraction: " + data.skill_extraction_warning;',
           'var saveMsg = data.auto_saved ? " CV saved automatically." : (data.auto_save_error ? " Auto-save FAILED: " + data.auto_save_error + ". Save manually below." : " Review and save below.");',
           'setStatus("CV parsed successfully." + saveMsg + skillMsg);',
           '} catch(err) {',
@@ -3229,7 +3234,7 @@ def _render_sidebar(active_tab: str = "") -> str:
       <div class="sidebar-spacer"></div>
       <div class="sidebar-privacy">
         <div class="sidebar-privacy-title">{lock_svg} Local-first</div>
-        <div class="sidebar-privacy-body">Profile, jobs &amp; outcomes stay on this device. Nothing auto-applies.</div>
+        <div class="sidebar-privacy-body">Records are stored on this device. Optional Gemini features send relevant text to Google. CV skill suggestions use Gemini only with your consent. Nothing auto-applies.</div>
       </div>
       <div class="sidebar-updated" style="padding:8px 18px 14px;font-size:10px;color:var(--ink-faint);letter-spacing:.02em;">
         Page updated {_PAGE_UPDATED.get(active_tab, "—")}
@@ -3586,7 +3591,7 @@ def render_page(title: str, body: str, *, model_label: str = "") -> str:
     <div class="ai-loading-spinner"></div>
     <div class="ai-loading-title">Preparing job review…</div>
     <div class="ai-loading-status" id="ai-loading-status">Submitting job details…</div>
-    <div class="ai-loading-hint">Powered by Ollama · running locally</div>
+    <div class="ai-loading-hint">AI-assisted review uses Google Gemini when enabled.</div>
   </div>
 </div>
 {body}

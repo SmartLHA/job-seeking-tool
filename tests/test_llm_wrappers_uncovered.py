@@ -297,7 +297,7 @@ class TestExtractSkillsFromCv:
 
         with mock.patch("src.job_hunt_llm.extract_cv_skills_with_llm") as mock_llm:
             mock_llm.return_value = (["SQL", "Python"], None)
-            skills, warning = extract_skills_from_cv(cv_text)
+            skills, warning = extract_skills_from_cv(cv_text, use_cloud=True)
 
         assert skills == ["SQL", "Python"]
         assert warning is None
@@ -312,7 +312,7 @@ class TestExtractSkillsFromCv:
             # Mock the keyword extraction
             with mock.patch("src.job_hunt_parsing._extract_skills") as mock_keyword:
                 mock_keyword.return_value = ["SQL", "Python"]
-                skills, warning = extract_skills_from_cv(cv_text)
+                skills, warning = extract_skills_from_cv(cv_text, use_cloud=True)
 
         assert skills is not None  # Fallback worked
         assert warning is not None
@@ -324,7 +324,7 @@ class TestExtractSkillsFromCv:
 
         with mock.patch("src.job_hunt_llm.extract_cv_skills_with_llm") as mock_llm:
             mock_llm.return_value = (["Skill1", "Skill2"], None)
-            skills, warning = extract_skills_from_cv(cv_text)
+            skills, warning = extract_skills_from_cv(cv_text, use_cloud=True)
 
         assert warning is None
 
@@ -336,7 +336,7 @@ class TestExtractSkillsFromCv:
             mock_llm.return_value = (None, "Error")
             with mock.patch("src.job_hunt_parsing._extract_skills") as mock_keyword:
                 mock_keyword.return_value = []
-                skills, warning = extract_skills_from_cv(cv_text)
+                skills, warning = extract_skills_from_cv(cv_text, use_cloud=True)
 
         assert isinstance(skills, list)
         assert skills is not None

@@ -549,25 +549,29 @@ def _extract_skills(text: str) -> list[str]:
     return found
 
 
-def extract_skills_from_cv(cv_text: str) -> tuple[list[str], str | None]:
+def extract_skills_from_cv(cv_text: str, *, use_cloud: bool = False) -> tuple[list[str], str | None]:
     """Extract skills a candidate has from their CV text.
 
-    Tries Ollama LLM first (open-ended extraction, not limited to KNOWN_SKILLS).
-    Falls back to KNOWN_SKILLS keyword scan when Ollama is unavailable or fails.
+    Uses local KNOWN_SKILLS suggestions by default. Only explicit cloud consent
+    enables Gemini extraction, with local fallback if the requested call fails.
 
     Returns (skill_list, llm_warning_or_None).
-    llm_warning is set when LLM failed and keyword fallback was used instead.
+    A warning is returned only when requested cloud extraction failed.
     """
-    from src.job_hunt_llm import extract_cv_skills_with_llm  # lazy to avoid circular import
+    fallback_skills = _extract_skills(_clean_text(cv_text))
+    if use_cloud is not True:
+        return fallback_skills, None
 
-    skills, llm_error = extract_cv_skills_with_llm(cv_text)
+    from src.job_hunt_llm import extract_cv_skills_with_llm  # lazy to avoid circular import
+    try:
+        skills, llm_error = extract_cv_skills_with_llm(cv_text)
+    except Exception as exc:
+        skills, llm_error = None, str(exc)
     if skills is not None:
         return skills, None
 
     # Keyword fallback — surface the LLM error as a warning
-    cleaned = _clean_text(cv_text)
-    fallback_skills = _extract_skills(cleaned)
-    warning = f"LLM skill extraction unavailable ({llm_error}); used keyword fallback ({len(fallback_skills)} skills found)."
+    warning = f"Gemini skill extraction unavailable ({llm_error}); used local keyword fallback ({len(fallback_skills)} skills found)."
     return fallback_skills, warning
 
 

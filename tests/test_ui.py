@@ -2106,7 +2106,7 @@ def _http_post_multipart(url, fields, files):
 
 def test_post_parse_cv_extracts_text_from_txt(tmp_path: Path, monkeypatch) -> None:
     # MT-6: a valid .txt upload is parsed and its text returned (no profile_id → no auto-save).
-    monkeypatch.setattr("src.job_hunt_parsing.extract_skills_from_cv", lambda text: ([], None))
+    monkeypatch.setattr("src.job_hunt_parsing.extract_skills_from_cv", lambda text, *, use_cloud=False: ([], None))
     with _running_ui_server(tmp_path) as (base_url, _config):
         status, data = _http_post_multipart(
             f"{base_url}/profile/parse-cv",
@@ -2123,7 +2123,7 @@ def test_post_parse_cv_extracts_text_from_txt(tmp_path: Path, monkeypatch) -> No
 def test_post_parse_cv_auto_saves_when_profile_id_present(tmp_path: Path, monkeypatch) -> None:
     # MT-6: when profile_id is supplied, the CV is persisted to the profile without
     # a separate "Save Profile" click.
-    monkeypatch.setattr("src.job_hunt_parsing.extract_skills_from_cv", lambda text: ([], None))
+    monkeypatch.setattr("src.job_hunt_parsing.extract_skills_from_cv", lambda text, *, use_cloud=False: ([], None))
     monkeypatch.setattr("src.ui_handlers._DATA_ROOT", tmp_path / "data")
     with _running_ui_server(tmp_path) as (base_url, _config):
         status, data = _http_post_multipart(

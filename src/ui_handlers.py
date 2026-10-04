@@ -295,11 +295,13 @@ def handle_parse_cv(req, config, responder):
         temp_path.unlink(missing_ok=True)
 
     # Extract skills from CV text so the profile skills table can be pre-populated.
-    # Uses LLM (Ollama) when available for open-ended extraction; keyword fallback otherwise.
+    # Keep skill suggestions local unless this upload explicitly opts into Gemini.
+    consent_item = form_data.get("use_cloud", {})
+    use_cloud = consent_item.get("content", b"") == b"true"
     skill_extraction_warning: str | None = None
     try:
         from src.job_hunt_parsing import extract_skills_from_cv
-        suggested_skills, skill_extraction_warning = extract_skills_from_cv(text)
+        suggested_skills, skill_extraction_warning = extract_skills_from_cv(text, use_cloud=use_cloud)
     except Exception as _ske:
         suggested_skills = []
         skill_extraction_warning = f"Skill extraction failed: {_ske}"
