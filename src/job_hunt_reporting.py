@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import unicodedata
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -133,8 +134,20 @@ def export_report_csv(rows: Iterable[EvaluatedJobReportRow], destination: str | 
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for row in materialised_rows:
-            writer.writerow(report_row_to_flat_dict(row))
+            writer.writerow({key: _csv_text_cell(value) for key, value in report_row_to_flat_dict(row).items()})
     return path
+
+
+def _csv_text_cell(value: Any) -> Any:
+    """Escape formula-like strings at CSV output without changing stored text."""
+    if isinstance(value, str):
+        for char in value:
+            if char.isspace() or unicodedata.category(char) in {"Cc", "Cf"}:
+                continue
+            if char in "=+-@":
+                return "'" + value
+            break
+    return value
 
 
 def report_row_to_dict(row: EvaluatedJobReportRow) -> dict[str, Any]:
