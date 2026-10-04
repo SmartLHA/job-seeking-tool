@@ -168,7 +168,7 @@ def test_secrets_never_in_zip(env):
     assert not any(n.startswith((".env", "raw_inputs")) or "/" in n for n in zf.namelist())
 
 
-@pytest.mark.parametrize("bad", ["../x", "a/b", "", "x" * 500, "..", ".", "a b", "x%00", "id;rm", None])
+@pytest.mark.parametrize("bad", ["../x", "a/b", "", "x" * 500, "..", ".", "a b", "x%00", "id;rm", "job-1\n", "job-1\r\n", None])
 def test_validate_rejects_bad_ids(bad):
     with pytest.raises(ValueError):
         validate_job_id(bad)
@@ -176,7 +176,7 @@ def test_validate_rejects_bad_ids(bad):
         package_filename(bad)
 
 
-@pytest.mark.parametrize("bad", ["../x", "a/b", "", "x" * 500, "..", None])
+@pytest.mark.parametrize("bad", ["../x", "a/b", "", "x" * 500, "..", "job-1\n", "job-1\r\n", None])
 def test_build_package_rejects_before_any_file_access(env, bad):
     with patch.object(job_hunt_export, "load_reviewed_job") as a, \
          patch.object(job_hunt_export, "load_latest_tailored_cv") as b, \
@@ -412,3 +412,9 @@ def test_export_rejects_symlinked_letter_without_reading_or_changing_target(env)
     assert 'cover_letter.txt' not in _open(data).namelist()
     assert 'cover_letter.txt' in manifest['missing']
     assert old_bytes not in data and target.read_bytes() == old_bytes
+
+
+@pytest.mark.parametrize("job_id", ["job-1", "source_2.v3", "A" * 128])
+def test_export_identity_validation_preserves_valid_ids(job_id):
+    assert validate_job_id(job_id) == job_id
+    assert package_filename(job_id) == f"application-package-{job_id}.zip"

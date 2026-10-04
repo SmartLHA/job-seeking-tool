@@ -44,7 +44,7 @@ def validate_job_id(job_id: Any) -> str:
         not isinstance(job_id, str)
         or not job_id
         or len(job_id) > MAX_JOB_ID_LEN
-        or not _SAFE_JOB_ID.match(job_id)
+        or not _SAFE_JOB_ID.fullmatch(job_id)
         or job_id in (".", "..")
     ):
         raise ValueError("invalid job_id")
