@@ -1013,6 +1013,24 @@ def _parse_keyword_terms(raw: str) -> list[str]:
     return terms
 
 
+def _prepare_keyword_search(source, params: dict) -> tuple[dict, list[str]]:
+    """Normalize each capped term, never truncate the joined display vector."""
+    raw_terms = _parse_keyword_terms(params.get("keywords") or "")
+    values = source.normalize_search_params({**params, "keywords": ""})
+    terms: list[str] = []
+    seen: set[str] = set()
+    for term in raw_terms[:_MAX_KEYWORD_SEARCHES]:
+        normalized = source.normalize_search_params({**params, "keywords": term}).get("keywords", "").strip()
+        key = normalized.casefold()
+        if normalized and key not in seen:
+            seen.add(key)
+            terms.append(normalized)
+    values["keywords"] = ", ".join(terms)
+    if len(raw_terms) > _MAX_KEYWORD_SEARCHES:
+        values["_keyword_capped"] = str(_MAX_KEYWORD_SEARCHES)
+    return values, terms
+
+
 def _run_multi_keyword_search(source, search_values: dict, keyword_terms: list[str], *, offsets: list[int | None] | None = None):
     """Run one search per keyword term (same location/radius/other criteria
     from `search_values`), merge the raw results. Never a cross-product with
@@ -1147,28 +1165,13 @@ def handle_source_search(req, config, responder, source_id):
         )
         return
     from urllib.parse import urlencode as _urlencode_ss
-    search_values = source.normalize_search_params(params)
+    search_values, keyword_terms = _prepare_keyword_search(source, params)
     search_values["_source_id"] = source_id  # carried through to _render_search_jobs_tab
     # Exclude-keywords: normalisers drop unknown keys, so read the raw field here
     # and carry it in search_values so it survives form re-render and paging.
     exclude_raw = (params.get("excludeKeywords") or "").strip()
     if exclude_raw:
         search_values["excludeKeywords"] = exclude_raw
-    # Multi-keyword (Slice D): parse chip-entered keywords from the RAW query
-    # field — the source normaliser only squashes/truncates one string, it
-    # doesn't split on commas. ONE location + radius only (search_values
-    # already carries exactly one locationName from the shared form).
-    raw_keywords = (params.get("keywords") or "").strip()
-    keyword_terms = _parse_keyword_terms(raw_keywords)
-    _keyword_capped = False
-    if len(keyword_terms) > _MAX_KEYWORD_SEARCHES:
-        keyword_terms = keyword_terms[:_MAX_KEYWORD_SEARCHES]
-        _keyword_capped = True
-    # Carry back exactly what was searched (post-cap) so the form/chip field
-    # and "Show more" URL reflect reality, not the untrimmed input.
-    search_values["keywords"] = ", ".join(keyword_terms)
-    if _keyword_capped:
-        search_values["_keyword_capped"] = str(_MAX_KEYWORD_SEARCHES)
     error: str | None = None
     results: list[dict[str, Any]] = []
     try:
@@ -1823,7 +1826,7 @@ def handle_source_search_more(req, config, responder, source_id):
     Works for Reed, Adzuna and LinkedIn alike: it normalises the query through the
     source's own normaliser (so each source's param naming and skip cursor are
     honoured), re-runs the search one page deep, and renders the bare cards with
-    their ids offset by ``skip`` so they never collide with already-shown cards."""
+    their stable source/job identities across pages."""
     from urllib.parse import urlencode as _urlencode
     from src.job_sources.source_registry import get_source
     source = get_source(source_id)
@@ -1832,8 +1835,15 @@ def handle_source_search_more(req, config, responder, source_id):
             {"ok": False, "error": f"Source '{source_id}' does not support pagination."}
         )
         return
-    search_values = source.normalize_search_params(req.query)
+    search_values, keyword_terms = _prepare_keyword_search(source, req.query)
     take_key, skip_key = _take_skip_param_keys(search_values)
+    try:
+        if int(req.query.get(skip_key, "0") or "0") < 0:
+            raise ValueError("negative offset")
+    except (TypeError, ValueError):
+        responder.send_json({"ok": False, "error": "Invalid keyword pagination cursor."}, status=HTTPStatus.BAD_REQUEST)
+        return
+
     try:
         take = int(search_values.get(take_key, "10") or "10")
     except (TypeError, ValueError):
@@ -1844,7 +1854,6 @@ def handle_source_search_more(req, config, responder, source_id):
         skip = 0
     # Multi-keyword searches keep one bounded cursor per term. An exhausted
     # term is never re-queried while another term continues to paginate.
-    keyword_terms = _parse_keyword_terms(search_values.get("keywords", ""))[:_MAX_KEYWORD_SEARCHES]
     effective_terms = keyword_terms or [""]
     offsets = _parse_keyword_cursors(
         req.query.get("keywordCursors"), len(effective_terms), default_offset=skip,

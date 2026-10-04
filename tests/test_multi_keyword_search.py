@@ -11,6 +11,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import pytest
 import html
 import re
 import threading
@@ -250,3 +251,84 @@ def test_multi_keyword_more_advances_each_term_independently(tmp_path: Path, mon
         ("Business Analyst", 10), ("Data Analyst", 10),
         ("Data Analyst", 20),
     ]
+
+
+from types import SimpleNamespace
+from unittest.mock import Mock
+from src.ui_handlers import _prepare_keyword_search, handle_source_search, handle_source_search_more
+from src.job_sources.reed_source import normalize_reed_search_params
+from src.job_sources.adzuna_source import normalize_adzuna_search_params
+from src.job_sources.linkedin_source import normalize_search_params as normalize_linkedin
+
+
+@pytest.mark.parametrize('source_id,normalizer', [
+    ('reed', normalize_reed_search_params), ('adzuna', normalize_adzuna_search_params),
+    ('linkedin', normalize_linkedin)])
+@pytest.mark.parametrize('raw,expected', [
+    (', BA  analyst , ba analyst, , Data analyst,', ['BA analyst', 'Data analyst']),
+    ('A' * 121 + ', ' + 'B' * 121, ['A' * 120, 'B' * 120]),
+    ('X' * 120 + 'a, ' + 'X' * 120 + 'b, unique', ['X' * 120, 'unique']),
+    (', ,', []),
+    (', '.join(['Q' * 120 + str(i) for i in range(6)] + ['outside cap']), ['Q' * 120]),
+    (' '.join(['word'] * 40), [(' '.join(['word'] * 40))[:120].strip()]),
+    (', '.join('term' + str(i) for i in range(8)), ['term' + str(i) for i in range(6)])])
+def test_prepared_source_terms_round_trip(source_id, normalizer, raw, expected):
+    source = SimpleNamespace(normalize_search_params=normalizer)
+    values, terms = _prepare_keyword_search(source, {'keywords': raw})
+    assert terms == expected
+    assert values['keywords'] == ', '.join(expected)
+    assert _prepare_keyword_search(source, values)[1] == expected
+    if len(_parse_keyword_terms(raw)) > 6:
+        assert values['_keyword_capped'] == '6'
+
+
+@pytest.mark.parametrize('source_id,normalizer', [
+    ('reed', normalize_reed_search_params), ('adzuna', normalize_adzuna_search_params),
+    ('linkedin', normalize_linkedin)])
+def test_actual_initial_more_keep_long_vector(tmp_path, monkeypatch, source_id, normalizer):
+    calls = []
+    take_key, skip_key = ('results_to_take', 'results_skip') if source_id == 'linkedin' else ('resultsToTake', 'resultsSkip')
+    def search(values):
+        calls.append((values['keywords'], int(values[skip_key])))
+        return [{'source': source_id, 'source_job_id': values['keywords'] + str(values[skip_key]),
+                 'title': values['keywords'], 'company': 'Synthetic', 'location': 'Test'}]
+    source = SimpleNamespace(source_id=source_id, display_name=source_id,
+        normalize_search_params=normalizer, search_handler=search,
+        render_cards_fragment=lambda *args, **kwargs: 'synthetic cards')
+    monkeypatch.setattr('src.job_sources.source_registry.get_source', lambda _: source)
+    monkeypatch.setattr('src.job_sources.relevance.bucket_jobs_by_relevance', lambda rows, _: (rows, []))
+    monkeypatch.setattr('src.job_sources.dedup.deduplicate_jobs', lambda rows: rows)
+    monkeypatch.setattr('src.job_hunt_not_interested.filter_results', lambda rows, **kw: (rows, 0))
+    captured = []
+    monkeypatch.setattr('src.ui_handlers.render_home', lambda *args, **kw: captured.append(kw['search_values']))
+    terms = ['A' * 120, 'B' * 120, 'C' * 120]
+    req = SimpleNamespace(query={'keywords': ', '.join(terms), take_key: '1'})
+    config = UIServerConfig(profile_path=tmp_path/'profile.json', state_root=tmp_path/'state', report_dir=tmp_path/'reports')
+    responder = Mock()
+    handle_source_search(req, config, responder, source_id)
+    assert captured[0]['keywords'] == ', '.join(terms)
+    url = captured[0]['_more_url']
+    for offset in (1, 2):
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+        assert query['keywords'] == ', '.join(terms)
+        assert query['keywordCursors'] == ','.join([str(offset)] * 3)
+        handle_source_search_more(SimpleNamespace(query=query), config, responder, source_id)
+        body = responder.send_json.call_args.args[0]
+        assert body['ok'] is True
+        url = body['next_url']
+    assert calls == [(term, offset) for offset in (0, 1, 2) for term in terms]
+    query['keywordCursors'] = '3,5,7'
+    handle_source_search_more(SimpleNamespace(query=query), config, responder, source_id)
+    assert calls[-3:] == list(zip(terms, (3, 5, 7)))
+    next_query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(responder.send_json.call_args.args[0]['next_url']).query))
+    assert next_query['keywordCursors'] == '4,6,8'
+    for cursor in ('-1,1,1', '1,1'):
+        query['keywordCursors'] = cursor
+        before = len(calls)
+        handle_source_search_more(SimpleNamespace(query=query), config, responder, source_id)
+        assert responder.send_json.call_args.kwargs['status'] == 400
+        assert len(calls) == before
+    query.pop('keywordCursors')
+    query[skip_key] = '-1'
+    handle_source_search_more(SimpleNamespace(query=query), config, responder, source_id)
+    assert responder.send_json.call_args.kwargs['status'] == 400
