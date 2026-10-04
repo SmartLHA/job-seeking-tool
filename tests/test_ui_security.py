@@ -1,6 +1,7 @@
 """Security boundary tests for the loopback-only local UI."""
 from __future__ import annotations
 
+from email.message import Message
 import io
 import json
 import logging
@@ -40,7 +41,9 @@ def _make_handler(
     handler = handler_type.__new__(handler_type)
     handler.command = method
     handler.path = "/missing"
-    handler.headers = headers or {}
+    handler.headers = Message()
+    for name, value in (headers or {}).items():
+        handler.headers[name] = value
     handler.rfile = io.BytesIO(body)
     handler.wfile = io.BytesIO()
     handler.request_version = "HTTP/1.1"
@@ -101,7 +104,7 @@ def test_invalid_content_length_fails_before_body_read(
 ) -> None:
     handler = _make_handler(
         tmp_path,
-        headers={"Host": "127.0.0.1", "Content-Length": content_length},
+        headers={"Host": "127.0.0.1:9000", "Origin": "http://127.0.0.1:9000", "Content-Length": content_length},
     )
     handler.rfile = mock.Mock()
     handler.rfile.read.side_effect = AssertionError("body must not be read")
@@ -153,10 +156,9 @@ def test_cross_origin_browser_posts_are_rejected(
         },
         {"Host": "localhost:9000", "Origin": "http://localhost:9000"},
         {"Host": "[::1]:9000", "Origin": "http://[::1]:9000"},
-        {},
     ],
 )
-def test_same_origin_and_headerless_local_posts_remain_compatible(
+def test_same_origin_posts_remain_compatible(
     tmp_path: Path,
     headers: dict[str, str],
 ) -> None:
@@ -195,3 +197,94 @@ def test_unhandled_errors_are_generic_but_logged(
     assert secret_detail.encode() not in body
     assert b"Internal server error." in body
     assert secret_detail in caplog.text
+
+
+@pytest.mark.parametrize('method', ['GET', 'POST'])
+@pytest.mark.parametrize('host', [None, '', '127.0.0.1:9001', 'example.com:9000',
+    'user@localhost:9000', 'localhost:9000/path', 'localhost:9000?x',
+    'localhost:9000#x', 'localhost:', '::1:9000', '[::1',
+    'localhost:abc', '[::1]evil:9000', ' localhost:9000', 'localhost:9000\\path', 'duplicate'])
+def test_host_boundary_before_dispatch_and_read(tmp_path, method, host):
+    handler = _make_handler(tmp_path, method=method,
+        headers={'Origin': 'http://127.0.0.1:9000'})
+    if host is not None:
+        handler.headers['Host'] = '127.0.0.1:9000' if host == 'duplicate' else host
+    if host == 'duplicate':
+        handler.headers['Host'] = '127.0.0.1:9000'
+    handler.path = '/job/synthetic/explain'
+    handler.rfile = mock.Mock()
+    with mock.patch('src.ui_routes.handle_job_explain') as provider:
+        getattr(handler, 'do_' + method)()
+        assert _response(handler)[0] == 403
+        provider.assert_not_called()
+    handler.rfile.read.assert_not_called()
+
+
+@pytest.mark.parametrize('sources', [{}, {'Origin': 'null'}, {'Origin': ''},
+    {'Origin': 'http://127.0.0.1:9001'}, {'Origin': 'https://127.0.0.1:9000'},
+    {'Origin': 'http://127.0.0.1:9000', 'Referer': 'http://localhost:9000/'},
+    {'Referer': 'http://user@127.0.0.1:9000/'},
+    {'Origin': 'http://127.0.0.1:9000/path'}, {'Origin': 'duplicate'}])
+def test_post_origin_boundary_before_body_and_provider(tmp_path, sources):
+    handler = _make_handler(tmp_path, headers={'Host': '127.0.0.1:9000', **sources})
+    if sources.get('Origin') == 'duplicate':
+        handler.headers['Origin'] = 'http://127.0.0.1:9000'
+    handler.path = '/job/synthetic/explain'
+    handler.rfile = mock.Mock()
+    with mock.patch('src.ui_routes.handle_job_explain') as provider:
+        handler.do_POST()
+        assert _response(handler)[0] == 403
+        provider.assert_not_called()
+    handler.rfile.read.assert_not_called()
+
+
+def test_explanation_get_has_allow_post_without_provider(tmp_path):
+    handler = _make_handler(tmp_path, method='GET', headers={'Host': '127.0.0.1:9000'})
+    handler.path = '/job/synthetic/explain'
+    with mock.patch('src.ui_routes.handle_job_explain') as provider:
+        handler.do_GET()
+        assert _response(handler)[0] == 405
+        assert b'Allow: POST\r\n' in handler.wfile.getvalue()
+        provider.assert_not_called()
+
+
+@pytest.mark.parametrize('sources', [
+    {'Origin': 'http://127.0.0.1:9000'},
+    {'Referer': 'http://127.0.0.1:9000/profile?tab=cv'},
+    {'Origin': 'http://127.0.0.1:9000', 'Referer': 'http://127.0.0.1:9000/profile'}])
+def test_explanation_same_origin_post_dispatches_once(tmp_path, sources):
+    handler = _make_handler(tmp_path, headers={'Host': '127.0.0.1:9000', **sources})
+    handler.path = '/job/synthetic/explain'
+    with mock.patch('src.ui_routes.handle_job_explain') as provider:
+        handler.do_POST()
+        provider.assert_called_once()
+        assert provider.call_args.args[-1] == 'synthetic'
+
+
+def test_rendered_explanation_fetch_is_post():
+    # Inspect the actual renderer function, rather than a copied JS fixture.
+    import inspect
+    from src import ui_render
+    source = inspect.getsource(ui_render)
+    assert 'fetch("/job/{job_id_esc}/explain",{{method:"POST"}})' in source
+
+
+@pytest.mark.parametrize('method', ['GET', 'POST'])
+def test_explanation_actual_handler_mocked_provider(tmp_path, method):
+    handler = _make_handler(tmp_path, method=method,
+        headers={'Host': '127.0.0.1:9000', 'Origin': 'http://127.0.0.1:9000'})
+    handler.path = '/job/synthetic/explain'
+    profile, job, analysis = object(), object(), object()
+    with mock.patch('src.ui_handlers.load_candidate_profile', return_value=profile), \
+         mock.patch('src.ui_handlers.load_reviewed_job', return_value=job), \
+         mock.patch('src.ui_handlers.load_job_analysis', return_value=analysis), \
+         mock.patch('src.job_hunt_llm.explain_job_match_with_llm',
+                    return_value=({'fit': 'Synthetic fit'}, None)) as provider:
+        getattr(handler, 'do_' + method)()
+        if method == 'GET':
+            assert _response(handler)[0] == 405
+            provider.assert_not_called()
+        else:
+            assert _response(handler)[0] == 200
+            assert json.loads(_response(handler)[1])['fit'] == 'Synthetic fit'
+            provider.assert_called_once_with(profile, job, analysis)

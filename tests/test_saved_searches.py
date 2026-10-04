@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import urllib.parse
 import urllib.error
 import urllib.request
 from contextlib import contextmanager
@@ -363,6 +364,8 @@ def _server(tmp_path):
 def _req(url, *, method="GET", body=None):
     data = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {"Content-Type": "application/json"} if data is not None else {}
+    if method == "POST":
+        headers["Origin"] = urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], "", "", ""))
     request = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(request) as resp:
@@ -418,7 +421,7 @@ def test_route_create_malformed_json_400(tmp_path):
     with _server(tmp_path) as base:
         request = urllib.request.Request(
             base + "/saved-searches", data=b"{not json",
-            method="POST", headers={"Content-Type": "application/json"},
+            method="POST", headers={"Content-Type": "application/json", "Origin": base},
         )
         try:
             urllib.request.urlopen(request)

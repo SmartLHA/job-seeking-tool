@@ -218,7 +218,7 @@ def _http_get(url: str) -> tuple[int, str]:
 
 def _http_post(url: str, form: dict[str, str]) -> tuple[int, str]:
     data = urllib.parse.urlencode(form).encode("utf-8")
-    request = urllib.request.Request(url, data=data, method="POST")
+    request = urllib.request.Request(url, data=data, method="POST", headers={"Origin": urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], "", "", ""))})
     try:
         with urllib.request.urlopen(request) as response:
             return response.status, response.read().decode("utf-8")
@@ -1436,7 +1436,7 @@ def _http_post_json(url: str, payload: dict) -> tuple[int, dict]:
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url, data=data, method="POST",
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "Origin": urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], "", "", ""))},
     )
     try:
         with urllib.request.urlopen(request) as response:
@@ -2061,7 +2061,7 @@ def test_post_parse_cv_missing_boundary_returns_clean_error(tmp_path: Path) -> N
             f"{base_url}/profile/parse-cv",
             data=b"ignored",
             method="POST",
-            headers={"Content-Type": "multipart/form-data"},
+            headers={"Content-Type": "multipart/form-data", "Origin": base_url},
         )
         try:
             with urllib.request.urlopen(request) as response:
@@ -2092,7 +2092,7 @@ def _http_post_multipart(url, fields, files):
     body = b"".join(chunks)
     request = urllib.request.Request(
         url, data=body, method="POST",
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}", "Origin": urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], "", "", ""))},
     )
     try:
         with urllib.request.urlopen(request) as response:

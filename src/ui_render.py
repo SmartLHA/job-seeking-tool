@@ -1784,7 +1784,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'btn.disabled=true;btn.textContent="Analysing…";'
             f'document.getElementById("ai-badge").style.display="none";'
             f'_aiShow("ai-loading");'
-            f'fetch("/job/{job_id_esc}/explain")'
+            f'fetch("/job/{job_id_esc}/explain",{{method:"POST"}})'
             f'.then(function(r){{return r.json();}})'
             f'.then(function(d){{'
             f'if(d.ok&&d.fit){{'

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import threading
+import urllib.parse
 import urllib.error
 import urllib.request
 from contextlib import contextmanager
@@ -296,7 +297,7 @@ def _server(tmp_path):
 
 def _post(url, body):
     data = json.dumps(body).encode()
-    req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/json", "Origin": urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], "", "", ""))})
     try:
         with urllib.request.urlopen(req) as r:
             return r.status, json.loads(r.read())

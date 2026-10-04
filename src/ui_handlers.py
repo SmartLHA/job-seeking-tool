@@ -673,7 +673,7 @@ def handle_evaluate_form(req, config, responder, job_id):
 
 
 def handle_job_explain(req, config, responder, job_id):
-    """GET /job/{id}/explain — return LLM explanation as JSON."""
+    """POST /job/{id}/explain — return LLM explanation as JSON."""
     from src.job_hunt_llm import explain_job_match_with_llm
     if not job_id.strip():
         responder.send_json({"ok": False, "error": "Missing job id"}, status=HTTPStatus.BAD_REQUEST)

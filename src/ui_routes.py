@@ -248,6 +248,8 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:  # noqa: N802
             try:
                 self._do_GET_inner()
+            except RequestValidationError as exc:
+                UIResponder(self).send_json({"ok": False, "error": exc.message}, status=exc.status)
             except Exception as exc:
                 logger.exception("Unhandled error in do_GET: %s", exc)
                 try:
@@ -263,6 +265,7 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
                     pass
 
         def _do_GET_inner(self) -> None:
+            _validate_local_host(self)
             req = _parse_request(self)
             responder = UIResponder(self)
             parsed = urlparse(self.path)
@@ -313,7 +316,7 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
                 return
             explain_match = re.match(r"^/job/([^/]+)/explain$", parsed.path)
             if explain_match:
-                handle_job_explain(req, config, responder, explain_match.group(1))
+                responder.send_bytes(HTTPStatus.METHOD_NOT_ALLOWED, b"Use POST.", "text/plain", {"Allow": "POST"})
                 return
             salary_match = re.match(r"^/job/([^/]+)/salary-benchmark$", parsed.path)
             if salary_match:
@@ -359,10 +362,15 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
                     pass
 
         def _do_POST_inner(self) -> None:
+            _validate_local_host(self)
             _validate_browser_origin(self)
             req = _parse_request(self)
             responder = UIResponder(self)
             parsed = urlparse(self.path)
+            explain_match = re.match(r"^/job/([^/]+)/explain$", parsed.path)
+            if explain_match:
+                handle_job_explain(req, config, responder, explain_match.group(1))
+                return
             decision_match = re.match(r"^/job/([^/]+)/decision$", parsed.path)
             if decision_match:
                 handle_decision_override(req, config, responder, decision_match.group(1))
@@ -543,65 +551,62 @@ class RequestValidationError(ValueError):
         self.message = message
 
 
-def _validate_browser_origin(handler: Any) -> None:
-    """Reject cross-origin browser POSTs while allowing headerless local clients."""
-    browser_sources = [
-        source
-        for header_name in ("Origin", "Referer")
-        if (source := handler.headers.get(header_name))
-    ]
-    if not browser_sources:
-        return
+def _header_values(handler: Any, name: str) -> list[str]:
+    return handler.headers.get_all(name, [])
 
-    host = handler.headers.get("Host")
-    if not host:
-        raise RequestValidationError(
-            HTTPStatus.FORBIDDEN,
-            "Cross-origin requests are not allowed.",
-        )
-    host_url = urlparse(f"//{host}")
+
+def _validate_local_host(handler: Any) -> tuple[str, int]:
+    """Validate the single authority against this local listener before dispatch."""
+    values = _header_values(handler, "Host")
     try:
-        host_port = host_url.port or 80
+        if len(values) != 1:
+            raise ValueError("single Host required")
+        raw = values[0]
+        if not re.fullmatch(r"(?:\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+)(?::[0-9]+)?", raw):
+            raise ValueError("invalid Host")
+        authority = urlparse("//" + raw)
+        hostname = authority.hostname
+        port = authority.port if authority.port is not None else 80
         listener_port = int(handler.server.server_address[1])
-        hostname = host_url.hostname
-        is_loopback = hostname is not None and (
-            hostname.lower() == "localhost"
-            or ipaddress.ip_address(hostname).is_loopback
-        )
+        if (not hostname or authority.username is not None or authority.password is not None
+                or authority.path or authority.query or authority.fragment
+                or any(c in raw for c in "/?#\\")
+                or raw.endswith(":") or port != listener_port):
+            raise ValueError("invalid authority")
+        if hostname.lower() != "localhost" and not ipaddress.ip_address(hostname).is_loopback:
+            raise ValueError("not loopback")
+        # IPv6 authorities must use brackets; urlparse rejects invalid ports/brackets.
+        if ":" in hostname and not raw.startswith("["):
+            raise ValueError("unbracketed IPv6")
+        return hostname.lower(), port
     except (TypeError, ValueError):
-        is_loopback = False
-        host_port = listener_port = None
-        hostname = None
-    if (
-        not is_loopback
-        or host_port != listener_port
-        or host_url.username is not None
-        or host_url.password is not None
-        or host_url.path
-        or host_url.query
-        or host_url.fragment
-    ):
-        raise RequestValidationError(
-            HTTPStatus.FORBIDDEN,
-            "Cross-origin requests are not allowed.",
-        )
+        raise RequestValidationError(HTTPStatus.FORBIDDEN, "Cross-origin requests are not allowed.") from None
 
-    for source in browser_sources:
-        source_url = urlparse(source)
+
+def _validate_browser_origin(handler: Any) -> None:
+    """Require each supplied browser source to match the HTTP listener origin."""
+    hostname, listener_port = _validate_local_host(handler)
+    sources = []
+    for name in ("Origin", "Referer"):
+        values = _header_values(handler, name)
+        if len(values) > 1:
+            raise RequestValidationError(HTTPStatus.FORBIDDEN, "Cross-origin requests are not allowed.")
+        sources.extend((name, value) for value in values)
+    valid = bool(sources)
+    for name, source in sources:
         try:
-            source_port = source_url.port or (80 if source_url.scheme == "http" else 443)
+            parsed = urlparse(source)
+            port = parsed.port if parsed.port is not None else 80
+            valid = valid and (bool(re.fullmatch(r"(?:\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+)(?::[0-9]+)?", parsed.netloc))
+                and parsed.scheme == "http" and parsed.hostname == hostname
+                and port == listener_port and parsed.username is None and parsed.password is None
+                and not any(c.isspace() or ord(c) < 32 for c in source)
+                and "\\" not in source
+                and (name != "Origin" or source == "http://" + parsed.netloc))
         except ValueError:
-            source_port = None
-        if (
-            source_url.scheme != "http"
-            or source_url.hostname is None
-            or source_url.hostname.lower() != hostname.lower()
-            or source_port != listener_port
-        ):
-            raise RequestValidationError(
-                HTTPStatus.FORBIDDEN,
-                "Cross-origin requests are not allowed.",
-            )
+            valid = False
+    if not valid:
+        raise RequestValidationError(HTTPStatus.FORBIDDEN, "Cross-origin requests are not allowed.")
 
 
 def _content_length(headers: Any) -> int:
