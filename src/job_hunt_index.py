@@ -882,15 +882,27 @@ def enqueue_eval_batch(
         conn.close()
 
 
+_EVAL_BATCH_CANCELLED_SQL = """EXISTS (
+    SELECT 1 FROM eval_batch b
+    WHERE b.batch_id = eval_queue.batch_id AND b.cancel_requested_at IS NOT NULL
+)"""
+
+
 def claim_eval_queue_row(db_path: Path, *, now: str) -> dict[str, Any] | None:
     """Atomically claim the oldest pending eval_queue row."""
     token = str(uuid.uuid4())
     conn = open_db(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
+        # Reconcile legacy pending rows left behind by older retry code.
+        conn.execute(
+            f"""UPDATE eval_queue SET status = 'cancelled', claim_token = NULL,
+                finished_at = ?, error_text = NULL
+                WHERE status = 'pending' AND {_EVAL_BATCH_CANCELLED_SQL}""", (now,),
+        )
         row = conn.execute(
-            """SELECT id FROM eval_queue
-                WHERE status = 'pending'
+            f"""SELECT id FROM eval_queue
+                WHERE status = 'pending' AND NOT {_EVAL_BATCH_CANCELLED_SQL}
                 ORDER BY created_at ASC, id ASC
                 LIMIT 1"""
         ).fetchone()
@@ -929,7 +941,11 @@ def finish_eval_queue_row(
     """Finish a running queue row using its claim token."""
     if status not in {"done", "error", "cancelled"}:
         raise ValueError(f"invalid eval_queue finish status: {status!r}")
-    sets = ["status = :status", "claim_token = NULL", "finished_at = :now", "error_text = :error_text"]
+    sets = [
+        f"status = CASE WHEN {_EVAL_BATCH_CANCELLED_SQL} THEN 'cancelled' ELSE :status END",
+        "claim_token = NULL", "finished_at = :now",
+        f"error_text = CASE WHEN {_EVAL_BATCH_CANCELLED_SQL} THEN NULL ELSE :error_text END",
+    ]
     params: dict[str, Any] = {
         "id": int(row_id),
         "claim_token": claim_token,
@@ -938,7 +954,7 @@ def finish_eval_queue_row(
         "error_text": error_text,
     }
     if retries is not None:
-        sets.append("retries = :retries")
+        sets.append(f"retries = CASE WHEN {_EVAL_BATCH_CANCELLED_SQL} THEN retries ELSE :retries END")
         params["retries"] = int(retries)
     conn = open_db(db_path)
     try:
@@ -962,19 +978,19 @@ def requeue_eval_queue_row(
     retries: int,
     error_text: str | None = None,
 ) -> bool:
-    """Return a running row to pending after a retryable 429/backoff."""
+    """Retry a token-owned row, or finish cancelled when its batch was cancelled."""
     conn = open_db(db_path)
     try:
         cur = conn.execute(
-            """UPDATE eval_queue
-                  SET status = 'pending',
+            f"""UPDATE eval_queue
+                  SET status = CASE WHEN {_EVAL_BATCH_CANCELLED_SQL} THEN 'cancelled' ELSE 'pending' END,
                       claim_token = NULL,
-                      retries = ?,
-                      error_text = ?,
+                      retries = CASE WHEN {_EVAL_BATCH_CANCELLED_SQL} THEN retries ELSE :retries END,
+                      error_text = CASE WHEN {_EVAL_BATCH_CANCELLED_SQL} THEN NULL ELSE :error_text END,
                       started_at = NULL,
-                      finished_at = NULL
-                WHERE id = ? AND claim_token = ? AND status = 'running'""",
-            (int(retries), error_text, int(row_id), claim_token),
+                      finished_at = CASE WHEN {_EVAL_BATCH_CANCELLED_SQL} THEN :now ELSE NULL END
+                WHERE id = :id AND claim_token = :token AND status = 'running'""",
+            dict(retries=int(retries), error_text=error_text, now=now, id=int(row_id), token=claim_token),
         )
         conn.commit()
         return cur.rowcount == 1
@@ -989,18 +1005,20 @@ def return_eval_queue_row_to_pending(
     *,
     error_text: str | None = None,
 ) -> bool:
-    """Return a running row to pending without changing its retry count."""
+    """Return to pending (or cancelled) without changing the retry count."""
     conn = open_db(db_path)
     try:
         cur = conn.execute(
-            """UPDATE eval_queue
-                  SET status = 'pending',
+            f"""UPDATE eval_queue
+                  SET status = CASE WHEN {_EVAL_BATCH_CANCELLED_SQL} THEN 'cancelled' ELSE 'pending' END,
                       claim_token = NULL,
-                      error_text = ?,
+                      error_text = CASE WHEN {_EVAL_BATCH_CANCELLED_SQL} THEN NULL ELSE :error_text END,
                       started_at = NULL,
-                      finished_at = NULL
-                WHERE id = ? AND claim_token = ? AND status = 'running'""",
-            (error_text, int(row_id), claim_token),
+                      finished_at = CASE WHEN {_EVAL_BATCH_CANCELLED_SQL} THEN
+                          (SELECT cancel_requested_at FROM eval_batch b WHERE b.batch_id = eval_queue.batch_id)
+                          ELSE NULL END
+                WHERE id = :id AND claim_token = :token AND status = 'running'""",
+            dict(error_text=error_text, id=int(row_id), token=claim_token),
         )
         conn.commit()
         return cur.rowcount == 1
@@ -1062,6 +1080,14 @@ def reset_stale_eval_queue_running(
     cutoff = (now - timedelta(minutes=older_than_minutes)).isoformat(timespec="seconds")
     conn = open_db(db_path)
     try:
+        conn.execute("BEGIN IMMEDIATE")
+        cancelled = conn.execute(
+            f"""UPDATE eval_queue SET status = 'cancelled', claim_token = NULL,
+                finished_at = ?, error_text = NULL
+                WHERE status = 'running' AND (started_at IS NULL OR started_at <= ?)
+                  AND {_EVAL_BATCH_CANCELLED_SQL}""",
+            (now.isoformat(timespec="seconds"), cutoff),
+        ).rowcount
         cur = conn.execute(
             """UPDATE eval_queue
                   SET status = CASE WHEN retries + 1 >= ? THEN 'error' ELSE 'pending' END,
@@ -1076,7 +1102,7 @@ def reset_stale_eval_queue_running(
              now.isoformat(timespec="seconds"), cutoff),
         )
         conn.commit()
-        return cur.rowcount
+        return cancelled + cur.rowcount
     finally:
         conn.close()
 
@@ -1086,9 +1112,10 @@ def pause_eval_batch_for_quota(db_path: Path, batch_id: str, *, now: str, error_
     conn = open_db(db_path)
     try:
         cur = conn.execute(
-            """UPDATE eval_queue
+            f"""UPDATE eval_queue
                   SET error_text = ?
-                WHERE batch_id = ? AND status IN ('pending', 'running')""",
+                WHERE batch_id = ? AND status IN ('pending', 'running')
+                  AND NOT {_EVAL_BATCH_CANCELLED_SQL}""",
             (error_text, batch_id),
         )
         conn.commit()

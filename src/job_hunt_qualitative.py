@@ -155,6 +155,7 @@ def run_qualitative_assessment_pipeline(
     state_root: str | Path,
     db_path: Path,
     before_persist: Callable[[], bool] | None = None,
+    before_provider: Callable[[], bool] | None = None,
 ) -> QualitativeRunResult:
     """Run the shared qualitative Gemini pipeline for one already-claimed job."""
     from src.job_hunt_index import LLMQuotaExhausted, finish_qualitative_assessment, reserve_llm_rpd_attempt, rpd_used_today
@@ -175,6 +176,9 @@ def run_qualitative_assessment_pipeline(
         raise LLMQuotaExhausted("daily LLM quota exhausted - try tomorrow")
 
     def _reserve(_model: str) -> None:
+        # Every fallback must check intent before reserving quota or calling out.
+        if before_provider is not None and not before_provider():
+            raise RuntimeError("cancelled before provider")
         reserve_llm_rpd_attempt(
             db_path,
             rpd_date_key(datetime.now(timezone.utc)),
@@ -182,6 +186,9 @@ def run_qualitative_assessment_pipeline(
         )
 
     for attempt in range(2):
+        # Also guard validation retries and provider wrappers that ignore callbacks.
+        if before_provider is not None and not before_provider():
+            raise RuntimeError("cancelled before provider")
         try:
             raw, error, model_used, all_rate_limited = _call_gemini_reasoning(
                 prompt,

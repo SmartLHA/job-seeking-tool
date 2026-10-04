@@ -307,3 +307,215 @@ def test_batch_routes_enqueue_progress_and_cancel(tmp_path: Path) -> None:
     handle_cancel_batch(types.SimpleNamespace(path=f"/batch/{batch_id}/cancel", form={}, raw_body=b""), config, cancel, batch_id)
     assert cancel.redirect_location == f"/batch/{batch_id}"
     assert get_eval_batch(config.state_root / "job_hunt_index.db", batch_id)[0]["status"] == "cancelled"
+
+
+@pytest.mark.parametrize('kind', ['429', 'quota'])
+def test_cancelled_provider_failure_never_requeues_or_calls_again(tmp_path, monkeypatch, kind):
+    from src.job_hunt_index import LLMQuotaExhausted
+    from src.job_hunt_llm import RateLimited
+    config = _config(tmp_path)
+    _save_job(config, 'job-1')
+    db = config.state_root / 'job_hunt_index.db'
+    batch = enqueue_eval_batch(db, ['job-1'], now='2026-07-09T10:00:00')
+    calls, sleeps = [], []
+    def provider(prompt, *, before_attempt=None):
+        calls.append(prompt)
+        cancel_eval_batch(db, batch, now='2026-07-09T10:00:02')
+        raise RateLimited('synthetic 429') if kind == '429' else LLMQuotaExhausted('synthetic quota')
+    monkeypatch.setattr('src.job_hunt_llm._call_gemini_reasoning', provider)
+    first = process_eval_queue_once(config=config, profile=_profile(), db_path=db, sleep=sleeps.append)
+    second = process_eval_queue_once(config=config, profile=_profile(), db_path=db, sleep=sleeps.append)
+    assert first.cancelled == 1 and first.requeued == 0 and not first.quota_paused
+    assert second.processed == second.failed == second.requeued == 0
+    assert len(calls) == 1 and sleeps == []
+    row = get_eval_batch(db, batch)[0]
+    assert row['status'] == 'cancelled' and row['claim_token'] is None
+    assert row['retries'] == 0 and row['finished_at']
+
+
+@pytest.mark.parametrize('operation', ['429', 'quota', 'finish'])
+def test_retry_transitions_atomically_prefer_cancel_and_preserve_claim_token(tmp_path, operation):
+    from src.job_hunt_index import requeue_eval_queue_row, return_eval_queue_row_to_pending
+    db = tmp_path / 'queue.db'
+    batch = enqueue_eval_batch(db, ['job-1'], now='2026-07-09T10:00:00')
+    row = claim_eval_queue_row(db, now='2026-07-09T10:00:01')
+    cancel_eval_batch(db, batch, now='2026-07-09T10:00:02')
+    def transition(token):
+        if operation == '429':
+            return requeue_eval_queue_row(db, row['id'], token, now='2026-07-09T10:00:03', retries=1, error_text='429')
+        if operation == 'quota':
+            return return_eval_queue_row_to_pending(db, row['id'], token, error_text='quota')
+        return finish_eval_queue_row(db, row['id'], token, status='error', now='2026-07-09T10:00:03', retries=5)
+    assert transition('invalid-token') is False
+    unchanged = get_eval_batch(db, batch)[0]
+    assert unchanged['status'] == 'running' and unchanged['claim_token'] == row['claim_token']
+    assert transition(row['claim_token']) is True
+    final = get_eval_batch(db, batch)[0]
+    assert final['status'] == 'cancelled' and final['claim_token'] is None
+    assert final['retries'] == 0 and final['error_text'] is None and final['finished_at']
+    assert claim_eval_queue_row(db, now='2026-07-09T10:01:00') is None
+
+
+def test_claim_reconciles_old_pending_cancelled_batch_and_claims_live_batch(tmp_path):
+    db = tmp_path / 'queue.db'
+    cancelled = enqueue_eval_batch(db, ['old-job'], now='2026-07-09T10:00:00')
+    cancel_eval_batch(db, cancelled, now='2026-07-09T10:00:01')
+    with open_db(db) as conn:
+        conn.execute("UPDATE eval_queue SET status='pending', finished_at=NULL WHERE batch_id=?", (cancelled,))
+    live = enqueue_eval_batch(db, ['live-job'], now='2026-07-09T10:02:00')
+    row = claim_eval_queue_row(db, now='2026-07-09T10:03:00')
+    assert row['batch_id'] == live and row['job_ref'] == 'live-job'
+    assert get_eval_batch(db, cancelled)[0]['status'] == 'cancelled'
+    assert claim_eval_queue_row(db, now='2026-07-09T10:03:01') is None
+
+
+@pytest.mark.parametrize('retries', [0, 4])
+def test_stale_cancelled_running_never_pending_or_retry_cap_error(tmp_path, retries):
+    from src.job_hunt_index import pause_eval_batch_for_quota
+    db = tmp_path / 'queue.db'
+    batch = enqueue_eval_batch(db, ['job-1'], now='2026-07-09T10:00:00')
+    row = claim_eval_queue_row(db, now='2026-07-09T10:00:01')
+    with open_db(db) as conn:
+        conn.execute('UPDATE eval_queue SET retries=? WHERE id=?', (retries, row['id']))
+    cancel_eval_batch(db, batch, now='2026-07-09T10:00:02')
+    assert pause_eval_batch_for_quota(db, batch, now='2026-07-09T10:00:03', error_text='quota') == 0
+    assert reset_stale_eval_queue_running(db, now=datetime.fromisoformat('2026-07-09T10:45:00')) == 1
+    final = get_eval_batch(db, batch)[0]
+    assert final['status'] == 'cancelled' and final['retries'] == retries
+    assert final['claim_token'] is None and final['finished_at'] and final['error_text'] is None
+    assert claim_eval_queue_row(db, now='2026-07-09T10:46:00') is None
+
+
+def test_non_cancelled_retry_and_quota_return_still_work_with_valid_token(tmp_path):
+    from src.job_hunt_index import requeue_eval_queue_row, return_eval_queue_row_to_pending
+    db = tmp_path / 'queue.db'
+    batch = enqueue_eval_batch(db, ['job-1'], now='2026-07-09T10:00:00')
+    row = claim_eval_queue_row(db, now='2026-07-09T10:00:01')
+    assert not requeue_eval_queue_row(db, row['id'], 'wrong', now='2026-07-09T10:00:02', retries=1)
+    assert requeue_eval_queue_row(db, row['id'], row['claim_token'], now='2026-07-09T10:00:02', retries=1, error_text='429')
+    final = get_eval_batch(db, batch)[0]
+    assert final['status'] == 'pending' and final['retries'] == 1 and final['error_text'] == '429'
+    row = claim_eval_queue_row(db, now='2026-07-09T10:00:03')
+    assert not return_eval_queue_row_to_pending(db, row['id'], 'wrong', error_text='quota')
+    assert return_eval_queue_row_to_pending(db, row['id'], row['claim_token'], error_text='quota')
+    final = get_eval_batch(db, batch)[0]
+    assert final['status'] == 'pending' and final['retries'] == 1 and final['finished_at'] is None
+
+
+def test_cancel_after_claim_before_pipeline_makes_zero_provider_calls(tmp_path, monkeypatch):
+    import src.job_hunt_scheduler as scheduler
+    config = _config(tmp_path)
+    _save_job(config, 'job-1')
+    db = config.state_root / 'job_hunt_index.db'
+    batch = enqueue_eval_batch(db, ['job-1'], now='2026-07-09T10:00:00')
+    original = scheduler.claim_eval_queue_row
+    def cancel_after_claim(*args, **kwargs):
+        row = original(*args, **kwargs)
+        cancel_eval_batch(db, batch, now='2026-07-09T10:00:02')
+        return row
+    monkeypatch.setattr(scheduler, 'claim_eval_queue_row', cancel_after_claim)
+    def forbidden(*args, **kwargs):
+        pytest.fail('Provider called after cancellation')
+    monkeypatch.setattr('src.job_hunt_llm._call_gemini_reasoning', forbidden)
+    result = process_eval_queue_once(config=config, profile=_profile(), db_path=db, sleep=lambda _: None)
+    assert result.cancelled == 1 and get_eval_batch(db, batch)[0]['status'] == 'cancelled'
+
+
+def test_cancelled_validation_retry_does_not_make_second_provider_call(tmp_path, monkeypatch):
+    config = _config(tmp_path)
+    _save_job(config, 'job-1')
+    db = config.state_root / 'job_hunt_index.db'
+    batch = enqueue_eval_batch(db, ['job-1'], now='2026-07-09T10:00:00')
+    calls = []
+    def provider(prompt, *, before_attempt=None):
+        calls.append(prompt)
+        cancel_eval_batch(db, batch, now='2026-07-09T10:00:02')
+        return '{}', None, 'synthetic', False
+    monkeypatch.setattr('src.job_hunt_llm._call_gemini_reasoning', provider)
+    result = process_eval_queue_once(config=config, profile=_profile(), db_path=db, sleep=lambda _: None)
+    assert result.cancelled == 1 and len(calls) == 1
+    assert get_eval_batch(db, batch)[0]['status'] == 'cancelled'
+
+
+def test_actual_provider_fallback_checkpoint_stops_after_first_cancelled_call(tmp_path, monkeypatch):
+    config = _config(tmp_path)
+    _save_job(config, 'job-1')
+    db = config.state_root / 'job_hunt_index.db'
+    batch = enqueue_eval_batch(db, ['job-1'], now='2026-07-09T10:00:00')
+    calls = []
+    monkeypatch.setattr('src.job_hunt_llm._api_key', lambda: 'synthetic-key-no-network')
+    def provider(prompt, model, key, **kwargs):
+        calls.append(model)
+        cancel_eval_batch(db, batch, now='2026-07-09T10:00:02')
+        return None, 'synthetic 429', True, 'rate_limited'
+    monkeypatch.setattr('src.job_hunt_llm._call_gemini_model', provider)
+    first = process_eval_queue_once(config=config, profile=_profile(), db_path=db, sleep=lambda _: None)
+    second = process_eval_queue_once(config=config, profile=_profile(), db_path=db, sleep=lambda _: None)
+    assert first.cancelled == 1 and second.requeued == 0 and len(calls) == 1
+    assert get_eval_batch(db, batch)[0]['status'] == 'cancelled'
+
+
+@pytest.mark.parametrize('kind', ['429', 'quota'])
+def test_cancel_racing_retry_transition_reports_cancelled(tmp_path, monkeypatch, kind):
+    import src.job_hunt_scheduler as scheduler
+    from src.job_hunt_index import LLMQuotaExhausted
+    from src.job_hunt_llm import RateLimited
+    config = _config(tmp_path)
+    _save_job(config, 'job-1')
+    db = config.state_root / 'job_hunt_index.db'
+    batch = enqueue_eval_batch(db, ['job-1'], now='2026-07-09T10:00:00')
+    name = 'requeue_eval_queue_row' if kind == '429' else 'return_eval_queue_row_to_pending'
+    original = getattr(scheduler, name)
+    def cancel_before_update(*args, **kwargs):
+        cancel_eval_batch(db, batch, now='2026-07-09T10:00:02')
+        return original(*args, **kwargs)
+    monkeypatch.setattr(scheduler, name, cancel_before_update)
+    calls = []
+    def provider(*args, **kwargs):
+        calls.append('synthetic')
+        raise RateLimited('synthetic 429') if kind == '429' else LLMQuotaExhausted('synthetic quota')
+    monkeypatch.setattr('src.job_hunt_llm._call_gemini_reasoning', provider)
+    sleeps = []
+    result = process_eval_queue_once(config=config, profile=_profile(), db_path=db, sleep=sleeps.append)
+    assert result.cancelled == 1 and result.requeued == 0 and not result.quota_paused and sleeps == []
+    assert get_eval_batch(db, batch)[0]['status'] == 'cancelled'
+    process_eval_queue_once(config=config, profile=_profile(), db_path=db, sleep=sleeps.append)
+    assert calls == ['synthetic']
+
+
+def test_pipeline_checkpoint_blocks_provider_after_qualitative_claim(tmp_path, monkeypatch):
+    import src.job_hunt_index as index
+    config = _config(tmp_path)
+    _save_job(config, 'job-1')
+    db = config.state_root / 'job_hunt_index.db'
+    batch = enqueue_eval_batch(db, ['job-1'], now='2026-07-09T10:00:00')
+    original = index.claim_qualitative_assessment
+    def cancel_after_qualitative_claim(*args, **kwargs):
+        claim = original(*args, **kwargs)
+        cancel_eval_batch(db, batch, now='2026-07-09T10:00:02')
+        return claim
+    monkeypatch.setattr(index, 'claim_qualitative_assessment', cancel_after_qualitative_claim)
+    def forbidden(*args, **kwargs):
+        pytest.fail('Provider called after qualitative claim cancellation')
+    monkeypatch.setattr('src.job_hunt_llm._call_gemini_reasoning', forbidden)
+    result = process_eval_queue_once(config=config, profile=_profile(), db_path=db, sleep=lambda _: None)
+    assert result.cancelled == 1 and get_eval_batch(db, batch)[0]['status'] == 'cancelled'
+
+
+def test_cancellation_after_completed_row_does_not_misreport_outcome(tmp_path, monkeypatch):
+    import src.job_hunt_scheduler as scheduler
+    config = _config(tmp_path)
+    _save_job(config, 'job-1')
+    db = config.state_root / 'job_hunt_index.db'
+    batch = enqueue_eval_batch(db, ['job-1'], now='2026-07-09T10:00:00')
+    monkeypatch.setattr('src.job_hunt_llm._call_gemini_reasoning', lambda *a, **k: (_llm_payload(), None, 'synthetic', False))
+    original = scheduler.finish_eval_queue_row
+    def cancel_after_finish(*args, **kwargs):
+        updated = original(*args, **kwargs)
+        if kwargs['status'] == 'done':
+            cancel_eval_batch(db, batch, now='2026-07-09T10:00:02')
+        return updated
+    monkeypatch.setattr(scheduler, 'finish_eval_queue_row', cancel_after_finish)
+    result = process_eval_queue_once(config=config, profile=_profile(), db_path=db, sleep=lambda _: None)
+    assert result.processed == 1 and result.cancelled == 0
+    assert get_eval_batch(db, batch)[0]['status'] == 'done'

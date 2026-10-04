@@ -30,6 +30,7 @@ from src.job_hunt_index import (
     finish_eval_queue_row,
     incr_rpd_counter,
     is_eval_batch_cancel_requested,
+    is_eval_queue_row_cancelled,
     is_already_indexed,
     list_digest_jobs_for_reeval,
     open_db,
@@ -727,6 +728,15 @@ def process_eval_queue_once(
     force = bool(row.get("force"))
     errors: list[str] = []
 
+    def _cancel_if_requested() -> bool:
+        if not is_eval_batch_cancel_requested(db_path, batch_id):
+            return False
+        finish_eval_queue_row(db_path, row_id, token, status="cancelled", now=now().isoformat(timespec="seconds"))
+        return is_eval_queue_row_cancelled(db_path, row_id)
+
+    if _cancel_if_requested():
+        return EvalQueuePollResult(cancelled=1)
+
     existing_qrow = get_qualitative_index_row(db_path, job_id)
     claim = claim_qualitative_assessment(
         db_path,
@@ -740,9 +750,13 @@ def process_eval_queue_once(
         qrow = claim.get("row") or {}
         if qrow.get("status") == "done":
             finish_eval_queue_row(db_path, row_id, token, status="done", now=now().isoformat(timespec="seconds"))
+            if _cancel_if_requested():
+                return EvalQueuePollResult(cancelled=1)
             return EvalQueuePollResult(processed=1)
         msg = "qualitative assessment already in flight"
         finish_eval_queue_row(db_path, row_id, token, status="error", now=now().isoformat(timespec="seconds"), error_text=msg)
+        if _cancel_if_requested():
+            return EvalQueuePollResult(cancelled=1)
         return EvalQueuePollResult(failed=1, errors=[f"{job_id}: {msg}"])
 
     try:
@@ -752,15 +766,23 @@ def process_eval_queue_once(
             state_root=config.state_root,
             db_path=db_path,
             before_persist=lambda: not is_eval_batch_cancel_requested(db_path, batch_id),
+            before_provider=lambda: not is_eval_batch_cancel_requested(db_path, batch_id),
         )
     except LLMQuotaExhausted as exc:
         msg = str(exc) or "daily LLM quota exhausted - try tomorrow"
         release_qualitative_assessment_claim(db_path, job_id, previous_row=existing_qrow)
         return_eval_queue_row_to_pending(db_path, row_id, token, error_text=msg)
+        if _cancel_if_requested():
+            return EvalQueuePollResult(cancelled=1)
         pause_eval_batch_for_quota(db_path, batch_id, now=now().isoformat(timespec="seconds"), error_text=msg)
+        if _cancel_if_requested():
+            return EvalQueuePollResult(cancelled=1)
         return EvalQueuePollResult(quota_paused=True, errors=[f"{job_id}: {msg}"])
     except RateLimited as exc:
         msg = str(exc) or "Gemini rate limited (429)"
+        if _cancel_if_requested():
+            finish_qualitative_assessment(db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text="cancelled")
+            return EvalQueuePollResult(cancelled=1)
         new_retries = retries + 1
         if new_retries >= _EVAL_MAX_ATTEMPTS:
             finish_qualitative_assessment(db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=msg)
@@ -768,18 +790,24 @@ def process_eval_queue_once(
                 db_path, row_id, token, status="error", now=now().isoformat(timespec="seconds"),
                 error_text=msg, retries=new_retries,
             )
+            if _cancel_if_requested():
+                return EvalQueuePollResult(cancelled=1)
             return EvalQueuePollResult(failed=1, errors=[f"{job_id}: {msg}"])
         requeue_eval_queue_row(
             db_path, row_id, token, now=now().isoformat(timespec="seconds"),
             retries=new_retries, error_text=msg,
         )
         finish_qualitative_assessment(db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=msg)
+        if _cancel_if_requested():
+            return EvalQueuePollResult(cancelled=1)
         sleep(backoff_seconds)
         return EvalQueuePollResult(requeued=1, errors=[f"{job_id}: {msg}"])
     except Exception as exc:
         msg = str(exc) or exc.__class__.__name__
         finish_qualitative_assessment(db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=msg)
         finish_eval_queue_row(db_path, row_id, token, status="error", now=now().isoformat(timespec="seconds"), error_text=msg)
+        if _cancel_if_requested():
+            return EvalQueuePollResult(cancelled=1)
         return EvalQueuePollResult(failed=1, errors=[f"{job_id}: {msg}"])
 
     if not result.ok and result.error == "cancelled before persist":
@@ -787,9 +815,13 @@ def process_eval_queue_once(
         return EvalQueuePollResult(cancelled=1)
     if result.ok:
         finish_eval_queue_row(db_path, row_id, token, status="done", now=now().isoformat(timespec="seconds"))
+        if _cancel_if_requested():
+            return EvalQueuePollResult(cancelled=1)
         return EvalQueuePollResult(processed=1)
     msg = result.error or "qualitative assessment failed"
     finish_eval_queue_row(db_path, row_id, token, status="error", now=now().isoformat(timespec="seconds"), error_text=msg)
+    if _cancel_if_requested():
+        return EvalQueuePollResult(cancelled=1)
     errors.append(f"{job_id}: {msg}")
     return EvalQueuePollResult(failed=1, errors=errors)
 
