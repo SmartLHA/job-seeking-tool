@@ -326,11 +326,10 @@ def handle_parse_cv(req, config, responder):
                             _profile_obj = load_candidate_profile(config.profile_path)
                         else:
                             _profile_obj = candidate_profile_from_dict({"candidate_id": _pid})
-                    # Write CV file alongside the profile
-                    _cv_ext = ext if ext in _ALLOWED_CV_EXTENSIONS else ".txt"
+                    # The extractor returns plain text, irrespective of upload format.
                     _docs_dir = _profile_dir / "docs"
                     _docs_dir.mkdir(parents=True, exist_ok=True)
-                    _cv_path = _docs_dir / f"master_cv{_cv_ext}"
+                    _cv_path = _docs_dir / "master_cv.txt"
                     _cv_path.write_text(text, encoding="utf-8")
                     # Update only the CV fields — leave everything else intact
                     _profile_obj.master_cv_text = text
@@ -406,6 +405,7 @@ def handle_save_profile(req, config, responder):
         payload["skills"] = [s.strip() for s in skills_val.split(",") if s.strip()] if skills_val else []
 
     payload["candidate_id"] = profile_id
+    cv_text_provided = bool(payload.get("master_cv_text"))
 
     # Daily Digest (D3) settings — preserve current values when the form omits a field
     # so editing the rest of the profile never silently resets digest prefs.
@@ -451,15 +451,10 @@ def handle_save_profile(req, config, responder):
     save_candidate_profile(profile_obj, profile_json_path)
 
     # If master_cv_text was provided, save master CV file
-    if profile_obj.master_cv_text:
+    if cv_text_provided:
         docs_dir = profile_dir / "docs"
         docs_dir.mkdir(parents=True, exist_ok=True)
-        cv_ext = ".txt"
-        if form.get("_cv_filename"):
-            cv_ext = Path(form["_cv_filename"]).suffix.lower()
-            if cv_ext not in _ALLOWED_CV_EXTENSIONS:
-                cv_ext = ".txt"
-        cv_path = docs_dir / f"master_cv{cv_ext}"
+        cv_path = docs_dir / "master_cv.txt"
         cv_path.write_text(profile_obj.master_cv_text, encoding="utf-8")
         # Store as absolute path to avoid ambiguous relative resolution
         profile_obj.master_cv_ref = str(cv_path.resolve())
