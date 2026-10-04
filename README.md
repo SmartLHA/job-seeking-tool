@@ -18,8 +18,26 @@ Local-first UK job-search decision support and application preparation. It score
 
 ## Run the UI
 
+Install dependencies in the project's virtual environment (from this directory):
+
 ```bash
-python3 -m src.job_hunt_ui \
+python3 -m venv venv
+venv/bin/python -m pip install -r requirements-dev.txt
+```
+
+PDF CV extraction requires `pypdf>=6.19,<7`; DOCX CV extraction requires
+`python-docx>=1.2,<2` (imported as `docx`). Both are included in the manifest.
+TXT extraction uses Python's standard library. Missing extraction dependencies
+produce an installation error. Format checks use synthetic files only:
+
+```bash
+venv/bin/python -m pytest tests/test_cv_format_dependencies.py
+```
+
+Then run the UI with that same environment:
+
+```bash
+venv/bin/python -m src.job_hunt_ui \
   --profile data/mic_profile/candidate_profile.json \
   --state-root data/state \
   --report-dir output/reports \

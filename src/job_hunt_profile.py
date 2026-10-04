@@ -79,12 +79,20 @@ def parse_cv_file(path: Path) -> str:
     if suffix == ".txt":
         return path.read_text(encoding="utf-8", errors="replace")
     elif suffix == ".pdf":
-        from pypdf import PdfReader
+        try:
+            from pypdf import PdfReader
+        except ImportError as exc:
+            raise RuntimeError("PDF extraction requires pypdf. Install project dependencies with "
+                               "venv/bin/python -m pip install -r requirements-dev.txt.") from exc
 
         reader = PdfReader(path)
         return "\n".join(page.extract_text() for page in reader.pages)
     elif suffix == ".docx":
-        from docx import Document
+        try:
+            from docx import Document
+        except ImportError as exc:
+            raise RuntimeError("DOCX extraction requires python-docx. Install project dependencies with "
+                               "venv/bin/python -m pip install -r requirements-dev.txt.") from exc
 
         doc = Document(path)
         return "\n".join(p.text for p in doc.paragraphs)
