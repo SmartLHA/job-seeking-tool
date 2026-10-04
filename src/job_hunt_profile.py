@@ -1,13 +1,38 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
+import tempfile
 import re
+import threading
+from contextlib import ExitStack, contextmanager
 from functools import partial
 from pathlib import Path
 from typing import Any
 
 from src.job_hunt_models import CandidateProfile, Skill
 from src import job_hunt_validation as _v
+
+
+_PROFILE_LOCKS: dict[Path, Any] = {}
+_PROFILE_LOCKS_GUARD = threading.Lock()
+
+
+@contextmanager
+def profile_update_lock(*paths: str | Path):
+    """Process-local transaction locks; canonical aliases share an RLock.
+
+    Multiple profile files are always locked in sorted order. Callers must hold
+    this context for their entire load/merge/save, not just the final write.
+    """
+    keys = sorted({Path(path).resolve() for path in paths}, key=str)
+    with _PROFILE_LOCKS_GUARD:
+        locks = [_PROFILE_LOCKS.setdefault(key, threading.RLock()) for key in keys]
+    with ExitStack() as stack:
+        for lock in locks:
+            stack.enter_context(lock)
+        yield
 
 
 # --- Daily Digest (D3) preference validators ------------------------------- #
@@ -110,20 +135,41 @@ OPTIONAL_PROFILE_FIELDS = {
 }
 
 
+def _write_profile_json(path: Path, payload: dict[str, Any]) -> None:
+    """Atomically replace one profile, preserving old bytes if writing fails."""
+    encoded = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent,
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            if mode is not None:
+                os.fchmod(stream.fileno(), mode)
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def load_candidate_profile(path: str | Path, *, candidate_id: str | None = None) -> CandidateProfile:
     """Load a candidate profile from a local JSON file."""
-    payload = _read_json_file(path)
+    with profile_update_lock(path):
+        payload = _read_json_file(path)
     return candidate_profile_from_dict(payload, candidate_id=candidate_id, source_path=path)
 
 
 def save_candidate_profile(profile: CandidateProfile, path: str | Path) -> Path:
     """Persist a candidate profile as local JSON for audit-friendly storage."""
     destination = Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(
-        json.dumps(candidate_profile_to_dict(profile), indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    with profile_update_lock(destination):
+        _write_profile_json(destination.resolve(), candidate_profile_to_dict(profile))
     return destination
 
 

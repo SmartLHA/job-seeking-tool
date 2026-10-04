@@ -563,6 +563,12 @@ class TestHandleJobSubmit:
 class TestHandleAddGapSkills:
     """Tests for handle_add_gap_skills."""
 
+    @pytest.fixture(autouse=True)
+    def isolated_profile_root(self, tmp_path, monkeypatch):
+        # Gap updates synchronize canonical and startup profile files.
+        monkeypatch.setattr("src.ui_handlers._DATA_ROOT", tmp_path / "data")
+
+
     def test_handle_add_gap_skills_adds_new_skills(self, tmp_path: Path) -> None:
         config = UIServerConfig(
             profile_path=_setup_test_profile(tmp_path),

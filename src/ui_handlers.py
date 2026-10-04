@@ -57,7 +57,7 @@ from src.ui_render import (
 from src.job_hunt_orchestrator import run_local_evaluation_flow_from_payload
 from src.job_hunt_parsing import parse_job_from_text, parse_job_from_url
 from src.job_hunt_outcomes import allowed_next_statuses, create_outcome_record, reset_terminal_outcome, update_outcome
-from src.job_hunt_profile import load_candidate_profile, save_candidate_profile, ProfileValidationError, parse_cv_file, candidate_profile_from_dict
+from src.job_hunt_profile import load_candidate_profile, save_candidate_profile, ProfileValidationError, parse_cv_file, candidate_profile_from_dict, candidate_profile_to_dict, profile_update_lock
 from src.job_hunt_models import JobPosting, Skill
 from src.job_hunt_config import get_enabled_sources, DEFAULT_TAILORING_POLICY
 from src.job_hunt_models import effective_decision
@@ -243,6 +243,24 @@ def handle_set_scoring_preset(req, config, responder):
     responder.redirect(f"/profile?profile_id={_quote(profile_id)}&flash={_quote(flash_msg)}")
 
 
+def _profile_alias_matches(config, profile_id):
+    try:
+        return load_candidate_profile(config.profile_path).candidate_id == profile_id
+    except FileNotFoundError:
+        return config.profile_path.stem == profile_id
+
+
+def _latest_profile_for_update(profile_json_path, config, profile_id):
+    try:
+        return load_candidate_profile(profile_json_path)
+    except FileNotFoundError:
+        try:
+            alias = load_candidate_profile(config.profile_path)
+        except FileNotFoundError:
+            return None
+        return alias if alias.candidate_id == profile_id else None
+
+
 def handle_parse_cv(req, config, responder):
     content_type = req.headers.get("Content-Type", "")
     if "multipart/form-data" not in content_type:
@@ -318,27 +336,23 @@ def handle_parse_cv(req, config, responder):
                 if _profile_dir is not None:
                     _profile_dir.mkdir(parents=True, exist_ok=True)
                     _profile_json = _profile_dir / "candidate_profile.json"
-                    # Load existing profile (fall back to startup profile if dir version missing)
-                    try:
-                        _profile_obj = load_candidate_profile(_profile_json)
-                    except FileNotFoundError:
-                        if config.profile_path.stem == _pid and config.profile_path.exists():
-                            _profile_obj = load_candidate_profile(config.profile_path)
-                        else:
+                    with profile_update_lock(_profile_json, config.profile_path):
+                        _profile_obj = _latest_profile_for_update(_profile_json, config, _pid)
+                        if _profile_obj is None:
                             _profile_obj = candidate_profile_from_dict({"candidate_id": _pid})
-                    # The extractor returns plain text, irrespective of upload format.
-                    _docs_dir = _profile_dir / "docs"
-                    _docs_dir.mkdir(parents=True, exist_ok=True)
-                    _cv_path = _docs_dir / "master_cv.txt"
-                    _cv_path.write_text(text, encoding="utf-8")
-                    # Update only the CV fields — leave everything else intact
-                    _profile_obj.master_cv_text = text
-                    _profile_obj.master_cv_ref = str(_cv_path.resolve())
-                    save_candidate_profile(_profile_obj, _profile_json)
-                    # Keep startup profile in sync
-                    if config.profile_path.stem == _pid:
-                        save_candidate_profile(_profile_obj, config.profile_path)
-                    auto_saved = True
+                        # The extractor returns plain text, irrespective of upload format.
+                        _docs_dir = _profile_dir / "docs"
+                        _docs_dir.mkdir(parents=True, exist_ok=True)
+                        _cv_path = _docs_dir / "master_cv.txt"
+                        _cv_path.write_text(text, encoding="utf-8")
+                        # Update only the CV fields — leave everything else intact
+                        _profile_obj.master_cv_text = text
+                        _profile_obj.master_cv_ref = str(_cv_path.resolve())
+                        save_candidate_profile(_profile_obj, _profile_json)
+                        # Keep startup profile in sync
+                        if _profile_alias_matches(config, _pid):
+                            save_candidate_profile(_profile_obj, config.profile_path)
+                        auto_saved = True
             except Exception as _save_exc:
                 logger.warning("CV auto-save failed for profile_id=%r: %s", _pid, _save_exc)
                 _auto_save_error = str(_save_exc)
@@ -368,102 +382,88 @@ def handle_save_profile(req, config, responder):
 
     profile_json_path = profile_dir / "candidate_profile.json"
 
-    # Build dict from form, then validate via candidate_profile_from_dict
-    payload: dict[str, Any] = {}
-    for field in ("name", "target_roles", "locations", "remote_preference",
-                  "salary_floor_gbp", "right_to_work_uk",
-                  "years_experience", "industries", "achievements",
-                  "certifications", "master_cv_text"):
-        val = form.get(field, "").strip()
-        if field == "achievements":
-            # Textarea uses one-per-line; fall back to comma-split for old data
-            if "\n" in val:
-                payload[field] = [s.strip() for s in val.splitlines() if s.strip()]
-            else:
+    with profile_update_lock(profile_json_path, config.profile_path):
+        # Build dict from form, then validate via candidate_profile_from_dict
+        _existing = _latest_profile_for_update(profile_json_path, config, profile_id)
+        payload: dict[str, Any] = candidate_profile_to_dict(_existing) if _existing is not None else {}
+        for field in ("name", "target_roles", "locations", "remote_preference",
+                      "salary_floor_gbp", "right_to_work_uk",
+                      "years_experience", "industries", "achievements",
+                      "certifications", "master_cv_text"):
+            if field not in form:
+                continue
+            val = form[field].strip()
+            if field == "achievements":
+                # Textarea uses one-per-line; fall back to comma-split for old data
+                if "\n" in val:
+                    payload[field] = [s.strip() for s in val.splitlines() if s.strip()]
+                else:
+                    payload[field] = [s.strip() for s in val.split(",") if s.strip()] if val else []
+            elif field in ("target_roles", "locations", "industries", "certifications"):
                 payload[field] = [s.strip() for s in val.split(",") if s.strip()] if val else []
-        elif field in ("target_roles", "locations", "industries", "certifications"):
-            payload[field] = [s.strip() for s in val.split(",") if s.strip()] if val else []
-        elif field == "salary_floor_gbp":
-            payload[field] = int(float(val)) if val else None
-        elif field == "years_experience":
-            payload[field] = float(val) if val else None
-        elif field == "right_to_work_uk":
-            payload[field] = True if val.lower() in ("true", "1", "yes") else (False if val.lower() in ("false", "0", "no") else None)
-        else:
-            payload[field] = val or None
+            elif field == "salary_floor_gbp":
+                payload[field] = int(float(val)) if val else None
+            elif field == "years_experience":
+                payload[field] = float(val) if val else None
+            elif field == "right_to_work_uk":
+                payload[field] = True if val.lower() in ("true", "1", "yes") else (False if val.lower() in ("false", "0", "no") else None)
+            else:
+                payload[field] = val or None
 
-    # Skills: prefer skills_json (list[dict] from JS table), fall back to comma-split string
-    skills_json_raw = form.get("skills_json", "").strip()
-    if skills_json_raw:
+        # Skills: prefer skills_json (list[dict] from JS table), fall back to comma-split string
+        skills_json_raw = form.get("skills_json", "").strip()
+        if "skills_json" in form:
+            try:
+                payload["skills"] = json.loads(skills_json_raw) if skills_json_raw else []
+            except (json.JSONDecodeError, ValueError) as _skj_exc:
+                logger.warning("Could not parse skills_json field: %s — defaulting to empty", _skj_exc)
+                payload["skills"] = []
+        elif "skills" in form:
+            skills_val = form["skills"].strip()
+            payload["skills"] = [s.strip() for s in skills_val.split(",") if s.strip()] if skills_val else []
+
+        payload["candidate_id"] = profile_id
+        cv_text_provided = bool(form.get("master_cv_text", "").strip())
+
+        # CV storage is server-managed. Do not accept or render its filesystem path
+        # in the browser; preserve the existing trusted reference when the user is
+        # saving other profile sections.
+        if _existing is not None and not cv_text_provided:
+            payload["master_cv_text"] = _existing.master_cv_text
+            payload["master_cv_ref"] = _existing.master_cv_ref
+
+        # Omitted preferences retain the latest saved value; blank supplied values
+        # use the field validator's default rather than overwriting omitted fields.
+        for field in ("digest_enabled", "digest_llm_enabled", "digest_threshold",
+                      "digest_max_per_source", "digest_max_llm_per_run", "digest_llm_rpm",
+                      "digest_llm_rpd", "digest_llm_batch_size", "digest_llm_batch_interval_min",
+                      "digest_run_time"):
+            if field in form:
+                payload[field] = form[field].strip() or None
+
         try:
-            payload["skills"] = json.loads(skills_json_raw)
-        except (json.JSONDecodeError, ValueError) as _skj_exc:
-            logger.warning("Could not parse skills_json field: %s — defaulting to empty", _skj_exc)
-            payload["skills"] = []
-    else:
-        skills_val = form.get("skills", "").strip()
-        payload["skills"] = [s.strip() for s in skills_val.split(",") if s.strip()] if skills_val else []
+            profile_obj = candidate_profile_from_dict(payload)
+        except ProfileValidationError as exc:
+            responder.send_json({"ok": False, "errors": {"form": str(exc)}}, status=HTTPStatus.BAD_REQUEST)
+            return
 
-    payload["candidate_id"] = profile_id
-    cv_text_provided = bool(payload.get("master_cv_text"))
-
-    # Daily Digest (D3) settings — preserve current values when the form omits a field
-    # so editing the rest of the profile never silently resets digest prefs.
-    try:
-        _existing = load_candidate_profile(profile_json_path)
-    except Exception:
-        _existing = None
-    if _existing is None and config.profile_path.stem == profile_id:
-        try:
-            _existing = load_candidate_profile(config.profile_path)
-        except Exception:
-            _existing = None
-
-    # CV storage is server-managed. Do not accept or render its filesystem path
-    # in the browser; preserve the existing trusted reference when the user is
-    # saving other profile sections.
-    if _existing is not None and not payload.get("master_cv_text"):
-        payload["master_cv_text"] = _existing.master_cv_text
-        payload["master_cv_ref"] = _existing.master_cv_ref
-
-    def _digest_default(attr, fallback):
-        return getattr(_existing, attr, fallback) if _existing is not None else fallback
-
-    for _bf, _fb in (("digest_enabled", True), ("digest_llm_enabled", True)):
-        _v = form.get(_bf, "").strip()
-        payload[_bf] = _v if _v else str(_digest_default(_bf, _fb)).lower()
-    for _nf, _fb in (("digest_threshold", 70), ("digest_max_per_source", 50),
-                     ("digest_max_llm_per_run", 10), ("digest_llm_rpm", 4),
-                     ("digest_llm_rpd", 200), ("digest_llm_batch_size", 4),
-                     ("digest_llm_batch_interval_min", 15)):
-        _v = form.get(_nf, "").strip()
-        payload[_nf] = _v if _v else _digest_default(_nf, _fb)
-    _rt = form.get("digest_run_time", "").strip()
-    payload["digest_run_time"] = _rt if _rt else _digest_default("digest_run_time", "07:00")
-
-    try:
-        profile_obj = candidate_profile_from_dict(payload)
-    except ProfileValidationError as exc:
-        responder.send_json({"ok": False, "errors": {"form": str(exc)}}, status=HTTPStatus.BAD_REQUEST)
-        return
-
-    profile_dir.mkdir(parents=True, exist_ok=True)
-    save_candidate_profile(profile_obj, profile_json_path)
-
-    # If master_cv_text was provided, save master CV file
-    if cv_text_provided:
-        docs_dir = profile_dir / "docs"
-        docs_dir.mkdir(parents=True, exist_ok=True)
-        cv_path = docs_dir / "master_cv.txt"
-        cv_path.write_text(profile_obj.master_cv_text, encoding="utf-8")
-        # Store as absolute path to avoid ambiguous relative resolution
-        profile_obj.master_cv_ref = str(cv_path.resolve())
+        profile_dir.mkdir(parents=True, exist_ok=True)
         save_candidate_profile(profile_obj, profile_json_path)
 
-    # Keep startup profile in sync when profile_id matches its stem
-    # so that tailor/cover-letter/evaluate all see the latest data
-    if config.profile_path.stem == profile_id:
-        save_candidate_profile(profile_obj, config.profile_path)
+        # If master_cv_text was provided, save master CV file
+        if cv_text_provided:
+            docs_dir = profile_dir / "docs"
+            docs_dir.mkdir(parents=True, exist_ok=True)
+            cv_path = docs_dir / "master_cv.txt"
+            cv_path.write_text(profile_obj.master_cv_text, encoding="utf-8")
+            # Store as absolute path to avoid ambiguous relative resolution
+            profile_obj.master_cv_ref = str(cv_path.resolve())
+            save_candidate_profile(profile_obj, profile_json_path)
+
+        # Keep startup profile in sync when profile_id matches its stem
+        # so that tailor/cover-letter/evaluate all see the latest data
+        if _profile_alias_matches(config, profile_id):
+            save_candidate_profile(profile_obj, config.profile_path)
 
     # Build flash message so the user knows exactly what was saved
     cv_chars = len(profile_obj.master_cv_text) if profile_obj.master_cv_text else 0
@@ -1535,31 +1535,42 @@ def handle_add_gap_skills(req, config, responder, job_id):
         responder.send_json({"ok": True, "added": [], "skipped": []})
         return
 
-    # Load the active profile
+    # Discover identity without holding one file lock while acquiring another.
     profile_path = config.profile_path
     try:
-        profile_obj = load_candidate_profile(profile_path)
+        active_id = load_candidate_profile(profile_path).candidate_id
     except FileNotFoundError:
         responder.send_json({"ok": False, "error": "Profile not found — save your profile first"}, status=HTTPStatus.NOT_FOUND)
         return
+    profile_dir = _allowed_profile_dir(active_id)
+    if profile_dir is None:
+        responder.send_json({"ok": False, "error": "Invalid profile ID"}, status=HTTPStatus.BAD_REQUEST)
+        return
+    canonical_path = profile_dir / "candidate_profile.json"
+    with profile_update_lock(canonical_path, profile_path):
+        # Re-read after locking; merging must use the current canonical profile.
+        if load_candidate_profile(profile_path).candidate_id != active_id:
+            responder.send_json({"ok": False, "error": "Active profile changed; retry this update"}, status=HTTPStatus.CONFLICT)
+            return
+        profile_obj = _latest_profile_for_update(canonical_path, config, active_id)
+        existing_names = {s.name.lower() for s in profile_obj.skills}
+        added: list[str] = []
+        skipped: list[str] = []
+        new_skills = list(profile_obj.skills)  # copy
+        for skill_name in incoming:
+            if skill_name.lower() in existing_names:
+                skipped.append(skill_name)
+            else:
+                new_skills.append(Skill(name=skill_name, level="unspecified"))
+                existing_names.add(skill_name.lower())
+                added.append(skill_name)
 
-    existing_names = {s.name.lower() for s in profile_obj.skills}
-    added: list[str] = []
-    skipped: list[str] = []
-    new_skills = list(profile_obj.skills)  # copy
-    for skill_name in incoming:
-        if skill_name.lower() in existing_names:
-            skipped.append(skill_name)
-        else:
-            new_skills.append(Skill(name=skill_name, level="unspecified"))
-            existing_names.add(skill_name.lower())
-            added.append(skill_name)
-
-    if added:
-        import dataclasses
-        updated_profile = dataclasses.replace(profile_obj, skills=new_skills)
-        save_candidate_profile(updated_profile, profile_path)
-        logger.info("Added %d gap skill(s) to profile for job %s: %s", len(added), job_id, added)
+        if added:
+            import dataclasses
+            updated_profile = dataclasses.replace(profile_obj, skills=new_skills)
+            save_candidate_profile(updated_profile, canonical_path)
+            save_candidate_profile(updated_profile, profile_path)
+            logger.info("Added %d gap skill(s) to profile for job %s: %s", len(added), job_id, added)
 
     responder.send_json({"ok": True, "added": added, "skipped": skipped})
 
