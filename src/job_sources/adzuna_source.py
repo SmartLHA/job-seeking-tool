@@ -30,6 +30,7 @@ from src.job_sources._multiselect import (
     ACTION_BAR,
     STAGING_OVERLAY,
     hide_attrs,
+    identity_cards,
     more_button_html,
     multiselect_script,
     select_shell,
@@ -338,9 +339,8 @@ def _render_adzuna_cards_fragment(
     nonce: str | None = None,
 ) -> str:
     html = []
-    for i, result in enumerate(results):
-        card_id = f"jrc-{skip + i}"
-        form_id = f"jrf-{skip + i}"
+    for card_id, result, identified in identity_cards("adzuna", results):
+        form_id = "jrf-" + card_id
         title_esc = escape(result.get("title") or "Unknown")
         company_esc = escape(result.get("company") or "Unknown")
         location_esc = escape(result.get("location") or "")
@@ -391,15 +391,21 @@ def _render_adzuna_cards_fragment(
 
         # Selectable only when the job can actually be evaluated (identifier +
         # description). Otherwise render disabled so it can't be shortlisted.
-        selectable = bool(
+        selectable = identified and bool(
             (result.get("source_job_id") or result.get("url")) and result.get("description_raw")
+        )
+        if not identified:
+            form_html = ""
+        identity_attrs = (
+            f' id="{card_id}" data-jst-id="{card_id}" data-jst-form="{form_id}"'
+            if identified else ""
         )
         root_class, root_extra, checkbox_html, disabled_note_html = select_shell(
             card_id, selectable=selectable, url=result.get("url")
         )
 
         html.append(
-            f'<div class="{root_class}" id="{card_id}" data-jst-id="{card_id}" data-jst-form="{form_id}"'
+            f'<div class="{root_class}"{identity_attrs}'
             f' data-jst-title="{title_esc}" data-jst-company="{company_esc}"'
             f' data-jst-salary="{salary_esc}" data-jst-location="{location_esc}"'
             f'{hide_attrs(result)}'

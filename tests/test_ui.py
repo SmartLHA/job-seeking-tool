@@ -1921,7 +1921,7 @@ def test_post_batch_evaluate_caps_at_20(tmp_path: Path) -> None:
 
 def test_get_search_reed_more_returns_offset_page(tmp_path: Path, monkeypatch) -> None:
     # MT-6: the /search/reed/more AJAX endpoint returns the next page of cards with
-    # IDs offset by resultsSkip and a next_url that advances the skip cursor.
+    # stable source IDs and a next_url that advances the skip cursor.
     def fake_fetch_reed_jobs(keyword, location, max_results, *, skip=0, save_raw=True):
         return [
             {
@@ -1951,13 +1951,13 @@ def test_get_search_reed_more_returns_offset_page(tmp_path: Path, monkeypatch) -
     assert data["ok"] is True
     assert data["count"] == 10
     assert data["has_more"] is True
-    assert 'id="jrc-10"' in data["cards_html"]
+    assert 'data-jst-sjid="1000"' in data["cards_html"]
     assert "resultsSkip=20" in data["next_url"]
 
 
 def test_get_search_adzuna_more_returns_offset_page(tmp_path: Path, monkeypatch) -> None:
-    # The generic /search/{source}/more endpoint pages Adzuna too: ids are offset
-    # by resultsSkip and next_url advances the camelCase resultsSkip cursor.
+    # The generic /search/{source}/more endpoint pages Adzuna too: cards
+    # preserve source identity and next_url advances the camelCase resultsSkip cursor.
     captured = {}
 
     def fake_fetch_adzuna_jobs(keyword, location, max_results=50, *, skip=0):
@@ -1991,13 +1991,13 @@ def test_get_search_adzuna_more_returns_offset_page(tmp_path: Path, monkeypatch)
     assert data["count"] == 10
     assert data["has_more"] is True
     assert captured["skip"] == 10          # resultsSkip threaded to the client
-    assert 'id="jrc-10"' in data["cards_html"]   # cards offset, no collision with page 1
+    assert 'data-jst-sjid="a0"' in data["cards_html"]   # actual source job identity survives rendering
     assert "resultsSkip=20" in data["next_url"]
 
 
 def test_get_search_linkedin_more_returns_offset_page(tmp_path: Path, monkeypatch) -> None:
     # LinkedIn pages by `start` offset and uses snake_case params; the same generic
-    # endpoint must offset card ids and advance the results_skip cursor.
+    # endpoint must preserve source identity and advance the results_skip cursor.
     captured = {}
 
     def fake_fetch_search(keywords, location, work_mode, start=0):
@@ -2038,7 +2038,7 @@ def test_get_search_linkedin_more_returns_offset_page(tmp_path: Path, monkeypatc
     assert data["count"] == 10
     assert data["has_more"] is True
     assert captured["start"] == 10          # results_skip threaded to the scraper offset
-    assert 'id="li-rc-10"' in data["cards_html"]
+    assert 'data-jst-sjid="0"' in data["cards_html"]
     assert "results_skip=20" in data["next_url"]
 
 

@@ -26,6 +26,7 @@ from src.job_sources._multiselect import (
     ACTION_BAR,
     STAGING_OVERLAY,
     hide_attrs,
+    identity_cards,
     more_button_html,
     multiselect_script,
     select_shell,
@@ -518,9 +519,8 @@ def _render_select_form(result: dict, nonce: str | None, form_id: str | None = N
 
 def _render_cards(results: list[dict], nonce: str | None = None, *, skip: int = 0) -> str:
     html: list[str] = []
-    for i, result in enumerate(results):
-        card_id = f"li-rc-{skip + i}"
-        form_id = f"li-rf-{skip + i}"
+    for card_id, result, identified in identity_cards("linkedin", results):
+        form_id = "jrf-" + card_id
         title_esc = escape(result.get("title") or "Unknown")
         company_esc = escape(result.get("company") or "Unknown")
         location_esc = escape(result.get("location") or "")
@@ -565,16 +565,22 @@ def _render_cards(results: list[dict], nonce: str | None = None, *, skip: int = 
         # description already in hand, or a numeric job id we can lazy-fetch the
         # description for at select time. Otherwise render disabled.
         _jid = result.get("source_job_id") or ""
-        selectable = bool(
+        selectable = identified and bool(
             (_jid or result.get("url"))
             and (result.get("description_raw") or str(_jid).isdigit())
+        )
+        if not identified:
+            form_html = ""
+        identity_attrs = (
+            f' id="{card_id}" data-jst-id="{card_id}" data-jst-form="{form_id}"'
+            if identified else ""
         )
         root_class, root_extra, checkbox_html, disabled_note_html = select_shell(
             card_id, selectable=selectable, url=result.get("url")
         )
 
         html.append(
-            f'<div class="{root_class}" id="{card_id}" data-jst-id="{card_id}" data-jst-form="{form_id}"'
+            f'<div class="{root_class}"{identity_attrs}'
             f' data-jst-title="{title_esc}" data-jst-company="{company_esc}"'
             f' data-jst-salary="" data-jst-location="{location_esc}"'
             f"{hide_attrs(result)}"

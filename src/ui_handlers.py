@@ -23,6 +23,8 @@ from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
 
+from src.job_sources._multiselect import ACTION_BAR, STAGING_OVERLAY, job_identity, multiselect_script
+
 from src.ui_state import (
     _MAX_CV_SIZE_BYTES,
     _ALLOWED_CV_EXTENSIONS,
@@ -1093,7 +1095,17 @@ def _parse_keyword_cursors(raw: str | None, term_count: int, *, default_offset: 
     return offsets
 
 
-def _render_other_results_fragment(source, results: list[dict[str, Any]], *, skip: int, nonce: str | None) -> str:
+def _render_other_results_fragment(
+    source, results: list[dict[str, Any]], *, skip: int, nonce: str | None,
+    main_results: list[dict[str, Any]] | None = None,
+) -> str:
+    # Exact UI identities already in the main bucket must not duplicate DOM IDs.
+    # Keep backend fuzzy matching and search/pagination semantics unchanged.
+    main_ids = {job_identity(source.source_id, row) for row in (main_results or [])}
+    results = [
+        row for row in results
+        if (identity := job_identity(source.source_id, row)) is None or identity not in main_ids
+    ]
     if not results or source.render_cards_fragment is None:
         return ""
     cards_html = source.render_cards_fragment(results, skip=skip, nonce=nonce)
@@ -1105,6 +1117,7 @@ def _render_other_results_fragment(source, results: list[dict[str, Any]], *, ski
         'match your search terms</summary>'
         f'<div style="margin-top:12px;">{cards_html}</div>'
         '</details>'
+        '<script>if(window.jstRegisterCards){jstRegisterCards(document);}</script>'
     )
 
 
@@ -1920,7 +1933,7 @@ def handle_source_search_more(req, config, responder, source_id):
     nonce = create_select_nonce()
     display_skip = skip + (take * pages_advanced)
     cards_html = source.render_cards_fragment(results, skip=display_skip, nonce=nonce)
-    other_results_html = _render_other_results_fragment(source, other_results, skip=display_skip + len(results), nonce=nonce)
+    other_results_html = _render_other_results_fragment(source, other_results, skip=display_skip + len(results), nonce=nonce, main_results=results)
     has_more = take > 0 and any_full_page
     next_params = {
         str(k): str(v) for k, v in search_values.items()
@@ -2953,15 +2966,20 @@ def _render_search_jobs_tab(
     # title didn't closely match the search query's role-family terms.
     # Never dropped outright — reuses the source's own render_cards_fragment
     # (already used for AJAX "Show more") instead of a second card renderer.
-    # IDs are offset past the main list's so they never collide in the DOM.
+    # Exact identities in the main bucket are omitted from this display bucket.
     other_results_html = ""
     if active_search_source and reed_other_results:
         for source in sources:
             if source.source_id == active_search_source and source.render_cards_fragment:
                 other_results_html = _render_other_results_fragment(
-                    source, reed_other_results, skip=len(reed_results or []), nonce=reed_select_nonce
+                    source, reed_other_results, skip=len(reed_results or []), nonce=reed_select_nonce, main_results=reed_results
                 )
                 break
+
+    if other_results_html and not reed_results:
+        # Empty main buckets do not emit the source's selection scaffolding.
+        # Supply it before Other markup; its trailing script registers those cards.
+        source_results_html += ACTION_BAR + STAGING_OVERLAY + multiselect_script()
 
     # Not-interested note: explains short (or fully empty) pages caused by the
     # server-side hide filter, so a filtered page never looks broken.

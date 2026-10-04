@@ -21,7 +21,43 @@ existing source renderers emit them without any changes.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from html import escape
+
+
+def job_identity(source: str, result: dict) -> str | None:
+    """Safe stable UI key: canonical source + provider id, otherwise source + URL.
+
+    Display metadata, pagination offsets and request nonces are not identity.
+    This is exact UI identity only; backend fuzzy deduplication is unchanged.
+    """
+    raw_id = result.get("source_job_id")
+    job_id = str(raw_id if raw_id is not None else "").strip()
+    url = str(result.get("url") or "").strip()
+    if not job_id and not url:
+        return None
+    key = [source, "id" if job_id else "url", job_id or url]
+    return "jrc-" + hashlib.sha256(json.dumps(key, ensure_ascii=False).encode()).hexdigest()
+
+
+def identity_cards(source: str, results: list[dict]):
+    """One card per exact identity, in first-seen order with latest fields.
+
+    Anonymous rows remain visible but cannot enter selection. Their display IDs
+    use a separate namespace and an occurrence index, never a shortlist key.
+    """
+    cards = {}
+    for i, result in enumerate(results):
+        identity = job_identity(source, result)
+        display_id = identity or (
+            "jrd-" + hashlib.sha256(json.dumps([source, result], sort_keys=True, default=str).encode()).hexdigest()
+            + "-" + str(i)
+        )
+        cards[display_id] = (result, identity is not None)
+    for card_id, (result, identified) in cards.items():
+        yield card_id, result, identified
+
 
 _HIDDEN_OVERLAY = (
     '<div id="jst-hidden-overlay" style="display:none;position:fixed;inset:0;z-index:210;'
@@ -129,11 +165,11 @@ MULTISELECT_JS = (
     'var _sel=window._jst_sel,_jobs=window._jst_jobs;'
     'function _reg(c){'
     'var id=c.dataset.jstId;if(!id)return;'
-    'if(!_jobs[id]){'
     '_jobs[id]={title:c.dataset.jstTitle,company:c.dataset.jstCompany,'
     'salary:c.dataset.jstSalary,location:c.dataset.jstLocation,formId:c.dataset.jstForm,'
     'source:c.dataset.jstSource||"",sjid:c.dataset.jstSjid||""};'
-    '}'
+    'var f=document.getElementById(c.dataset.jstForm);'
+    'if(f){var fields={};new FormData(f).forEach(function(v,k){fields[k]=v;});_jobs[id].fields=fields;}'
     'if(!c.querySelector(".jst-x")){'
     'c.style.position="relative";'
     'var xb=document.createElement("button");'

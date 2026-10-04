@@ -139,7 +139,7 @@ def test_two_keywords_one_location_merge_into_one_deduped_list(tmp_path: Path, m
     assert calls == ["Business Analyst", "Data Analyst"]
     # Merged + deduped: exactly 2 distinct cards (job 1 shown once, job 2 once).
     import re
-    assert len(re.findall(r'\sid="jrc-\d+"', body)) == 2
+    assert len(re.findall(r'<div class="jst-rc"', body)) == 2
     assert "reed.example/jobs/1" in body
     assert "reed.example/jobs/2" in body
 
