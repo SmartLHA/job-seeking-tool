@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
 
-from src.job_sources._multiselect import ACTION_BAR, STAGING_OVERLAY, job_identity, multiselect_script
+from src.job_sources._multiselect import ACTION_BAR, STAGING_OVERLAY, job_identity, multiselect_script, more_button_html
 
 from src.ui_state import (
     _MAX_CV_SIZE_BYTES,
@@ -1038,8 +1038,8 @@ def _run_multi_keyword_search(source, search_values: dict, keyword_terms: list[s
 
     Returns (merged_results, any_page_full, sub_errors, next_offsets):
     - `any_page_full` is True if ANY keyword's sub-search returned a full
-      page (>= take), used instead of a raw merged count to decide whether
-      a "Show more" page is offered.
+      page (>= take), used to bound hidden-page lookahead. Retryable
+      next_offsets, including failed searches, determine pagination.
     - `sub_errors` collects per-keyword failures without aborting the other
       keyword searches (partial failure never blanks out the whole page)."""
     take_key, skip_key = _take_skip_param_keys(search_values)
@@ -1053,7 +1053,7 @@ def _run_multi_keyword_search(source, search_values: dict, keyword_terms: list[s
     sub_errors: list[str] = []
     next_offsets: list[int | None] = []
     for index, term in enumerate(terms):
-        offset = offsets[index] if offsets is not None else None
+        offset = offsets[index] if offsets is not None else int(search_values.get(skip_key, "0") or "0")
         if offset is None and offsets is not None:
             next_offsets.append(None)
             continue
@@ -1177,7 +1177,7 @@ def handle_source_search(req, config, responder, source_id):
     try:
         results, _any_full_page, _kw_sub_errors, _next_offsets = _run_multi_keyword_search(source, search_values, keyword_terms)
         if _kw_sub_errors:
-            if not results:
+            if not results and len(_kw_sub_errors) == len(keyword_terms or [""]):
                 error = f"{source.display_name} search failed: {'; '.join(_kw_sub_errors)}. Manual fallback is still available."
             else:
                 search_values["_partial_error_count"] = str(len(_kw_sub_errors))
@@ -1245,11 +1245,10 @@ def handle_source_search(req, config, responder, source_id):
         _take = int(search_values.get(take_key, "10") or "10")
     except (TypeError, ValueError):
         _take = 10
-    # Slice D: with multiple keyword sub-searches merged together, the merged
-    # raw count no longer reliably signals "there's another page" (many
-    # keywords each returning a partial page could still sum past `_take`) —
-    # use _any_full_page (did ANY sub-search return a full page) instead.
-    if not error and _take > 0 and _any_full_page:
+    # Offer another page for any pending per-term cursor, including failures.
+    # Successful short/empty pages exhaust only their own term; a failed first
+    # page remains at its requested offset instead of being encoded as exhausted.
+    if not error and _take > 0 and any(offset is not None for offset in _next_offsets):
         try:
             _cur_skip = int(search_values.get(skip_key, "0") or "0")
         except (TypeError, ValueError):
@@ -1932,7 +1931,7 @@ def handle_source_search_more(req, config, responder, source_id):
         except Exception as exc:
             responder.send_json({"ok": False, "error": str(exc)})
             return
-        if kw_sub_errors and not raw_results:
+        if kw_sub_errors and not raw_results and len(kw_sub_errors) == sum(offset is not None for offset in current_offsets):
             responder.send_json({"ok": False, "error": "; ".join(kw_sub_errors)})
             return
         raw_count += len(raw_results)
@@ -1941,6 +1940,7 @@ def handle_source_search_more(req, config, responder, source_id):
         if (
             results
             or other_results
+            or bool(kw_sub_errors)
             or not any_full_page
             or not page_hidden_or_excluded_count
             or pages_advanced >= _MAX_HIDDEN_PAGE_LOOKAHEAD
@@ -1952,7 +1952,7 @@ def handle_source_search_more(req, config, responder, source_id):
     display_skip = skip + (take * pages_advanced)
     cards_html = source.render_cards_fragment(results, skip=display_skip, nonce=nonce)
     other_results_html = _render_other_results_fragment(source, other_results, skip=display_skip + len(results), nonce=nonce, main_results=results)
-    has_more = take > 0 and any_full_page
+    has_more = take > 0 and any(offset is not None for offset in next_offsets)
     next_params = {
         str(k): str(v) for k, v in search_values.items()
         if not str(k).startswith("_") and k != skip_key
@@ -2994,9 +2994,12 @@ def _render_search_jobs_tab(
                 )
                 break
 
-    if other_results_html and not reed_results:
-        # Empty main buckets do not emit the source's selection scaffolding.
-        # Supply it before Other markup; its trailing script registers those cards.
+    retry_url = (search_values or {}).get("_more_url")
+    if not reed_results and (other_results_html or retry_url):
+        # Empty source renderers omit paging/scaffolding. Failed terms still need
+        # a working retry button and insertion target, even with no visible jobs.
+        if retry_url:
+            source_results_html += '<div id="jst-cards-container">' + more_button_html(retry_url) + '</div>'
         source_results_html += ACTION_BAR + STAGING_OVERLAY + multiselect_script()
 
     # Not-interested note: explains short (or fully empty) pages caused by the
