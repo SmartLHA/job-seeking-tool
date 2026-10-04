@@ -6,6 +6,7 @@ and job posting data.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -406,35 +407,61 @@ def cover_letter_dir(base_dir: str | Path | None = None) -> Path:
     return (Path(base_dir) if base_dir is not None else Path("output")) / "cover_letters"
 
 
-def _validated_cover_letter_id(job_id: str) -> str:
-    if not isinstance(job_id, str):
-        raise ValueError("invalid job_id")
-    normalized_job_id = job_id.strip()
-    if not _SAFE_JOB_ID.match(normalized_job_id) or normalized_job_id in (".", ".."):
-        raise ValueError("invalid job_id")
-    return normalized_job_id
+def _validated_cover_letter_id(value: str, label: str = "job_id") -> str:
+    if (not isinstance(value, str) or not 1 <= len(value) <= 128
+            or not _SAFE_JOB_ID.fullmatch(value) or value in (".", "..")):
+        raise ValueError(f"invalid {label}")
+    return value
+
+
+def _reject_letter_symlinks(path: Path) -> None:
+    current = Path(path.absolute().anchor)
+    for part in path.absolute().parts[1:]:
+        current /= part
+        if current.is_symlink():
+            raise ValueError("cover letter path contains a symbolic link")
+
+
+def _cover_letter_path(job_id: str, profile_id: str, base_dir: str | Path | None) -> Path:
+    job_id = _validated_cover_letter_id(job_id)
+    profile_id = _validated_cover_letter_id(profile_id, "profile_id")
+    base = cover_letter_dir(base_dir)
+    path = base / profile_id / f"{job_id}.txt"
+    _reject_letter_symlinks(path)
+    if path.resolve().parent != (base.resolve() / profile_id):
+        raise ValueError("cover letter path escapes profile directory")
+    return path
 
 
 def save_cover_letter(
     job_id: str, letter: str, profile_id: str, base_dir: str | Path | None = None,
 ) -> Path:
-    """Save a cover letter to output/cover_letters/<job_id>.txt and return the path."""
-    normalized_job_id = _validated_cover_letter_id(job_id)
-    output_dir = cover_letter_dir(base_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"{normalized_job_id}.txt"
-    path.write_text(letter, encoding="utf-8")
+    """Save plain content under cover_letters/<profile_id>/<job_id>.txt.
+
+    Legacy job-only files are neither read nor modified.
+    """
+    path = _cover_letter_path(job_id, profile_id, base_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _reject_letter_symlinks(path)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        stream.write(letter)
     return path
 
 
-def load_cover_letter(job_id: str, base_dir: str | Path | None = None) -> str | None:
-    """Return the saved cover letter text for a job, or None if none was saved.
+def load_cover_letter(
+    job_id: str, base_dir: str | Path | None = None, *, profile_id: str | None = None,
+) -> str | None:
+    """Load only the requested profile/job letter; missing identity fails closed.
 
     Raises ``ValueError`` on a malformed job_id before any filesystem access.
     """
-    normalized_job_id = _validated_cover_letter_id(job_id)
-    base = cover_letter_dir(base_dir).resolve()
-    path = (base / f"{normalized_job_id}.txt").resolve()
-    if path.parent != base or not path.is_file():
+    _validated_cover_letter_id(job_id)
+    if profile_id is None or profile_id == "":
         return None
-    return path.read_text(encoding="utf-8")
+    path = _cover_letter_path(job_id, profile_id, base_dir)
+    if not path.is_file():
+        return None
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, "r", encoding="utf-8") as stream:
+        return stream.read()

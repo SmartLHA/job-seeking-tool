@@ -187,11 +187,14 @@ def build_package(
         else:
             missing[ENTRY_CV] = why
 
-    letter = load_cover_letter(job_id, cover_letter_base)
+    try:
+        letter = load_cover_letter(job_id, cover_letter_base, profile_id=profile_id)
+    except (ValueError, OSError, UnicodeError):
+        letter = None
     if letter and letter.strip():
         parts[ENTRY_COVER] = letter if letter.endswith("\n") else letter + "\n"
     else:
-        missing[ENTRY_COVER] = "not generated yet"
+        missing[ENTRY_COVER] = "not generated for this profile, or unavailable"
 
     try:
         analysis = load_job_analysis(job_id, state_root)

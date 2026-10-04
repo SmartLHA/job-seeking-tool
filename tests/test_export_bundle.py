@@ -122,7 +122,7 @@ def test_cv_only_lists_missing_parts(env):
     assert zf.namelist() == ["README.txt", "cv.md", "job.json"]
     assert set(manifest["missing"]) == {"cover_letter.txt", "analysis.md"}
     readme = zf.read("README.txt").decode()
-    assert "cover_letter.txt: not generated yet" in readme
+    assert "cover_letter.txt: not generated for this profile, or unavailable" in readme
     assert "analysis.md: job has not been evaluated yet" in readme
 
 
@@ -192,11 +192,11 @@ def test_cover_letter_round_trip_from_tmp_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     assert load_cover_letter("job-1") is None
     p = save_cover_letter("job-1", LETTER, "cand-1")
-    assert p == cover_letter_dir() / "job-1.txt" and (tmp_path / "output" / "cover_letters" / "job-1.txt").exists()
-    assert load_cover_letter("job-1") == LETTER
+    assert p == cover_letter_dir() / "cand-1" / "job-1.txt" and p.exists()
+    assert load_cover_letter("job-1", profile_id="cand-1") == LETTER
     other = tmp_path / "elsewhere"
     save_cover_letter("job-2", "B", "c", base_dir=other)
-    assert load_cover_letter("job-2", other) == "B" and load_cover_letter("job-2") is None
+    assert load_cover_letter("job-2", other, profile_id="c") == "B" and load_cover_letter("job-2", profile_id="c") is None
 
 
 @pytest.mark.parametrize("bad", ["../x", "a/b", "", ".."])
@@ -371,3 +371,44 @@ def test_market_snapshot_and_adzuna_wording_excluded_from_zip(env):
 
     job_json = json.loads(zf.read("job.json"))
     assert "market_snapshot" not in job_json and "market_adjustment" not in job_json
+
+
+def test_export_letters_match_active_profile_and_preserve_legacy(env):
+    from types import SimpleNamespace
+    root = cover_letter_dir(env['out'])
+    root.mkdir(parents=True)
+    legacy = root / 'job-1.txt'
+    old_bytes = b'Legacy unowned letter\xff'
+    legacy.write_bytes(old_bytes)
+    # A legacy file is never sufficient, even with an active profile.
+    data, manifest = _build(env)
+    assert 'cover_letter.txt' not in _open(data).namelist()
+    assert 'cover_letter.txt' in manifest['missing']
+    save_cover_letter('job-1', 'Profile A letter', 'cand-1', env['out'])
+    b_profile = SimpleNamespace(candidate_id='cand-2')
+    data, manifest = _build(env, profile=b_profile)
+    assert 'cover_letter.txt' not in _open(data).namelist()
+    assert 'cover_letter.txt' in manifest['missing']
+    save_cover_letter('job-1', 'Profile B letter', 'cand-2', env['out'])
+    for profile, expected in [(_Profile, 'Profile A letter\n'), (b_profile, 'Profile B letter\n')]:
+        data, manifest = _build(env, profile=profile)
+        assert _open(data).read('cover_letter.txt').decode() == expected
+        assert 'cover_letter.txt' not in manifest['missing']
+    for profile in [None, SimpleNamespace(candidate_id=''), SimpleNamespace(candidate_id='../cand-1')]:
+        data, manifest = _build(env, profile=profile)
+        assert 'cover_letter.txt' not in _open(data).namelist()
+        assert 'cover_letter.txt' in manifest['missing']
+    assert legacy.read_bytes() == old_bytes
+
+
+def test_export_rejects_symlinked_letter_without_reading_or_changing_target(env):
+    root = cover_letter_dir(env['out']) / 'cand-1'
+    root.mkdir(parents=True)
+    target = env['tmp'] / 'synthetic-other-letter.txt'
+    old_bytes = b'Synthetic other-profile letter'
+    target.write_bytes(old_bytes)
+    (root / 'job-1.txt').symlink_to(target)
+    data, manifest = _build(env)
+    assert 'cover_letter.txt' not in _open(data).namelist()
+    assert 'cover_letter.txt' in manifest['missing']
+    assert old_bytes not in data and target.read_bytes() == old_bytes
