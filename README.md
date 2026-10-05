@@ -49,13 +49,29 @@ Open `http://127.0.0.1:9000`.
 
 Required source credentials are read from the environment. Reed needs `REED_API_KEY`; Adzuna needs `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`; optional Gemini functions need `GOOGLE_API_KEY`. (`requests` and `python-dotenv` must be installed for the Python that runs the app — see `requirements-dev.txt`.)
 
+Local CV uploads extract text and suggest skills locally by default. The unchecked
+cloud option explicitly permits sending up to 12,000 characters of CV text to
+Gemini; other optional Gemini actions retain their own disclosures. Extracted
+text is stored as `docs/master_cv.txt` within the selected profile. New saves
+update the reference; existing legacy references and files are retained.
+
+All UI requests require one valid loopback Host at the bound port. POST clients
+must supply a matching Origin or Referer; headerless POST clients are rejected.
+AI explanation is POST-only (GET returns 405 with `Allow: POST`). Search selections
+have stable source/job identities and a maximum of 20; partial evaluation keeps
+failed or changed selections for retry and links to successful results.
+Cover letters are stored per profile and job; export includes only the active
+profile's matching letter, with no legacy fallback.
+
+For repair scope and verification limits, see the [audit remediation record](docs/tasks/audit-remediation-2026-10-04.md).
+
 ## Route summary
 
 | Area | Routes |
 |---|---|
 | Search | `GET /search/{source}`, `GET /search/{source}/more`, `POST /select/{source}`, `GET /sources` |
 | Not-interested triage | `POST /jobs/not-interested` (hide), `POST /jobs/not-interested/undo` (undo/unhide), `GET /jobs/not-interested` (hidden list) |
-| Review/evaluate | `POST /prefill`, `POST /job-submit`, `POST /evaluate`, `GET /job/<id>`, `GET /job/<id>/explain`, `GET /job/<id>/evaluate-form`, `GET /review-queue`, `POST /jobs/batch-evaluate` |
+| Review/evaluate | `POST /prefill`, `POST /job-submit`, `POST /evaluate`, `GET /job/<id>`, `POST /job/<id>/explain`, `GET /job/<id>/evaluate-form`, `GET /review-queue`, `POST /jobs/batch-evaluate` |
 | Job actions | `POST /job/<id>/decision`, `POST /job/<id>/add-gap-skills`, `POST /job/<id>/ai-review-cv`, `POST /job/<id>/ats-recheck`, `POST /tailor`, `POST /cover-letter`, `POST /job/<id>/qualitative-assess` |
 | Batch qualitative assessment | `POST /jobs/batch-assess`, `GET /batch/<batch_id>`, `POST /batch/<batch_id>/cancel` |
 | Board/outcomes | `GET /jobs`, `GET /board`, `GET /board/view`, `POST /jobs/save`, `POST /outcome` |

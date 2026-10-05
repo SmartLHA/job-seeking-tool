@@ -1,6 +1,10 @@
 # Search Triage — Not-Interested Hide/Unhide + Page-Replace Pagination Design
 
 <!-- STATUS -->
+> **2026-10-04 repair status: ⚠️ Implemented; independent verification partial/pending.** Stable source/job selection identity, indexed partial batch retry and maximum 20 selections; page replacement retains selected fields.
+> **Repair functions:** `job_identity`, `jstLoadMore`, `jstEvaluateAll`, `handle_batch_evaluate`. **Routes:** `GET /search/{source}/more`, `POST /jobs/batch-evaluate`.
+> **Verification:** Producer synthetic checks are recorded in [the audit evidence](audit-remediation-2026-10-04.md); live provider/browser/real-data behavior is not certified. Issue 16 remains pending.
+
 > **Implementation status:** ✅ Implemented 2026-07-02
 > **Divergences from spec:** none — this spec was written retrospectively from the approved design-council plan and matches the shipped code.
 > **Key functions:** `job_hunt_not_interested.py` (`hide_jobs`, `unhide_jobs`, `list_hidden`, `count_hidden`, `filter_results`, `make_key`, `make_fingerprint`); `ui_handlers` (`handle_jobs_hide`, `handle_jobs_unhide`, `handle_jobs_hidden_list`); `_multiselect.py` (`jstHide`, `jstUndoHide`, `jstHideUnticked`, `jstShowHidden`, `jstLoadMore`, `hide_attrs`)

@@ -1,6 +1,10 @@
 # Plan — Search / Score / Filter improvements (2026-07-21)
 
 <!-- STATUS -->
+> **2026-10-04 repair status: ⚠️ Implemented; independent verification partial/pending.** Initial/More share per-term normalized ordered queries and cursor vectors; failed terms retain their requested cursor for retry, including beside short/empty successful terms.
+> **Repair functions:** `_prepare_keyword_search`, `_run_multi_keyword_search`, `handle_source_search_more`. **Routes:** `GET /search/{source}`, `GET /search/{source}/more`.
+> **Verification:** Producer synthetic checks are recorded in [the audit evidence](audit-remediation-2026-10-04.md); live provider/browser/real-data behavior is not certified. Issue 16 remains pending.
+
 **Implementation status: ✅ Implemented and pagination-complete 2026-08-10.**
 All four slices are built; later-page relevance bucketing and independent
 multi-keyword cursor continuation close the former pagination follow-ups.

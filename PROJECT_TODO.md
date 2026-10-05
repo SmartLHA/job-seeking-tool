@@ -5,7 +5,14 @@
 
 ---
 
-**Last updated:** 2026-09-20 — audit fixes F1-F4 (see "Audit fixes 2026-09-20" below). Prior: 2026-07-29 — SSF-F3 complete: the real-browser test covers keyword chip add (Enter/comma), remove, and Backspace synchronisation.
+**Last updated:** 2026-10-04 — audit fixes F1-F4 (see "Audit fixes 2026-09-20" below). Prior: 2026-07-29 — SSF-F3 complete: the real-browser test covers keyword chip add (Enter/comma), remove, and Backspace synchronisation.
+
+## Audit repairs — implementation and remaining verification
+
+- **Implemented:** Issues 1–15 in [the repair record](docs/tasks/audit-remediation-2026-10-04.md); commits `70c53da` through `c998753`. This records implementation, not a blanket independently verified completion claim.
+- **⬜ Pending:** Issue 16 scheduler/background-work decision. Do not infer a new startup or provider policy from the completed repairs.
+- **⬜ Pending:** Fresh read-only independent verification of the remaining repair chunks and documentation. The Issues 1–2 checkpoint independently exercised mocks/simulations only; real persistence/HTTP, concurrent races, live provider behavior and browser integration remain unverified.
+- **Limits retained:** Process-local profile locks do not protect multiple processes or explicit stale-form values; JSON and CV writes are separate. Cancellation prevents subsequent calls but cannot recall an in-flight call. Existing user TODOs below remain unchanged.
 
 ## Audit fixes — 2026-09-20
 

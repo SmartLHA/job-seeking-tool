@@ -1,3 +1,12 @@
+## 2026-10-04
+
+### Audit repair contracts and documentation refresh
+- **Status:** ⚠️ Issues 1–15 implemented in repair commits `70c53da` through `c998753`; independent verification is partial. Issue 16 remains an undecided scheduler-policy task.
+- **Motivation:** Make local request, profile/document and search/retry boundaries explicit and testable.
+- **Changes:** Local UI validates Host before dispatch and requires matching POST Origin/Referer; explanation uses POST. Viewer binds loopback and serves a fixed public allowlist. CV skill suggestions are local unless cloud consent is explicit; extracted text uses `.txt`. Profile JSON saves are atomic and process-local canonical locks cover load/merge/save. Letters are scoped by profile/job and ZIP export fails closed on missing or legacy letters. Cancellation prevents later claims/retries/provider calls, without undoing an in-flight call. Stable selection identities, normalized term vectors and indexed batch acknowledgements preserve failed/updated payloads for retry; selections are capped at 20. Extraction dependencies are declared.
+- **Evidence:** [Repair record](docs/tasks/audit-remediation-2026-10-04.md) ties tests to the immutable chunks. Producer synthetic checks include Issue 10: 227 passed/4 skipped; Issue 12: 35 passed; Issue 14: 58 passed/1 skipped plus 6 Node tests; Issue 15: 79 passed with real synthetic PDF/DOCX extraction using pypdf 6.19.0/python-docx 1.2.0. These are not live-service or fresh independent integration results.
+- **Independent limits:** The Issues 1–2 checkpoint ran 13 checker entries and simulated serving checks (22 public files, 3 aliases, 19 rejections, 2 simulated symlinks); reevaluation tests were inspected rather than independently executed. Real persistent filesystem/HTTP behavior, races, external providers and browser behavior remain unverified. Profile locking is process-local; CV text plus JSON is not one transaction. Cancellation cannot undo a provider call already in flight. No services/providers were started by this documentation refresh.
+
 ## 2026-08-10
 
 ### Outcome recovery, hidden-result paging, and test reliability
