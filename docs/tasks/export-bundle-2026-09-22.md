@@ -11,9 +11,11 @@ Mike approved building (2026-09-22, "do 2-4"). Origin: PROJECT_CONTEXT.md ~143 (
 ## Verified facts
 - Tailored CV: `save_tailored_cv` writes output/tailored_cvs/{job_id}.md (first line header `<!-- profile_id: X -->`); AI-reviewed CV is {job_id}_ai_reviewed.md; `load_latest_tailored_cv(job_id, *, expected_profile_id=None, policy)` (src/job_hunt_tailoring.py ~40-85) prefers the AI-reviewed file, strips the header, returns None if none, raises EmptyTailoredCVError / ValueError (bad id); has allow-list regex `^[A-Za-z0-9._-]+$` (~:27) and a resolved-parent check.
 - Cover letter: `save_cover_letter(job_id, letter, profile_id)` stores plain text at `output/cover_letters/{profile_id}/{job_id}.txt`; `load_cover_letter(job_id, base_dir=None, *, profile_id=None)` requires the matching profile and safely returns missing for legacy/unmatched letters.
-- State loaders validate job IDs and contained paths. `job_hunt_export.render_analysis_md` produces package analysis markdown; `UIResponder.send_bytes` serves the ZIP. Export loads profile-specific components and reports missing ones.
+- `job_hunt_export.render_analysis_md` produces package analysis markdown; `UIResponder.send_bytes` serves the ZIP. Export loads profile-specific components and reports missing ones.
 - Setup uses `requirements-dev.txt`, including pypdf and python-docx for CV text extraction. ZIP export packages existing markdown/text components; it does not create PDF/DOCX application documents.
 - output/tailored_cvs, output/cover_letters, data/state/raw_inputs are gitignored and personal.
+
+State-loader ID/path validation is outside the permitted repair range and remains **UNVERIFIED** in this review; independent runtime enforcement is not established.
 
 ## Smallest useful flow
 On the job detail page add a "Download package" button (near Tailor/AI-review/Cover letter, ui_render.py ~1460-1480) linking to `GET /job/{id}/export.zip`. The zip (stdlib zipfile, in memory) contains fixed entry names only:
