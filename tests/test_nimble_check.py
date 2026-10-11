@@ -545,14 +545,16 @@ def test_join_labels_to_results_by_job_id(tmp_path):
 # ---------------------------------------------------------------------------
 # Counting, "not tested" rule, harmful cases, report
 # ---------------------------------------------------------------------------
-def _result(rf=0.1, cu=0.1, *, tokens=1000, status="ok", digest="dig-aaaaaaaaaaaa", error=None):
+def _result(rf=0.1, cu=0.1, *, tokens=1000, questions=7, status="ok", digest="dig-aaaaaaaaaaaa", error=None):
+    """`tokens` is usage.input_tokens, a SUM over the `questions` per-question prompts."""
     if status != "ok":
         return {"job_id": "x", "status": status, "error": error or "boom", "model_digest": digest}
     return {
         "job_id": "x", "status": "ok", "error": None, "rf": rf, "cu": cu,
         "scores_1to5": {"seniority_fit": 3.0, "culture_signals": 2.5, "red_flags": 4.25, "role_archetype_alignment": 1.0},
-        "tier": "unknown_caution", "input_tokens": tokens, "output_tokens": 30, "latency_s": 2.5,
-        "token_flag": tokens > nc.TOKEN_WARN, "model_digest": digest,
+        "tier": "unknown_caution", "input_tokens": tokens, "questions_sent": questions,
+        "per_question_tokens": nc.per_question_tokens(tokens, questions), "output_tokens": 30, "latency_s": 2.5,
+        "token_flag": nc.per_question_tokens(tokens, questions) > nc.TOKEN_WARN, "model_digest": digest,
     }
 
 
@@ -651,14 +653,23 @@ def test_report_header_and_stub_section_is_separate():
 
 
 def test_report_per_job_table_has_recorded_fields_and_flags_big_inputs():
-    rows = [_joined("big", "n", "n", result=_result(tokens=7001)), _joined("ok", "n", "n", result=_result(tokens=7000))]
+    rows = [
+        _joined("big", "n", "n", result=_result(tokens=49_007)),   # 7 questions -> 7,001 per question
+        _joined("ok", "n", "n", result=_result(tokens=49_000)),    # 7,000 per question: not flagged
+        _joined("smoke", "n", "n", result=_result(tokens=7_626)),  # old false alarm: 1,089 per question
+    ]
     report = nc.build_report(rows, date_str="2026-10-11")
     assert "seniority_fit (1-5)" in report and "role_archetype_alignment (1-5)" in report
     assert "unknown_caution" in report and "unvalidated" in report
     big_line = next(l for l in report.splitlines() if l.startswith("| big "))
     ok_line = next(l for l in report.splitlines() if l.startswith("| ok "))
-    assert "input_tokens > 7000" in big_line and "7001" in big_line and "2.50" in big_line and "dig-aaaaaaaa" in big_line
-    assert "input_tokens > 7000" not in ok_line
+    smoke_line = next(l for l in report.splitlines() if l.startswith("| smoke "))
+    assert "per-question tokens > 7000" in big_line and "49007" in big_line and "2.50" in big_line and "dig-aaaaaaaa" in big_line
+    assert "| 7 | 49007 | 7001 |" in big_line  # questions sent, sum, per question
+    assert "per-question tokens > 7000" not in ok_line
+    assert "| 7 | 7626 | 1089 |" in smoke_line and "per-question tokens > 7000" not in smoke_line
+    assert "input_tokens (sum over N questions)" in report and "per-question tokens" in report
+    assert "sum over the per-question prompts" in report  # explanatory header line
     assert "3.00" in big_line and "2.50" in big_line and "4.25" in big_line  # 1-5 scores, 2 decimals
 
 
@@ -744,6 +755,7 @@ def test_run_checks_records_results_and_resume_skips_done_jobs(tmp_path, monkeyp
     assert (results_dir / "a.json").exists() and (results_dir / "b.json").exists()
     saved = json.loads((results_dir / "a.json").read_text())
     assert saved["scores_1to5"]["seniority_fit"] == 3.0 and saved["input_tokens"] == 1234 and saved["latency_s"] >= 0
+    assert saved["questions_sent"] == 7 and saved["per_question_tokens"] == 176
 
     again = nc.run_checks(_label_rows("a", "b"), **kw)
     assert len(calls.states) == 2  # nothing re-sent
@@ -823,12 +835,34 @@ def test_unsafe_job_id_is_not_run_and_not_written(tmp_path, monkeypatch):
         nc.result_path(results_dir, "a/b")
 
 
-def test_check_job_flags_inputs_over_7000_tokens(tmp_path, monkeypatch):
-    _install_fake_nimble(monkeypatch, lambda s: FakeResp(200, _answers(tokens=7001)))
-    rec = nc.check_job("a", "some jd", ["BA"], "d")
-    assert rec["status"] == "ok" and rec["token_flag"] is True and rec["input_tokens"] == 7001
-    _install_fake_nimble(monkeypatch, lambda s: FakeResp(200, _answers(tokens=7000)))
-    assert nc.check_job("a", "some jd", ["BA"], "d")["token_flag"] is False
+def test_per_question_tokens_divides_the_sum_and_rounds_to_int():
+    assert nc.per_question_tokens(7626, 7) == 1089  # the smoke result: 1,089.4 per question
+    assert nc.per_question_tokens(490, 2) == 245
+    assert nc.per_question_tokens(188, 1) == 188
+    assert isinstance(nc.per_question_tokens(7626, 7), int)
+    assert nc.per_question_tokens(100, 0) == 100  # never divides by zero
+
+
+@pytest.mark.parametrize(
+    "roles,total,flagged",
+    [
+        (["BA"], 49_000, False),   # 7 questions: 7,000 per question is not over the limit
+        (["BA"], 49_007, True),    # 7 questions: 7,001 per question is flagged
+        (["BA"], 7_626, False),    # the live smoke result: the sum alone must not flag
+        (["BA"], 7_001, False),    # the old rule flagged this; per question it is 1,000
+        ([], 42_000, False),       # no target_roles: 6 questions sent
+        ([], 42_006, True),
+    ],
+)
+def test_check_job_flags_only_on_tokens_per_question(monkeypatch, roles, total, flagged):
+    dims = nc.requested_dimensions(roles)
+    calls = _install_fake_nimble(monkeypatch, lambda s: FakeResp(200, _answers(tokens=total, dims=dims)))
+    rec = nc.check_job("a", "some jd", roles, "d")
+    n = 7 if roles else 6
+    assert rec["status"] == "ok" and rec["input_tokens"] == total
+    assert rec["questions_sent"] == n and rec["per_question_tokens"] == round(total / n)
+    assert rec["token_flag"] is flagged
+    assert len(calls.states) == 1
 
 
 def test_check_job_with_empty_target_roles_omits_alignment_and_parses(monkeypatch):
@@ -947,7 +981,8 @@ def test_smoke_prints_keys_tokens_latency_only_and_uses_builtin_sample(tmp_path,
     out = capsys.readouterr().out
     assert calls.states == [nc.SMOKE_JD]  # the built-in sample, not a stored job
     assert "answer keys:" in out and "posting_tier" in out and "rf" in out
-    assert "input_tokens: 777" in out and "latency_s:" in out
+    assert "input_tokens (sum over 7 questions): 777" in out
+    assert "per-question tokens: 111" in out and "latency_s:" in out
     assert "0.123456" not in out  # no answer values printed
     assert list(tmp_path.iterdir()) == []  # smoke writes nothing
 

@@ -75,7 +75,9 @@ KEEP_ALIVE = "30m"
 REQUEST_TIMEOUT_S = 300  # first call may have to load the 9B model
 TAGS_TIMEOUT_S = 10
 MAX_BODY_BYTES = 64 * 1024  # Nimble request body limit
-TOKEN_WARN = 7000  # context limit is 8,192 tokens (job text + all questions)
+# usage.input_tokens is a SUM over the per-question prompts. The 8,192-token context limit
+# applies to ONE per-question prompt, so rows are flagged on tokens per question, not the sum.
+TOKEN_WARN = 7000
 
 # Threshold for "Nimble yes" on the noul questions (P(yes) >= 0.5). Set before any live run.
 THRESHOLD = 0.5
@@ -308,6 +310,12 @@ def requested_dimensions(target_roles=None) -> tuple[str, ...]:
     """The score dimensions a request asks for (alignment needs target roles)."""
     has_roles = bool(clean_roles(target_roles))
     return tuple(d for d in DIMENSIONS if has_roles or d != "role_archetype_alignment")
+
+
+def per_question_tokens(input_tokens: int, questions_sent: int) -> int:
+    """usage.input_tokens is summed over the per-question prompts: divide by the number of
+    questions sent (rounded to an int) to get the size of one prompt."""
+    return int(round(input_tokens / max(questions_sent, 1)))
 
 
 def build_request(jd_text: str, target_roles=None) -> dict:
@@ -571,12 +579,15 @@ def check_job(job_id: str, jd_text: str | None, target_roles, digest: str) -> di
     if len(jd_text) > MAX_JD_CHARS:
         return {**base, "status": "skipped", "error": f"JD is {len(jd_text)} chars, over the {MAX_JD_CHARS} limit"}
     try:
-        data, latency = post_systemone(build_request(jd_text, target_roles))
+        request = build_request(jd_text, target_roles)
+        data, latency = post_systemone(request)
         parsed = parse_response(data, requested_dimensions(target_roles))
     except NimbleHTTPError as exc:
         return {**base, "status": "error", "error": str(exc)}
     except ShapeError as exc:
         return {**base, "status": "error", "error": f"unexpected response shape: {exc}"}
+    questions_sent = len(request["questions"])
+    per_question = per_question_tokens(parsed["input_tokens"], questions_sent)
     return {
         **base,
         "status": "ok",
@@ -586,9 +597,11 @@ def check_job(job_id: str, jd_text: str | None, target_roles, digest: str) -> di
         "scores_1to5": parsed["scores_1to5"],
         "tier": parsed["tier"],
         "input_tokens": parsed["input_tokens"],
+        "questions_sent": questions_sent,
+        "per_question_tokens": per_question,
         "output_tokens": parsed["output_tokens"],
         "latency_s": round(latency, 2),
-        "token_flag": parsed["input_tokens"] > TOKEN_WARN,
+        "token_flag": per_question > TOKEN_WARN,
     }
 
 
@@ -621,7 +634,11 @@ def run_checks(
             record = {"job_id": job_id, "status": "error", "error": "unsafe job_id; not run", "model_digest": digest}
         results[job_id] = record
         if record["status"] == "ok":
-            progress(f"[{index}/{total}] {job_id}: ok ({record['input_tokens']} tokens, {record['latency_s']}s)")
+            progress(
+                f"[{index}/{total}] {job_id}: ok ({record['input_tokens']} input tokens over "
+                f"{record['questions_sent']} questions, {record['per_question_tokens']} per question, "
+                f"{record['latency_s']}s)"
+            )
         else:
             progress(f"[{index}/{total}] {job_id}: {record['status']} - {record['error']}")
     return results
@@ -712,7 +729,8 @@ JOB_TABLE_HEADER = [
     "job_id", "title", "company", "base grade", "decision", "JD chars",
     "RF owner", "RF Nimble P(yes)", "RF Nimble", "CU owner", "CU Nimble P(yes)", "CU Nimble",
     "seniority_fit (1-5)", "culture_signals (1-5)", "red_flags (1-5)", "role_archetype_alignment (1-5)",
-    "posting tier (unvalidated)", "input_tokens", "latency (s)", "model digest", "flags",
+    "posting tier (unvalidated)", "questions sent (N)", "input_tokens (sum over N questions)",
+    "per-question tokens", "latency (s)", "model digest", "flags",
 ]
 
 
@@ -729,14 +747,16 @@ def _job_table(rows: list[dict], threshold: float) -> list[str]:
             flags.append("no result")
         elif not done:
             flags.append(f"{result.get('status')}: {result.get('error')}")
-        elif result.get("token_flag") or result.get("input_tokens", 0) > TOKEN_WARN:
-            flags.append(f"input_tokens > {TOKEN_WARN}")
+        elif result.get("per_question_tokens", 0) > TOKEN_WARN:
+            flags.append(f"per-question tokens > {TOKEN_WARN}")
         cells = [
             row["job_id"], row["title"], row["company"], row["base_grade"], row["decision"], row["jd_chars"],
             _owner_cell(row, "RF"), rf_p, rf_y, _owner_cell(row, "CU"), cu_p, cu_y,
             *[f"{scores[d]:.2f}" if d in scores else "-" for d in DIMENSIONS],
             result.get("tier", "-") if done else "-",
+            result.get("questions_sent", "-") if done else "-",
             result.get("input_tokens", "-") if done else "-",
+            result.get("per_question_tokens", "-") if done else "-",
             result.get("latency_s", "-") if done else "-",
             (result.get("model_digest") or "-")[:12] if result else "-",
             "; ".join(flags),
@@ -782,6 +802,8 @@ def build_report(rows: list[dict], *, date_str: str, notes=(), threshold: float 
         f"- Nimble yes threshold: P(yes) >= {threshold:.2f} (0.50 counts as yes)",
         f"- Jobs in labels.csv: {len(rows)} ({len(full)} full ads, {len(stubs)} stubs)",
         f"- Minimum owner yes labels for a question to be tested: {MIN_OWNER_YES}",
+        "- Tokens: `input_tokens` is a sum over the per-question prompts; the 8,192-token limit applies "
+        f"to one prompt, so a row is flagged only when per-question tokens > {TOKEN_WARN}.",
     ]
     if len(digests) > 1:
         lines.append("- WARNING: results come from more than one model digest; re-run with --force for a clean report.")
@@ -864,7 +886,8 @@ def build_report(rows: list[dict], *, date_str: str, notes=(), threshold: float 
 def cmd_smoke(args: argparse.Namespace) -> int:
     """One built-in sample ad. Prints answer keys, input tokens and latency only."""
     try:
-        data, latency = post_systemone(build_request(SMOKE_JD, SMOKE_ROLES))
+        request = build_request(SMOKE_JD, SMOKE_ROLES)
+        data, latency = post_systemone(request)
     except (OllamaUnavailable, ModelNotFound, NimbleHTTPError) as exc:
         print(f"smoke failed: {exc}", file=sys.stderr)
         return 1
@@ -875,7 +898,9 @@ def cmd_smoke(args: argparse.Namespace) -> int:
     except ShapeError as exc:
         print(f"SHAPE MISMATCH: {exc}", file=sys.stderr)
         return 3
-    print(f"input_tokens: {parsed['input_tokens']}")
+    questions_sent = len(request["questions"])
+    print(f"input_tokens (sum over {questions_sent} questions): {parsed['input_tokens']}")
+    print(f"per-question tokens: {per_question_tokens(parsed['input_tokens'], questions_sent)}")
     print(f"latency_s: {latency:.1f}")
     print("shape OK: noul, score and choice answers match the spec")
     return 0
