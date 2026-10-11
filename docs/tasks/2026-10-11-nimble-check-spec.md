@@ -1,4 +1,4 @@
-<!-- STATUS: approved 2026-10-11 (Mike: "approve the test as it stands"); build in progress -->
+<!-- STATUS: built 2026-10-11; awaiting Mike's labels (approved 2026-10-11, Mike: "approve the test as it stands") -->
 # Nimble blind check — spec (2026-10-11)
 
 ## Goal
@@ -20,7 +20,11 @@ No change to the app. No Gemini calls.
   "legend": {"0": ...}, "probabilities": {"0": ...}, "confidence"}`.
   choice -> `{"type":"choice","choice": key, "probabilities": {...}, "confidence"}`.
 - Unknown model -> HTTP 404 JSON `{"error": "model \"x\" not found, try pulling it first"}`.
-- Context limit 8,192 tokens (job text + all questions). Request body max 64 KiB.
+- Tokens: `usage.input_tokens` is the SUM over the per-question prompts. The 8,192-token
+  context limit applies to EACH per-question prompt (state + the full question set), not to
+  the sum. per_question_tokens = input_tokens / number of questions sent (rounded to an int).
+  Measured 2026-10-11: a 5,000-char JD with 1 question = 869 tokens; the smoke sample
+  (531-char JD, 7 questions) = 7,626 in total = 1,089 per question. Request body max 64 KiB.
 - Why not switch the qualitative assessment now: see the design discussion summarised in
   PROJECT_LOG.md (2026-10-11 entry).
 
@@ -60,15 +64,16 @@ Plus one PROJECT_LOG.md entry and an INDEX.md Feature Map row (docs checklist).
   suspicious) — display only, marked "unvalidated" in the report.
 - Threshold for "Nimble yes": noul >= 0.5 (constant, set before any live run).
 - Records per job: both noul values, the 4 scores (shown on the 1-5 scale = zero-based
-  level + 1, column names say so), tier, input_tokens, latency, model digest
-  (from `GET /api/tags`). Flags rows with input_tokens > 7,000.
+  level + 1, column names say so), tier, input_tokens (sum over the questions), questions
+  sent, per_question_tokens, latency, model digest (from `GET /api/tags`). Flags rows with
+  per_question_tokens > 7,000 (not the sum).
 - Resume: results cached per job under `archive/nimble-check/results/<job_id>.json`;
   a re-run skips jobs already done unless `--force`.
 - Errors: connection refused -> stop with a clear "Is Ollama running?" message;
   model not found -> stop with a clear message; other per-job HTTP errors -> recorded
   in the report as errors, run continues.
 - `run --smoke`: sends ONE built-in sample JD (not a stored job), prints answer keys,
-  input_tokens and latency only. Used to confirm the live API shape.
+  input_tokens (sum), per-question tokens and latency only. Used to confirm the live API shape.
 
 ## Report
 - Header: "Indicative - small sample", date, model digest, threshold.
