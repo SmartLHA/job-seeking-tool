@@ -347,6 +347,16 @@ def test_parse_noul_score_zero_based_to_1_5_and_choice():
     assert "rf" in out["answer_keys"] and "posting_tier" in out["answer_keys"]
 
 
+@pytest.mark.parametrize("score,expected", [(0.0, 1.0), (4.0, 5.0), (3.999, 4.999)])
+def test_parse_accepts_the_edges_of_the_valid_ranges(score, expected):
+    resp = _answers(scores={"red_flags": score}, rf=0.0, cu=1.0, tokens=0)
+    out = nc.parse_response(resp)
+    assert out["scores_1to5"]["red_flags"] == pytest.approx(expected)
+    assert out["rf"] == 0.0 and out["cu"] == 1.0 and out["input_tokens"] == 0
+    for tier in ("high_confidence", "unknown_caution", "suspicious"):
+        assert nc.parse_response(_answers(tier=tier))["tier"] == tier
+
+
 def test_parse_only_requested_dimensions():
     dims = nc.requested_dimensions([])
     out = nc.parse_response(_answers(dims=dims), dimensions=dims)
@@ -364,6 +374,21 @@ def test_parse_only_requested_dimensions():
         lambda r: r["answers"]["red_flags"].__setitem__("score", "high"),
         lambda r: r["answers"]["posting_tier"].pop("choice"),
         lambda r: r.pop("usage"),
+        # malformed values (review finding 4)
+        lambda r: r["answers"]["rf"].__setitem__("noul", -0.01),
+        lambda r: r["answers"]["cu"].__setitem__("noul", float("nan")),
+        lambda r: r["answers"]["cu"].__setitem__("noul", float("inf")),
+        lambda r: r["answers"]["red_flags"].__setitem__("score", 4.01),   # zero-based 5 levels: max 4
+        lambda r: r["answers"]["red_flags"].__setitem__("score", 5.0),
+        lambda r: r["answers"]["red_flags"].__setitem__("score", -0.01),
+        lambda r: r["answers"]["red_flags"].__setitem__("score", float("nan")),
+        lambda r: r["answers"]["seniority_fit"].__setitem__("score", float("inf")),
+        lambda r: r["answers"]["seniority_fit"].__setitem__("score", float("-inf")),
+        lambda r: r["answers"]["posting_tier"].__setitem__("choice", "very_high_confidence"),
+        lambda r: r["answers"]["posting_tier"].__setitem__("choice", ""),
+        lambda r: r["usage"].__setitem__("input_tokens", -1),
+        lambda r: r["usage"].__setitem__("input_tokens", 12.5),
+        lambda r: r["usage"].__setitem__("input_tokens", True),
     ],
 )
 def test_parse_shape_differences_raise_shape_error(mutate):
@@ -595,8 +620,38 @@ def test_count_categories_and_blank_invalid_missing_result():
     ]
     c = nc.count_question(rows, "RF")
     assert c["both"] == 1 and c["neither"] == 1 and c["owner_only"] == 1 and c["nimble_only"] == 1
-    assert c["owner_yes"] == 2 and c["nimble_yes"] == 2 and c["compared"] == 4
-    assert c["unlabelled"] == 1 and c["invalid"] == 1 and c["no_result"] == 2
+    # owner_yes counts ALL valid owner labels (both, missed, noresult); the rest use successful results only
+    assert c["owner_yes"] == 3 and c["nimble_yes"] == 2 and c["compared"] == 4
+    assert c["unlabelled"] == 1 and c["invalid"] == 1 and c["no_result"] == 2 and c["no_result_owner_yes"] == 1
+
+
+def test_owner_yes_counts_all_labels_even_when_a_nimble_request_failed():
+    failed = _result(status="error")
+    # 3 owner yes, one of them has a failed request: still tested, owner_yes stays 3
+    rows = [
+        _joined("a", "y", "n", rf_p=0.9), _joined("b", "y", "n", rf_p=0.1),
+        _joined("c", "y", "n", result=failed), _joined("d", "n", "n", rf_p=0.1),
+    ]
+    c = nc.count_question(rows, "RF")
+    assert c["owner_yes"] == 3 and c["tested"] is True
+    assert c["compared"] == 3 and c["no_result"] == 1 and c["no_result_owner_yes"] == 1
+    assert (c["both"], c["owner_only"], c["neither"], c["nimble_only"]) == (1, 1, 1, 0)
+    # 3 owner yes with Nimble fine, plus 1 extra failed job: still 3 and tested
+    rows = [_joined(x, "y", "n", rf_p=0.9) for x in "abc"] + [_joined("d", "n", "n", result=failed)]
+    c = nc.count_question(rows, "RF")
+    assert c["owner_yes"] == 3 and c["tested"] is True and c["no_result"] == 1 and c["no_result_owner_yes"] == 0
+    # a request that was never run counts the same way
+    rows = [_joined(x, "y", "n", result=None) for x in "abc"]
+    c = nc.count_question(rows, "RF")
+    assert c["owner_yes"] == 3 and c["tested"] is True and c["compared"] == 0 and c["nimble_yes"] == 0
+    # and the report says tested, with the failed jobs reported separately
+    report = nc.build_report([_joined("a", "y", "n", result=failed), _joined("b", "y", "n", rf_p=0.9),
+                              _joined("c", "y", "n", rf_p=0.9)], date_str="2026-10-11")
+    rf_section = report.split("## RF")[1].split("## CU")[0]
+    assert "Not tested" not in rf_section and "Agreement on yes/no" in rf_section
+    assert "| Owner yes (all valid labels) | 3 |" in rf_section
+    assert "| Labelled but no Nimble result (failed or not run) | 1 |" in rf_section
+    assert "|   of which owner yes | 1 |" in rf_section
 
 
 def test_not_tested_rule_fewer_than_3_owner_yes():
@@ -649,7 +704,7 @@ def test_report_header_and_stub_section_is_separate():
     assert "full-1" in per_job and "full-1" not in stub_section
     # headline counts use full ads only: one owner yes (full-1), not two
     rf_section = report.split("## RF")[1].split("## CU")[0]
-    assert "| Owner yes | 1 |" in rf_section
+    assert "| Owner yes (all valid labels) | 1 |" in rf_section
 
 
 def test_report_per_job_table_has_recorded_fields_and_flags_big_inputs():
@@ -659,7 +714,9 @@ def test_report_per_job_table_has_recorded_fields_and_flags_big_inputs():
         _joined("smoke", "n", "n", result=_result(tokens=7_626)),  # old false alarm: 1,089 per question
     ]
     report = nc.build_report(rows, date_str="2026-10-11")
-    assert "seniority_fit (1-5)" in report and "role_archetype_alignment (1-5)" in report
+    for dim in nc.DIMENSIONS:
+        assert f"{dim} (1-5, unvalidated)" in report  # the 4 score columns are marked like the tier
+    assert "unvalidated, display only" in report  # and the report says so in words
     assert "unknown_caution" in report and "unvalidated" in report
     big_line = next(l for l in report.splitlines() if l.startswith("| big "))
     ok_line = next(l for l in report.splitlines() if l.startswith("| ok "))
@@ -805,22 +862,100 @@ def test_per_job_http_error_is_recorded_and_run_continues_then_retried(tmp_path,
     assert [s[:4] for s in calls2.states] == ["JD-b"] and out2["b"]["status"] == "ok"
 
 
-def test_shape_error_missing_job_empty_and_overlong_jd_are_recorded_not_fatal(tmp_path, monkeypatch):
+def test_missing_job_empty_and_overlong_jd_are_recorded_not_fatal(tmp_path, monkeypatch):
     state = tmp_path / "state"
-    _write_job(state, "short-answer", 1500, jd="JD-shape " + "x" * 1500)
     _write_job(state, "empty", 0, jd="   ")
     _write_job(state, "huge", 0, jd="y" * (nc.MAX_JD_CHARS + 1))
     results_dir = tmp_path / "out" / "results"
-    bad = _answers()
-    bad["answers"].pop("rf")
-    calls = _install_fake_nimble(monkeypatch, lambda s: FakeResp(200, bad) if s.startswith("JD-shape") else None)
+    calls = _install_fake_nimble(monkeypatch)
     kw = dict(state_root=state, results_dir=results_dir, target_roles=["BA"], digest="d", progress=lambda m: None)
-    out = nc.run_checks(_label_rows("short-answer", "empty", "huge", "missing"), **kw)
-    assert out["short-answer"]["status"] == "error" and "unexpected response shape" in out["short-answer"]["error"]
+    out = nc.run_checks(_label_rows("empty", "huge", "missing"), **kw)
     assert out["empty"]["status"] == "error"
     assert out["huge"]["status"] == "skipped" and "14000" in out["huge"]["error"]
     assert out["missing"]["status"] == "error" and "missing" in out["missing"]["error"]
-    assert len(calls.states) == 1  # only the shape-error job was sent
+    assert calls.states == []  # none of them was sent to Nimble
+
+
+def test_shape_error_stops_the_run_and_keeps_saved_results(tmp_path, monkeypatch):
+    state = _state_with_jobs(tmp_path, ["a", "b", "c"])
+    results_dir = tmp_path / "out" / "results"
+    bad = _answers()
+    bad["answers"].pop("rf")
+    calls = _install_fake_nimble(monkeypatch, lambda s: FakeResp(200, bad) if s.startswith("JD-b") else None)
+    kw = dict(state_root=state, results_dir=results_dir, target_roles=["BA"], digest="d", progress=lambda m: None)
+    with pytest.raises(nc.ShapeError, match="job b"):
+        nc.run_checks(_label_rows("a", "b", "c"), **kw)
+    assert len(calls.states) == 2  # c was never sent
+    assert (results_dir / "a.json").exists()  # already-saved result kept
+    assert not (results_dir / "b.json").exists() and not (results_dir / "c.json").exists()  # not an error record
+    assert not list(results_dir.glob("*.tmp"))
+
+
+def test_malformed_values_also_stop_the_run(tmp_path, monkeypatch):
+    state = _state_with_jobs(tmp_path, ["a"])
+    bad = _answers(tier="not_a_tier")
+    _install_fake_nimble(monkeypatch, lambda s: FakeResp(200, bad))
+    with pytest.raises(nc.ShapeError, match="posting_tier"):
+        nc.run_checks(_label_rows("a"), state_root=state, results_dir=tmp_path / "r", target_roles=["BA"], digest="d", progress=lambda m: None)
+
+
+def test_run_command_stops_with_message_and_exit_3_on_shape_error(tmp_path, monkeypatch, capsys):
+    state, out = _export_for_run(tmp_path, ids=("reed-1", "reed-2", "reed-3"))
+    bad = _answers()
+    bad["answers"]["cu"] = {"type": "score", "score": 1.0}
+    _install_fake_nimble(monkeypatch, lambda s: FakeResp(200, bad) if s.startswith("JD-reed-2") else None)
+    args = ["run", "--state-root", str(state), "--out-dir", str(out), "--profile", str(tmp_path / "none.json")]
+    assert nc.main(args) == 3
+    err = capsys.readouterr().err
+    assert "shape differs from the spec" in err and "reed-2" in err and "already saved are kept" in err
+    assert (out / "results" / "reed-1.json").exists() and not (out / "results" / "reed-2.json").exists()
+    assert not list(out.glob("report-*.md"))
+
+
+def test_save_result_refuses_a_tmp_path_that_resolves_under_data(tmp_path, monkeypatch):
+    data = tmp_path / "data"
+    data.mkdir()
+    victim = data / "victim.txt"
+    monkeypatch.setattr(nc, "DATA_DIR", data)
+    results_dir = tmp_path / "out" / "results"  # itself outside data/
+    results_dir.mkdir(parents=True)
+    (results_dir / "a.json.tmp").symlink_to(victim)  # planted: <job_id>.json.tmp -> under data/
+    with pytest.raises(ValueError, match="under data"):
+        nc.save_result(results_dir, {"job_id": "a", "status": "ok"})
+    assert not victim.exists()  # nothing was written through the symlink
+    assert not (results_dir / "a.json").exists()
+
+
+def test_save_result_refuses_a_final_path_that_resolves_under_data(tmp_path, monkeypatch):
+    data = tmp_path / "data"
+    data.mkdir()
+    monkeypatch.setattr(nc, "DATA_DIR", data)
+    results_dir = tmp_path / "out" / "results"
+    results_dir.mkdir(parents=True)
+    (results_dir / "a.json").symlink_to(data / "victim.json")
+    with pytest.raises(ValueError, match="under data"):
+        nc.save_result(results_dir, {"job_id": "a", "status": "ok"})
+    assert not (data / "victim.json").exists() and not (results_dir / "a.json.tmp").exists()
+
+
+def test_save_result_normal_write_leaves_no_tmp_file(tmp_path):
+    results_dir = tmp_path / "out" / "results"
+    nc.save_result(results_dir, {"job_id": "a", "status": "ok"})
+    assert json.loads((results_dir / "a.json").read_text())["status"] == "ok"
+    assert [p.name for p in results_dir.iterdir()] == ["a.json"]
+
+
+def test_run_command_reports_write_guard_refusal_as_exit_2(tmp_path, monkeypatch, capsys):
+    state, out = _export_for_run(tmp_path, ids=("reed-1",))
+    _install_fake_nimble(monkeypatch)
+    monkeypatch.setattr(nc, "DATA_DIR", tmp_path / "data")
+    (out / "results").mkdir()
+    (tmp_path / "data").mkdir()
+    (out / "results" / "reed-1.json.tmp").symlink_to(tmp_path / "data" / "victim.txt")
+    args = ["run", "--state-root", str(state), "--out-dir", str(out), "--profile", str(tmp_path / "none.json")]
+    assert nc.main(args) == 2
+    assert "under data" in capsys.readouterr().err
+    assert not (tmp_path / "data" / "victim.txt").exists()
 
 
 def test_unsafe_job_id_is_not_run_and_not_written(tmp_path, monkeypatch):

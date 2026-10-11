@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import os
 import re
 import sys
@@ -102,6 +103,9 @@ TIER_CRITERIA = {
     "unknown_caution": "There is not enough information to tell whether the posting is genuine.",
     "suspicious": "The posting shows signs of being fake, misleading or low quality.",
 }
+
+# Score questions have 5 levels; Nimble's score is the expected value over ZERO-BASED levels (0-4).
+SCORE_LEVEL_COUNT = 5
 
 # Report rules.
 MIN_OWNER_YES = 3  # a question with fewer owner "yes" labels is reported "not tested"
@@ -364,23 +368,27 @@ def parse_response(resp: dict, dimensions=DIMENSIONS) -> dict:
     out: dict = {"scores_1to5": {}}
     for name in ("rf", "cu"):
         value = _num(answer(name, "noul", "noul"))
-        if value is None or not 0.0 <= value <= 1.0:
+        if value is None or not math.isfinite(value) or not 0.0 <= value <= 1.0:
             raise ShapeError(f"answer '{name}' noul value is not a number in 0-1")
         out[name] = value
     for name in dimensions:
         value = _num(answer(name, "score", "score"))
-        if value is None:
-            raise ShapeError(f"answer '{name}' score is not a number")
+        if value is None or not math.isfinite(value) or not 0.0 <= value <= SCORE_LEVEL_COUNT - 1:
+            raise ShapeError(
+                f"answer '{name}' score is not a finite number in 0-{SCORE_LEVEL_COUNT - 1} (zero-based)"
+            )
         out["scores_1to5"][name] = value + 1.0  # zero-based level -> 1-5 scale
     tier = answer("posting_tier", "choice", "choice")
-    if not isinstance(tier, str):
-        raise ShapeError("answer 'posting_tier' choice is not a string")
+    if not isinstance(tier, str) or tier not in POSTING_QUALITY_TIERS:
+        raise ShapeError(
+            f"answer 'posting_tier' choice {tier!r} is not one of {sorted(POSTING_QUALITY_TIERS)}"
+        )
     out["tier"] = tier
     usage = resp.get("usage")
     usage = usage if isinstance(usage, dict) else {}
     input_tokens = usage.get("input_tokens")
-    if isinstance(input_tokens, bool) or not isinstance(input_tokens, int):
-        raise ShapeError("response usage has no integer input_tokens")
+    if isinstance(input_tokens, bool) or not isinstance(input_tokens, int) or input_tokens < 0:
+        raise ShapeError("response usage has no non-negative integer input_tokens")
     out["input_tokens"] = input_tokens
     output_tokens = usage.get("output_tokens")
     out["output_tokens"] = output_tokens if isinstance(output_tokens, int) and not isinstance(output_tokens, bool) else None
@@ -554,8 +562,11 @@ def load_result(results_dir: Path, job_id: str) -> dict | None:
 def save_result(results_dir: Path, record: dict) -> None:
     refuse_data_path(results_dir)
     path = result_path(results_dir, record["job_id"])
-    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
+    # Guard the RESOLVED paths actually written (a planted symlink could point under data/).
+    refuse_data_path(path)
+    refuse_data_path(tmp)
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
     os.replace(tmp, path)  # a half-written file can never look like a finished result
 
@@ -566,7 +577,8 @@ def is_done(record: dict | None) -> bool:
 
 def check_job(job_id: str, jd_text: str | None, target_roles, digest: str) -> dict:
     """Ask Nimble about one job. Returns a result record (status ok / error / skipped).
-    OllamaUnavailable and ModelNotFound propagate: they stop the run."""
+    OllamaUnavailable, ModelNotFound and ShapeError propagate: they stop the run (the live
+    API no longer matches the spec, so no per-job record is written)."""
     base = {
         "job_id": job_id,
         "model_digest": digest,
@@ -584,8 +596,6 @@ def check_job(job_id: str, jd_text: str | None, target_roles, digest: str) -> di
         parsed = parse_response(data, requested_dimensions(target_roles))
     except NimbleHTTPError as exc:
         return {**base, "status": "error", "error": str(exc)}
-    except ShapeError as exc:
-        return {**base, "status": "error", "error": f"unexpected response shape: {exc}"}
     questions_sent = len(request["questions"])
     per_question = per_question_tokens(parsed["input_tokens"], questions_sent)
     return {
@@ -628,7 +638,10 @@ def run_checks(
             progress(f"[{index}/{total}] {job_id}: already done, skipped")
             continue
         if safe:
-            record = check_job(job_id, read_job_text(state_root, job_id), target_roles, digest)
+            try:
+                record = check_job(job_id, read_job_text(state_root, job_id), target_roles, digest)
+            except ShapeError as exc:
+                raise ShapeError(f"job {job_id}: {exc}") from exc
             save_result(results_dir, record)
         else:
             record = {"job_id": job_id, "status": "error", "error": "unsafe job_id; not run", "model_digest": digest}
@@ -660,11 +673,15 @@ def nimble_yes(value: float, threshold: float = THRESHOLD) -> bool:
 
 
 def count_question(rows: list[dict], question: str, threshold: float = THRESHOLD) -> dict:
-    """Counts for 'RF' or 'CU'. Only rows with a valid owner label AND a Nimble answer
-    are compared. Blank and invalid labels are counted apart, never guessed."""
+    """Counts for 'RF' or 'CU'.
+    owner_yes counts ALL valid owner labels, whether or not the Nimble request for that job
+    worked, so the "not tested" rule never depends on Nimble errors. The comparison counts
+    (nimble_yes, both, neither, owner_only, nimble_only, compared) use successful results
+    only; failed or missing ones are counted apart (no_result, no_result_owner_yes).
+    Blank and invalid labels are counted apart, never guessed."""
     key = question.lower()
     c = dict(owner_yes=0, nimble_yes=0, both=0, neither=0, owner_only=0, nimble_only=0,
-             unlabelled=0, invalid=0, no_result=0, compared=0)
+             unlabelled=0, invalid=0, no_result=0, no_result_owner_yes=0, compared=0)
     for row in rows:
         status = row[f"{question}_status"]
         if status == "blank":
@@ -673,14 +690,15 @@ def count_question(rows: list[dict], question: str, threshold: float = THRESHOLD
         if status == "invalid":
             c["invalid"] += 1
             continue
+        owner = row[f"{question}_value"] == "y"
+        c["owner_yes"] += owner
         result = row.get("result")
         if not is_done(result):
             c["no_result"] += 1
+            c["no_result_owner_yes"] += owner
             continue
-        owner = row[f"{question}_value"] == "y"
         nimble = nimble_yes(result[key], threshold)
         c["compared"] += 1
-        c["owner_yes"] += owner
         c["nimble_yes"] += nimble
         if owner and nimble:
             c["both"] += 1
@@ -728,7 +746,7 @@ def _nimble_cells(row: dict, question: str, threshold: float) -> tuple[str, str]
 JOB_TABLE_HEADER = [
     "job_id", "title", "company", "base grade", "decision", "JD chars",
     "RF owner", "RF Nimble P(yes)", "RF Nimble", "CU owner", "CU Nimble P(yes)", "CU Nimble",
-    "seniority_fit (1-5)", "culture_signals (1-5)", "red_flags (1-5)", "role_archetype_alignment (1-5)",
+    *[f"{d} (1-5, unvalidated)" for d in DIMENSIONS],
     "posting tier (unvalidated)", "questions sent (N)", "input_tokens (sum over N questions)",
     "per-question tokens", "latency (s)", "model digest", "flags",
 ]
@@ -767,15 +785,16 @@ def _job_table(rows: list[dict], threshold: float) -> list[str]:
 
 def _count_table(c: dict) -> list[str]:
     rows = [
-        ("Owner yes", c["owner_yes"]),
-        ("Nimble yes", c["nimble_yes"]),
+        ("Owner yes (all valid labels)", c["owner_yes"]),
+        ("Nimble yes (compared jobs)", c["nimble_yes"]),
         ("Both yes", c["both"]),
         ("Neither (both no)", c["neither"]),
         ("Owner yes, Nimble no", c["owner_only"]),
         ("Owner no, Nimble yes", c["nimble_only"]),
         ("Unlabelled (blank)", c["unlabelled"]),
         ("Invalid label (not counted)", c["invalid"]),
-        ("Labelled but no Nimble result", c["no_result"]),
+        ("Labelled but no Nimble result (failed or not run)", c["no_result"]),
+        ("  of which owner yes", c["no_result_owner_yes"]),
         ("Compared (valid label and Nimble answer)", c["compared"]),
     ]
     return ["| Measure | Jobs |", "|---|---|", *[f"| {name} | {value} |" for name, value in rows]]
@@ -802,6 +821,8 @@ def build_report(rows: list[dict], *, date_str: str, notes=(), threshold: float 
         f"- Nimble yes threshold: P(yes) >= {threshold:.2f} (0.50 counts as yes)",
         f"- Jobs in labels.csv: {len(rows)} ({len(full)} full ads, {len(stubs)} stubs)",
         f"- Minimum owner yes labels for a question to be tested: {MIN_OWNER_YES}",
+        "- Only the RF and CU questions are the test. The 4 dimension scores (1-5) and the posting tier "
+        "are unvalidated, display only.",
         "- Tokens: `input_tokens` is a sum over the per-question prompts; the 8,192-token limit applies "
         f"to one prompt, so a row is flagged only when per-question tokens > {TOKEN_WARN}.",
     ]
@@ -938,9 +959,20 @@ def cmd_run(args: argparse.Namespace) -> int:
             digest=digest,
             force=args.force,
         )
+    except ShapeError as exc:
+        print(
+            f"stopped: the live Nimble API shape differs from the spec ({exc}).\n"
+            "Results already saved are kept; nothing was recorded for this job. "
+            "Compare with the spec Background before running again.",
+            file=sys.stderr,
+        )
+        return 3
     except (OllamaUnavailable, ModelNotFound) as exc:
         print(f"stopped: {exc}\nFinished results are saved; run again to resume.", file=sys.stderr)
         return 1
+    except ValueError as exc:  # write guard (refuse_data_path) or unsafe path
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     today = date.today().isoformat()
     report_path = out_dir / f"report-{today}.md"
     refuse_data_path(report_path)
