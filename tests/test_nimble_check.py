@@ -228,3 +228,315 @@ def test_export_refuses_out_dir_under_data(tmp_path, monkeypatch):
     target = tmp_path / "data" / "oops"
     assert nc.main(["export", "--state-root", str(state), "--out-dir", str(target)]) == 2
     assert not target.exists()
+
+
+# ---------------------------------------------------------------------------
+# No live HTTP in pytest: any un-mocked requests call fails the test.
+# ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _no_live_http(monkeypatch):
+    def blocked(*args, **kwargs):
+        raise AssertionError("live HTTP attempted in pytest")
+
+    monkeypatch.setattr(nc.requests, "post", blocked)
+    monkeypatch.setattr(nc.requests, "get", blocked)
+
+
+class FakeResp:
+    def __init__(self, status=200, payload=None, text=""):
+        self.status_code = status
+        self._payload = payload
+        self.text = text
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("no json")
+        return self._payload
+
+
+def _answers(*, rf=0.2, cu=0.7, scores=None, tier="unknown_caution", dims=nc.DIMENSIONS, tokens=1234):
+    scores = scores or {}
+    answers = {
+        "rf": {"type": "noul", "noul": rf},
+        "cu": {"type": "noul", "noul": cu},
+        "posting_tier": {"type": "choice", "choice": tier, "probabilities": {tier: 0.9}, "confidence": 0.9},
+    }
+    for d in dims:
+        answers[d] = {"type": "score", "score": scores.get(d, 2.0), "legend": {"0": "a"}, "probabilities": {"0": 1.0}, "confidence": 0.5}
+    return {"model": nc.MODEL, "answers": answers, "usage": {"input_tokens": tokens, "output_tokens": 40}}
+
+
+# ---------------------------------------------------------------------------
+# Request building
+# ---------------------------------------------------------------------------
+def test_build_request_shape_and_frozen_questions():
+    req = nc.build_request("THE JD", ["Business Analyst", "IT Project Manager"])
+    assert req["model"] == "nimble:9b-q4_K_M"
+    assert req["state"] == "THE JD"
+    assert req["keep_alive"] == "30m"
+    q = req["questions"]
+    assert q["rf"] == {"type": "noul", "instructions": nc.RF_QUESTION}
+    assert q["cu"] == {"type": "noul", "instructions": nc.CU_QUESTION}
+    assert nc.RF_QUESTION == "Does this job ad show material red flags?"
+    assert nc.CU_QUESTION == "Does the ad's culture or working style clash with what the role requires?"
+    for name in nc.DIMENSIONS:
+        assert q[name]["type"] == "score"
+        assert len(q[name]["criteria"]) == 5
+    assert q["posting_tier"]["type"] == "choice"
+    assert set(q["posting_tier"]["criteria"]) == {"high_confidence", "unknown_caution", "suspicious"}
+    assert set(q) == {"rf", "cu", "posting_tier", *nc.DIMENSIONS}
+
+
+def test_build_request_target_roles_in_alignment_and_seniority_instructions():
+    q = nc.build_request("jd", ["Business Analyst", "  IT Project Manager  ", ""])["questions"]
+    assert "Business Analyst, IT Project Manager" in q["role_archetype_alignment"]["instructions"]
+    assert "Business Analyst, IT Project Manager" in q["seniority_fit"]["instructions"]
+    assert "target roles" not in q["red_flags"]["instructions"].lower()
+
+
+@pytest.mark.parametrize("roles", [[], None, ["", "   "], ()])
+def test_build_request_empty_target_roles_does_not_break(roles):
+    req = nc.build_request("jd text", roles)
+    assert "role_archetype_alignment" not in req["questions"]
+    assert {"rf", "cu", "seniority_fit", "culture_signals", "red_flags", "posting_tier"} <= set(req["questions"])
+    assert "Candidate target roles" not in req["questions"]["seniority_fit"]["instructions"]
+    assert nc.requested_dimensions(roles) == ("seniority_fit", "culture_signals", "red_flags")
+    json.dumps(req)  # serialisable
+
+
+def test_score_levels_use_rubric_for_1_3_5_and_between_for_2_4():
+    for name, (low, mid, high) in nc.DIMENSION_RUBRIC.items():
+        levels = nc.score_levels(name)
+        assert levels[0] == low and levels[2] == mid and levels[4] == high
+        assert levels[1].startswith("Between") and low in levels[1] and mid in levels[1]
+        assert levels[3].startswith("Between") and mid in levels[3] and high in levels[3]
+
+
+def test_rubric_wording_has_not_drifted_from_qualitative_prompt():
+    from src.job_hunt_models import CandidateProfile
+    from src.job_hunt_qualitative import DIMENSIONS, build_qualitative_prompt
+
+    assert set(nc.DIMENSION_RUBRIC) == set(DIMENSIONS)
+    prompt = build_qualitative_prompt("jd", CandidateProfile(candidate_id="c1", target_roles=["Business Analyst"]))
+    for name, (low, mid, high) in nc.DIMENSION_RUBRIC.items():
+        line = next(l for l in prompt.splitlines() if l.startswith(f"- {name}:"))
+        assert f"1 = {low}" in line and f"3 = {mid}" in line and f"5 = {high}" in line
+
+
+def test_tier_criteria_match_app_tiers():
+    from src.job_hunt_qualitative import POSTING_QUALITY_TIERS
+
+    assert set(nc.TIER_CRITERIA) == POSTING_QUALITY_TIERS
+
+
+def test_request_for_largest_allowed_ad_fits_body_limit():
+    req = nc.build_request("x" * nc.MAX_JD_CHARS, ["Business Analyst"])
+    assert len(json.dumps(req).encode()) < nc.MAX_BODY_BYTES
+
+
+# ---------------------------------------------------------------------------
+# Response parsing
+# ---------------------------------------------------------------------------
+def test_parse_noul_score_zero_based_to_1_5_and_choice():
+    resp = _answers(rf=0.4, cu=0.5, scores={"seniority_fit": 0.0, "culture_signals": 2.5, "red_flags": 4.0, "role_archetype_alignment": 3.25}, tier="suspicious", tokens=900)
+    out = nc.parse_response(resp)
+    assert out["rf"] == 0.4 and out["cu"] == 0.5
+    assert out["scores_1to5"] == {"seniority_fit": 1.0, "culture_signals": 3.5, "red_flags": 5.0, "role_archetype_alignment": 4.25}
+    assert out["tier"] == "suspicious"
+    assert out["input_tokens"] == 900 and out["output_tokens"] == 40
+    assert "rf" in out["answer_keys"] and "posting_tier" in out["answer_keys"]
+
+
+def test_parse_only_requested_dimensions():
+    dims = nc.requested_dimensions([])
+    out = nc.parse_response(_answers(dims=dims), dimensions=dims)
+    assert set(out["scores_1to5"]) == set(dims)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda r: r.pop("answers"),
+        lambda r: r["answers"].pop("rf"),
+        lambda r: r["answers"].__setitem__("cu", {"type": "score", "score": 1.0}),
+        lambda r: r["answers"]["rf"].__setitem__("noul", 1.5),
+        lambda r: r["answers"]["rf"].__setitem__("noul", True),
+        lambda r: r["answers"]["red_flags"].__setitem__("score", "high"),
+        lambda r: r["answers"]["posting_tier"].pop("choice"),
+        lambda r: r.pop("usage"),
+    ],
+)
+def test_parse_shape_differences_raise_shape_error(mutate):
+    resp = _answers()
+    mutate(resp)
+    with pytest.raises(nc.ShapeError):
+        nc.parse_response(resp)
+
+
+# ---------------------------------------------------------------------------
+# HTTP layer (requests mocked)
+# ---------------------------------------------------------------------------
+def test_post_systemone_success_returns_json_and_latency(monkeypatch):
+    seen = {}
+
+    def fake_post(url, **kwargs):
+        seen["url"], seen["kwargs"] = url, kwargs
+        return FakeResp(200, _answers())
+
+    monkeypatch.setattr(nc.requests, "post", fake_post)
+    data, latency = nc.post_systemone(nc.build_request("jd", ["BA"]))
+    assert seen["url"] == "http://127.0.0.1:11434/v1/systemone"
+    assert json.loads(seen["kwargs"]["data"])["state"] == "jd"
+    assert data["usage"]["input_tokens"] == 1234
+    assert latency >= 0
+
+
+def test_connection_refused_stops_with_is_ollama_running(monkeypatch):
+    def fake_post(url, **kwargs):
+        raise nc.requests.exceptions.ConnectionError("refused")
+
+    monkeypatch.setattr(nc.requests, "post", fake_post)
+    with pytest.raises(nc.OllamaUnavailable, match="Is Ollama running"):
+        nc.post_systemone(nc.build_request("jd"))
+
+
+def test_connect_timeout_is_treated_as_unreachable(monkeypatch):
+    def fake_post(url, **kwargs):
+        raise nc.requests.exceptions.ConnectTimeout("slow")
+
+    monkeypatch.setattr(nc.requests, "post", fake_post)
+    with pytest.raises(nc.OllamaUnavailable):
+        nc.post_systemone(nc.build_request("jd"))
+
+
+def test_model_not_found_404_stops_with_clear_message(monkeypatch):
+    err = {"error": 'model "nimble:9b-q4_K_M" not found, try pulling it first'}
+    monkeypatch.setattr(nc.requests, "post", lambda url, **kw: FakeResp(404, err))
+    with pytest.raises(nc.ModelNotFound, match="not found"):
+        nc.post_systemone(nc.build_request("jd"))
+
+
+def test_other_http_error_is_a_per_job_error_not_a_stop(monkeypatch):
+    monkeypatch.setattr(nc.requests, "post", lambda url, **kw: FakeResp(500, {"error": "boom"}))
+    with pytest.raises(nc.NimbleHTTPError, match="HTTP 500: boom"):
+        nc.post_systemone(nc.build_request("jd"))
+    # A 404 that is not about the model is also a per-job error.
+    monkeypatch.setattr(nc.requests, "post", lambda url, **kw: FakeResp(404, None, text="404 page not found"))
+    with pytest.raises(nc.NimbleHTTPError, match="HTTP 404"):
+        nc.post_systemone(nc.build_request("jd"))
+
+
+def test_read_timeout_and_bad_json_are_per_job_errors(monkeypatch):
+    def timeout_post(url, **kwargs):
+        raise nc.requests.exceptions.ReadTimeout("slow")
+
+    monkeypatch.setattr(nc.requests, "post", timeout_post)
+    with pytest.raises(nc.NimbleHTTPError, match="timed out"):
+        nc.post_systemone(nc.build_request("jd"), timeout=5)
+    monkeypatch.setattr(nc.requests, "post", lambda url, **kw: FakeResp(200, None))
+    with pytest.raises(nc.NimbleHTTPError, match="not JSON"):
+        nc.post_systemone(nc.build_request("jd"))
+
+
+def test_oversize_body_is_refused_before_any_http_call():
+    req = nc.build_request("x" * (nc.MAX_BODY_BYTES + 1))
+    with pytest.raises(nc.NimbleHTTPError, match="byte limit"):
+        nc.post_systemone(req)  # the autouse fixture would fail the test on any HTTP call
+
+
+def test_fetch_model_digest_found_missing_and_down(monkeypatch):
+    tags = {"models": [{"name": "other:1", "digest": "zzz"}, {"name": nc.MODEL, "model": nc.MODEL, "digest": "abc123"}]}
+    monkeypatch.setattr(nc.requests, "get", lambda url, **kw: FakeResp(200, tags))
+    assert nc.fetch_model_digest() == "abc123"
+    monkeypatch.setattr(nc.requests, "get", lambda url, **kw: FakeResp(200, {"models": []}))
+    with pytest.raises(nc.ModelNotFound):
+        nc.fetch_model_digest()
+
+    def down(url, **kw):
+        raise nc.requests.exceptions.ConnectionError("refused")
+
+    monkeypatch.setattr(nc.requests, "get", down)
+    with pytest.raises(nc.OllamaUnavailable, match="Is Ollama running"):
+        nc.fetch_model_digest()
+
+
+# ---------------------------------------------------------------------------
+# Label CSV parsing and joining
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("y", ("y", "ok")), ("Y", ("y", "ok")), (" yes ", ("y", "ok")), ("YES", ("y", "ok")),
+        ("n", ("n", "ok")), ("No", ("n", "ok")),
+        ("", (None, "blank")), ("   ", (None, "blank")), (None, (None, "blank")),
+        ("maybe", (None, "invalid")), ("?", (None, "invalid")), ("1", (None, "invalid")), ("yn", (None, "invalid")),
+    ],
+)
+def test_parse_label(raw, expected):
+    assert nc.parse_label(raw) == expected
+
+
+def _write_labels(path: Path, body_rows: list[list[str]], *, comment=True, bom=True, header=None) -> Path:
+    lines = []
+    if comment:
+        lines.append("# Blind labels, with a comment,,,,,,,,")
+    lines.append(",".join(header or nc.CSV_COLUMNS))
+    lines += [",".join(r) for r in body_rows]
+    path.write_text(("﻿" if bom else "") + "\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _row(job_id, rf="", cu="", grade="B", jd_chars="2000"):
+    return [job_id, "Title", "Co", jd_chars, grade, "review", f"http://x/job/{job_id}", rf, cu]
+
+
+def test_read_labels_skips_comment_and_bom_and_reports_blank_and_invalid(tmp_path):
+    path = _write_labels(tmp_path / "labels.csv", [_row("a", "y", "n"), _row("b", "", "maybe"), _row("c", " YES ", "")])
+    rows, notes = nc.read_labels(path)
+    assert [r["job_id"] for r in rows] == ["a", "b", "c"]
+    assert notes == []
+    a, b, c = rows
+    assert (a["RF_value"], a["RF_status"], a["CU_value"], a["CU_status"]) == ("y", "ok", "n", "ok")
+    assert (b["RF_value"], b["RF_status"]) == (None, "blank")
+    assert (b["CU_value"], b["CU_status"]) == (None, "invalid") and b["CU"] == "maybe"  # raw kept for the report
+    assert (c["RF_value"], c["RF_status"]) == ("y", "ok") and c["CU_status"] == "blank"
+
+
+def test_read_labels_exported_file_roundtrip(tmp_path):
+    state, out = tmp_path / "state", tmp_path / "out"
+    _write_job(state, "reed-1", 1500, title='A, "quoted" title')
+    nc.main(["export", "--state-root", str(state), "--out-dir", str(out)])
+    rows, notes = nc.read_labels(out / "labels.csv")
+    assert [r["job_id"] for r in rows] == ["reed-1"]
+    assert rows[0]["title"] == 'A, "quoted" title'
+    assert rows[0]["RF_status"] == rows[0]["CU_status"] == "blank"
+
+
+def test_read_labels_duplicate_job_id_skipped_and_noted(tmp_path):
+    path = _write_labels(tmp_path / "labels.csv", [_row("a", "y", "y"), _row("a", "n", "n")])
+    rows, notes = nc.read_labels(path)
+    assert len(rows) == 1 and rows[0]["RF_value"] == "y"
+    assert any("duplicate job_id a" in n for n in notes)
+
+
+def test_read_labels_short_rows_are_padded_and_missing_columns_rejected(tmp_path):
+    path = _write_labels(tmp_path / "labels.csv", [["a", "T", "C", "1500", "A", "apply", "http://x"]])
+    rows, _ = nc.read_labels(path)
+    assert rows[0]["RF_status"] == "blank" and rows[0]["CU_status"] == "blank"
+    bad = _write_labels(tmp_path / "bad.csv", [["a", "T"]], header=["job_id", "title"])
+    with pytest.raises(nc.LabelsFormatError, match="missing columns"):
+        nc.read_labels(bad)
+    empty = tmp_path / "empty.csv"
+    empty.write_text("# only a comment\n", encoding="utf-8")
+    with pytest.raises(nc.LabelsFormatError):
+        nc.read_labels(empty)
+
+
+def test_join_labels_to_results_by_job_id(tmp_path):
+    rows, _ = nc.read_labels(_write_labels(tmp_path / "labels.csv", [_row("a", "y", "n"), _row("b", "n", "n")]))
+    results = {"b": {"job_id": "b", "rf": 0.9}, "zzz": {"job_id": "zzz"}}
+    joined = nc.join_rows(rows, results)
+    assert [j["job_id"] for j in joined] == ["a", "b"]  # label order, extra result ignored
+    assert joined[0]["result"] is None
+    assert joined[1]["result"] == {"job_id": "b", "rf": 0.9}
+    assert joined[1]["RF_value"] == "n"
