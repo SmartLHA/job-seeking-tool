@@ -540,3 +540,429 @@ def test_join_labels_to_results_by_job_id(tmp_path):
     assert joined[0]["result"] is None
     assert joined[1]["result"] == {"job_id": "b", "rf": 0.9}
     assert joined[1]["RF_value"] == "n"
+
+
+# ---------------------------------------------------------------------------
+# Counting, "not tested" rule, harmful cases, report
+# ---------------------------------------------------------------------------
+def _result(rf=0.1, cu=0.1, *, tokens=1000, status="ok", digest="dig-aaaaaaaaaaaa", error=None):
+    if status != "ok":
+        return {"job_id": "x", "status": status, "error": error or "boom", "model_digest": digest}
+    return {
+        "job_id": "x", "status": "ok", "error": None, "rf": rf, "cu": cu,
+        "scores_1to5": {"seniority_fit": 3.0, "culture_signals": 2.5, "red_flags": 4.25, "role_archetype_alignment": 1.0},
+        "tier": "unknown_caution", "input_tokens": tokens, "output_tokens": 30, "latency_s": 2.5,
+        "token_flag": tokens > nc.TOKEN_WARN, "model_digest": digest,
+    }
+
+
+def _joined(job_id, rf="", cu="", *, rf_p=0.1, cu_p=0.1, grade="B", jd_chars=2000, result="default", title=None):
+    row = {
+        "job_id": job_id, "title": title or f"Title {job_id}", "company": "Co", "jd_chars": str(jd_chars),
+        "base_grade": grade, "decision": "review", "link": f"http://x/job/{job_id}", "RF": rf, "CU": cu,
+    }
+    for q, raw in (("RF", rf), ("CU", cu)):
+        row[f"{q}_value"], row[f"{q}_status"] = nc.parse_label(raw)
+    row["result"] = _result(rf_p, cu_p) if result == "default" else result
+    return row
+
+
+def test_count_at_the_0_5_boundary():
+    assert nc.nimble_yes(0.5) is True
+    assert nc.nimble_yes(0.4999) is False
+    assert nc.nimble_yes(0.5001) is True
+    rows = [
+        _joined("a", "y", "y", rf_p=0.5, cu_p=0.5),       # boundary counts as Nimble yes
+        _joined("b", "n", "n", rf_p=0.4999, cu_p=0.4999),  # just below counts as no
+    ]
+    rf = nc.count_question(rows, "RF")
+    assert (rf["both"], rf["neither"], rf["owner_only"], rf["nimble_only"]) == (1, 1, 0, 0)
+    assert nc.THRESHOLD == 0.5
+
+
+def test_count_categories_and_blank_invalid_missing_result():
+    rows = [
+        _joined("both", "y", "n", rf_p=0.9),
+        _joined("neither", "n", "n", rf_p=0.1),
+        _joined("missed", "y", "n", rf_p=0.2),       # owner yes, Nimble no
+        _joined("extra", "n", "n", rf_p=0.8),        # owner no, Nimble yes
+        _joined("blank", "", ""),
+        _joined("bad", "maybe", "n"),
+        _joined("noresult", "y", "n", result=_result(status="error")),
+        _joined("notrun", "n", "n", result=None),
+    ]
+    c = nc.count_question(rows, "RF")
+    assert c["both"] == 1 and c["neither"] == 1 and c["owner_only"] == 1 and c["nimble_only"] == 1
+    assert c["owner_yes"] == 2 and c["nimble_yes"] == 2 and c["compared"] == 4
+    assert c["unlabelled"] == 1 and c["invalid"] == 1 and c["no_result"] == 2
+
+
+def test_not_tested_rule_fewer_than_3_owner_yes():
+    two = [_joined("a", "y", "n"), _joined("b", "y", "n"), _joined("c", "n", "n")]
+    three = two + [_joined("d", "y", "n")]
+    assert nc.count_question(two, "RF")["tested"] is False
+    assert nc.count_question(three, "RF")["tested"] is True
+    # CU has zero owner yes in both sets
+    assert nc.count_question(three, "CU")["tested"] is False
+
+    report_two = nc.build_report(two, date_str="2026-10-11")
+    assert report_two.count("**Not tested**") == 2  # RF (2 yes) and CU (0 yes)
+    report_three = nc.build_report(three, date_str="2026-10-11")
+    assert report_three.count("**Not tested**") == 1  # only CU
+    assert "Agreement on yes/no" in report_three
+
+
+def test_harmful_cases_only_grade_a_or_b_nimble_yes_owner_no():
+    rows = [
+        _joined("hit-a", "n", "n", rf_p=0.9, grade="A"),
+        _joined("hit-b", "n", "n", rf_p=0.5, grade="B", title="Hit B Title"),
+        _joined("grade-c", "n", "n", rf_p=0.9, grade="C"),
+        _joined("owner-yes", "y", "n", rf_p=0.9, grade="A"),
+        _joined("nimble-no", "n", "n", rf_p=0.2, grade="A"),
+        _joined("blank", "", "", rf_p=0.9, grade="A"),
+        _joined("invalid", "x", "n", rf_p=0.9, grade="A"),
+        _joined("no-result", "n", "n", grade="A", result=None),
+    ]
+    assert [r["job_id"] for r in nc.harmful_cases(rows, "RF")] == ["hit-a", "hit-b"]
+    assert nc.harmful_cases(rows, "CU") == []
+    report = nc.build_report(rows, date_str="2026-10-11")
+    section = report.split("## Harmful cases")[1].split("## Stub jobs")[0]
+    assert "Hit B Title" in section and "hit-a" in section
+    assert "grade-c" not in section and "owner-yes" not in section
+    assert "**CU:** none" in section
+
+
+def test_report_header_and_stub_section_is_separate():
+    rows = [
+        _joined("full-1", "y", "n", rf_p=0.9),
+        _joined("stub-1", "y", "y", rf_p=0.9, cu_p=0.9, jd_chars=300, title="Stub One"),
+    ]
+    report = nc.build_report(rows, date_str="2026-10-11")
+    assert "Indicative - small sample" in report
+    assert "2026-10-11" in report and "dig-aaaaaaaaaaaa" in report and "0.50" in report
+    assert "nimble:9b-q4_K_M" in report
+    stub_section = report.split("## Stub jobs")[1].split("## Per-job table")[0]
+    per_job = report.split("## Per-job table (full ads)")[1].split("## Label problems")[0]
+    assert "stub-1" in stub_section and "stub-1" not in per_job
+    assert "full-1" in per_job and "full-1" not in stub_section
+    # headline counts use full ads only: one owner yes (full-1), not two
+    rf_section = report.split("## RF")[1].split("## CU")[0]
+    assert "| Owner yes | 1 |" in rf_section
+
+
+def test_report_per_job_table_has_recorded_fields_and_flags_big_inputs():
+    rows = [_joined("big", "n", "n", result=_result(tokens=7001)), _joined("ok", "n", "n", result=_result(tokens=7000))]
+    report = nc.build_report(rows, date_str="2026-10-11")
+    assert "seniority_fit (1-5)" in report and "role_archetype_alignment (1-5)" in report
+    assert "unknown_caution" in report and "unvalidated" in report
+    big_line = next(l for l in report.splitlines() if l.startswith("| big "))
+    ok_line = next(l for l in report.splitlines() if l.startswith("| ok "))
+    assert "input_tokens > 7000" in big_line and "7001" in big_line and "2.50" in big_line and "dig-aaaaaaaa" in big_line
+    assert "input_tokens > 7000" not in ok_line
+    assert "3.00" in big_line and "2.50" in big_line and "4.25" in big_line  # 1-5 scores, 2 decimals
+
+
+def test_report_lists_blank_invalid_labels_and_errors_never_guesses():
+    rows = [
+        _joined("blank-1", "", ""),
+        _joined("bad-1", "maybe", "n"),
+        _joined("err-1", "n", "n", result=_result(status="error", error="HTTP 500: boom")),
+        _joined("skip-1", "n", "n", result=_result(status="skipped", error="JD over limit")),
+        _joined("none-1", "n", "n", result=None),
+    ]
+    report = nc.build_report(rows, date_str="2026-10-11", notes=["duplicate job_id z: later row skipped"])
+    labels = report.split("## Label problems")[1].split("## Errors and skipped jobs")[0]
+    assert "RF blank on 1 job(s): blank-1" in labels
+    assert "invalid on `bad-1`: 'maybe'" in labels
+    errors = report.split("## Errors and skipped jobs")[1]
+    assert "err-1`: error: HTTP 500: boom" in errors
+    assert "skip-1`: skipped: JD over limit" in errors
+    assert "none-1`: no result recorded" in errors
+    assert "duplicate job_id z" in report
+    c = nc.count_question(rows, "RF")
+    assert c["compared"] == 0  # blank, invalid, error, skipped, missing are never compared
+
+
+def test_report_warns_on_mixed_digests_and_escapes_pipes():
+    rows = [
+        _joined("a", "n", "n", result=_result(digest="d1")),
+        _joined("b", "n", "n", result=_result(digest="d2"), title="Pipe | Title"),
+    ]
+    report = nc.build_report(rows, date_str="2026-10-11")
+    assert "more than one model digest" in report
+    assert "Pipe \\| Title" in report
+
+
+# ---------------------------------------------------------------------------
+# Run: results cache / resume / errors / stops (requests mocked)
+# ---------------------------------------------------------------------------
+def _label_rows(*job_ids):
+    return [{"job_id": j, "RF_status": "blank", "CU_status": "blank"} for j in job_ids]
+
+
+class Calls:
+    def __init__(self):
+        self.states = []
+
+
+def _install_fake_nimble(monkeypatch, behaviour=None):
+    """Mock requests.post (systemone) and requests.get (tags). `behaviour(state)` may
+    return a FakeResp or raise; default is an ok answer."""
+    calls = Calls()
+
+    def fake_post(url, **kwargs):
+        state = json.loads(kwargs["data"])["state"]
+        calls.states.append(state)
+        if behaviour is not None:
+            out = behaviour(state)
+            if out is not None:
+                return out
+        return FakeResp(200, _answers())
+
+    monkeypatch.setattr(nc.requests, "post", fake_post)
+    monkeypatch.setattr(
+        nc.requests, "get", lambda url, **kw: FakeResp(200, {"models": [{"name": nc.MODEL, "digest": "digest-123"}]})
+    )
+    return calls
+
+
+def _state_with_jobs(tmp_path, ids, jd_len=1500):
+    state = tmp_path / "state"
+    for j in ids:
+        _write_job(state, j, jd_len, jd=f"JD-{j} " + "x" * jd_len)
+    return state
+
+
+def test_run_checks_records_results_and_resume_skips_done_jobs(tmp_path, monkeypatch):
+    state = _state_with_jobs(tmp_path, ["a", "b"])
+    results_dir = tmp_path / "out" / "results"
+    calls = _install_fake_nimble(monkeypatch)
+    kw = dict(state_root=state, results_dir=results_dir, target_roles=["BA"], digest="digest-123", progress=lambda m: None)
+    first = nc.run_checks(_label_rows("a", "b"), **kw)
+    assert len(calls.states) == 2
+    assert first["a"]["status"] == "ok" and first["a"]["model_digest"] == "digest-123"
+    assert (results_dir / "a.json").exists() and (results_dir / "b.json").exists()
+    saved = json.loads((results_dir / "a.json").read_text())
+    assert saved["scores_1to5"]["seniority_fit"] == 3.0 and saved["input_tokens"] == 1234 and saved["latency_s"] >= 0
+
+    again = nc.run_checks(_label_rows("a", "b"), **kw)
+    assert len(calls.states) == 2  # nothing re-sent
+    assert again["a"] == first["a"]
+
+    forced = nc.run_checks(_label_rows("a", "b"), force=True, **kw)
+    assert len(calls.states) == 4
+    assert forced["b"]["status"] == "ok"
+
+
+def test_resume_after_stop_only_asks_remaining_jobs(tmp_path, monkeypatch):
+    state = _state_with_jobs(tmp_path, ["a", "b", "c"])
+    results_dir = tmp_path / "out" / "results"
+
+    def die_on_b(state_text):
+        if state_text.startswith("JD-b"):
+            raise nc.requests.exceptions.ConnectionError("refused")
+
+    _install_fake_nimble(monkeypatch, die_on_b)
+    kw = dict(state_root=state, results_dir=results_dir, target_roles=["BA"], digest="d", progress=lambda m: None)
+    with pytest.raises(nc.OllamaUnavailable):
+        nc.run_checks(_label_rows("a", "b", "c"), **kw)
+    assert (results_dir / "a.json").exists() and not (results_dir / "b.json").exists()
+
+    calls = _install_fake_nimble(monkeypatch)
+    nc.run_checks(_label_rows("a", "b", "c"), **kw)
+    assert [s[:4] for s in calls.states] == ["JD-b", "JD-c"]  # a was skipped
+
+
+def test_per_job_http_error_is_recorded_and_run_continues_then_retried(tmp_path, monkeypatch):
+    state = _state_with_jobs(tmp_path, ["a", "b", "c"])
+    results_dir = tmp_path / "out" / "results"
+
+    def fail_b(state_text):
+        if state_text.startswith("JD-b"):
+            return FakeResp(500, {"error": "boom"})
+
+    calls = _install_fake_nimble(monkeypatch, fail_b)
+    kw = dict(state_root=state, results_dir=results_dir, target_roles=["BA"], digest="d", progress=lambda m: None)
+    out = nc.run_checks(_label_rows("a", "b", "c"), **kw)
+    assert [out[j]["status"] for j in "abc"] == ["ok", "error", "ok"]
+    assert "HTTP 500" in out["b"]["error"]
+    assert len(calls.states) == 3
+    # error results are not "done": the next run retries only b
+    calls2 = _install_fake_nimble(monkeypatch)
+    out2 = nc.run_checks(_label_rows("a", "b", "c"), **kw)
+    assert [s[:4] for s in calls2.states] == ["JD-b"] and out2["b"]["status"] == "ok"
+
+
+def test_shape_error_missing_job_empty_and_overlong_jd_are_recorded_not_fatal(tmp_path, monkeypatch):
+    state = tmp_path / "state"
+    _write_job(state, "short-answer", 1500, jd="JD-shape " + "x" * 1500)
+    _write_job(state, "empty", 0, jd="   ")
+    _write_job(state, "huge", 0, jd="y" * (nc.MAX_JD_CHARS + 1))
+    results_dir = tmp_path / "out" / "results"
+    bad = _answers()
+    bad["answers"].pop("rf")
+    calls = _install_fake_nimble(monkeypatch, lambda s: FakeResp(200, bad) if s.startswith("JD-shape") else None)
+    kw = dict(state_root=state, results_dir=results_dir, target_roles=["BA"], digest="d", progress=lambda m: None)
+    out = nc.run_checks(_label_rows("short-answer", "empty", "huge", "missing"), **kw)
+    assert out["short-answer"]["status"] == "error" and "unexpected response shape" in out["short-answer"]["error"]
+    assert out["empty"]["status"] == "error"
+    assert out["huge"]["status"] == "skipped" and "14000" in out["huge"]["error"]
+    assert out["missing"]["status"] == "error" and "missing" in out["missing"]["error"]
+    assert len(calls.states) == 1  # only the shape-error job was sent
+
+
+def test_unsafe_job_id_is_not_run_and_not_written(tmp_path, monkeypatch):
+    calls = _install_fake_nimble(monkeypatch)
+    results_dir = tmp_path / "out" / "results"
+    out = nc.run_checks(
+        _label_rows("../evil"), state_root=tmp_path, results_dir=results_dir, target_roles=[], digest="d", progress=lambda m: None
+    )
+    assert out["../evil"]["status"] == "error" and calls.states == []
+    assert not results_dir.exists()
+    with pytest.raises(ValueError):
+        nc.result_path(results_dir, "a/b")
+
+
+def test_check_job_flags_inputs_over_7000_tokens(tmp_path, monkeypatch):
+    _install_fake_nimble(monkeypatch, lambda s: FakeResp(200, _answers(tokens=7001)))
+    rec = nc.check_job("a", "some jd", ["BA"], "d")
+    assert rec["status"] == "ok" and rec["token_flag"] is True and rec["input_tokens"] == 7001
+    _install_fake_nimble(monkeypatch, lambda s: FakeResp(200, _answers(tokens=7000)))
+    assert nc.check_job("a", "some jd", ["BA"], "d")["token_flag"] is False
+
+
+def test_check_job_with_empty_target_roles_omits_alignment_and_parses(monkeypatch):
+    sent = {}
+
+    def capture(state_text):
+        return FakeResp(200, _answers(dims=nc.requested_dimensions([])))
+
+    calls = _install_fake_nimble(monkeypatch, capture)
+    rec = nc.check_job("a", "jd", [], "d")
+    assert rec["status"] == "ok"
+    assert set(rec["scores_1to5"]) == {"seniority_fit", "culture_signals", "red_flags"}
+    assert len(calls.states) == 1
+
+
+# ---------------------------------------------------------------------------
+# run command end to end (mocked) and smoke
+# ---------------------------------------------------------------------------
+def _export_for_run(tmp_path, ids=("reed-1", "reed-2")):
+    state, out = tmp_path / "state", tmp_path / "out"
+    for j in ids:
+        _write_job(state, j, 1500, jd=f"JD-{j} " + "x" * 1500)
+    assert nc.main(["export", "--state-root", str(state), "--out-dir", str(out)]) == 0
+    return state, out
+
+
+def _fill_labels(out: Path, labels: dict[str, tuple[str, str]]):
+    path = out / "labels.csv"
+    lines = path.read_text(encoding="utf-8-sig").splitlines()
+    new = []
+    for line in lines:
+        cells = next(csv.reader([line])) if not line.startswith("#") else None
+        if cells and cells[0] in labels:
+            cells[-2], cells[-1] = labels[cells[0]]
+            line = ",".join(f'"{c}"' if "," in c else c for c in cells)
+        new.append(line)
+    path.write_text("\n".join(new) + "\n", encoding="utf-8")
+
+
+def test_run_command_writes_results_and_dated_report(tmp_path, monkeypatch, capsys):
+    state, out = _export_for_run(tmp_path)
+    _fill_labels(out, {"reed-1": ("y", "n"), "reed-2": ("n", "n")})
+    profile = tmp_path / "profile.json"
+    profile.write_text(json.dumps({"target_roles": ["Business Analyst"]}), encoding="utf-8")
+    calls = _install_fake_nimble(monkeypatch)
+    code = nc.main(["run", "--state-root", str(state), "--out-dir", str(out), "--profile", str(profile)])
+    assert code == 0
+    assert len(calls.states) == 2
+    report = (out / f"report-{nc.date.today().isoformat()}.md").read_text(encoding="utf-8")
+    assert "Indicative - small sample" in report and "digest-123" in report
+    assert (out / "results" / "reed-1.json").exists()
+    # re-run: nothing re-sent
+    assert nc.main(["run", "--state-root", str(state), "--out-dir", str(out), "--profile", str(profile)]) == 0
+    assert len(calls.states) == 2
+    assert nc.main(["run", "--force", "--state-root", str(state), "--out-dir", str(out), "--profile", str(profile)]) == 0
+    assert len(calls.states) == 4
+
+
+def test_run_command_stops_cleanly_when_ollama_down_or_model_missing(tmp_path, monkeypatch, capsys):
+    state, out = _export_for_run(tmp_path)
+    args = ["run", "--state-root", str(state), "--out-dir", str(out), "--profile", str(tmp_path / "none.json")]
+
+    def refused(url, **kw):
+        raise nc.requests.exceptions.ConnectionError("refused")
+
+    monkeypatch.setattr(nc.requests, "get", refused)
+    assert nc.main(args) == 1
+    assert "Is Ollama running" in capsys.readouterr().err
+
+    monkeypatch.setattr(nc.requests, "get", lambda url, **kw: FakeResp(200, {"models": []}))
+    assert nc.main(args) == 1
+    assert "not listed" in capsys.readouterr().err
+    assert not list(out.glob("report-*.md"))
+
+
+def test_run_command_model_not_found_during_post_stops(tmp_path, monkeypatch, capsys):
+    state, out = _export_for_run(tmp_path)
+    _install_fake_nimble(
+        monkeypatch, lambda s: FakeResp(404, {"error": 'model "nimble:9b-q4_K_M" not found, try pulling it first'})
+    )
+    args = ["run", "--state-root", str(state), "--out-dir", str(out), "--profile", str(tmp_path / "none.json")]
+    assert nc.main(args) == 1
+    assert "was not found" in capsys.readouterr().err
+    assert not list(out.glob("report-*.md"))
+
+
+def test_run_command_needs_labels_csv_and_refuses_data_out_dir(tmp_path, monkeypatch, capsys):
+    assert nc.main(["run", "--out-dir", str(tmp_path / "empty")]) == 2
+    assert "export" in capsys.readouterr().err
+    monkeypatch.setattr(nc, "DATA_DIR", tmp_path / "data")
+    assert nc.main(["run", "--out-dir", str(tmp_path / "data" / "x")]) == 2
+    assert not (tmp_path / "data").exists()
+
+
+def test_run_command_warns_when_nothing_is_labelled_yet(tmp_path, monkeypatch, capsys):
+    state, out = _export_for_run(tmp_path, ids=("reed-1",))
+    _install_fake_nimble(monkeypatch)
+    nc.main(["run", "--state-root", str(state), "--out-dir", str(out), "--profile", str(tmp_path / "none.json")])
+    assert "no labels found" in capsys.readouterr().err
+
+
+def test_load_target_roles(tmp_path, capsys):
+    p = tmp_path / "p.json"
+    p.write_text(json.dumps({"target_roles": [" BA ", "", "PM"]}), encoding="utf-8")
+    assert nc.load_target_roles(p) == ["BA", "PM"]
+    p.write_text(json.dumps({"target_roles": "not a list"}), encoding="utf-8")
+    assert nc.load_target_roles(p) == []
+    assert nc.load_target_roles(tmp_path / "missing.json") == []
+    assert "could not read profile" in capsys.readouterr().err
+
+
+def test_smoke_prints_keys_tokens_latency_only_and_uses_builtin_sample(tmp_path, monkeypatch, capsys):
+    calls = _install_fake_nimble(monkeypatch, lambda s: FakeResp(200, _answers(rf=0.123456, tokens=777, dims=nc.requested_dimensions(nc.SMOKE_ROLES))))
+    monkeypatch.chdir(tmp_path)
+    assert nc.main(["run", "--smoke"]) == 0
+    out = capsys.readouterr().out
+    assert calls.states == [nc.SMOKE_JD]  # the built-in sample, not a stored job
+    assert "answer keys:" in out and "posting_tier" in out and "rf" in out
+    assert "input_tokens: 777" in out and "latency_s:" in out
+    assert "0.123456" not in out  # no answer values printed
+    assert list(tmp_path.iterdir()) == []  # smoke writes nothing
+
+
+def test_smoke_shape_mismatch_and_unreachable(tmp_path, monkeypatch, capsys):
+    bad = _answers(dims=nc.requested_dimensions(nc.SMOKE_ROLES))
+    bad["answers"]["cu"] = {"type": "score", "score": 1.0}
+    _install_fake_nimble(monkeypatch, lambda s: FakeResp(200, bad))
+    assert nc.main(["run", "--smoke"]) == 3
+    captured = capsys.readouterr()
+    assert "SHAPE MISMATCH" in captured.err and "answer keys:" in captured.out
+
+    def refused(url, **kw):
+        raise nc.requests.exceptions.ConnectionError("refused")
+
+    monkeypatch.setattr(nc.requests, "post", refused)
+    assert nc.main(["run", "--smoke"]) == 1
+    assert "Is Ollama running" in capsys.readouterr().err
