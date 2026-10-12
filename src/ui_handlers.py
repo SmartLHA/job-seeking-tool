@@ -674,7 +674,8 @@ def handle_evaluate_form(req, config, responder, job_id):
 
 def handle_job_explain(req, config, responder, job_id):
     """POST /job/{id}/explain — return LLM explanation as JSON."""
-    from src.job_hunt_llm import explain_job_match_with_llm
+    from src.job_hunt_llm import build_explain_fields, explain_source_text, explain_job_match_with_llm
+    from src.job_hunt_explain_check import create_check
     if not job_id.strip():
         responder.send_json({"ok": False, "error": "Missing job id"}, status=HTTPStatus.BAD_REQUEST)
         return
@@ -693,11 +694,31 @@ def handle_job_explain(req, config, responder, job_id):
     except Exception as exc:
         responder.send_json({"ok": False, "error": f"Could not load profile: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         return
+    fields = build_explain_fields(profile, reviewed_job, analysis)
     explanation, explain_error = explain_job_match_with_llm(profile, reviewed_job, analysis)
     if explanation is None:
         responder.send_json({"ok": False, "error": explain_error or "LLM unavailable"}, status=HTTPStatus.SERVICE_UNAVAILABLE)
         return
-    responder.send_json({"ok": True, **explanation})
+    check = create_check(job_id, explain_source_text(fields), explanation)
+    responder.send_json({"ok": True, **explanation, **check})
+
+
+def handle_job_explain_check(req, config, responder, job_id):
+    """Check only the current server-held explanation and its exact source."""
+    from src.job_hunt_explain_check import TOKEN_STORE, run_check
+    try:
+        load_reviewed_job(job_id, config.state_root)
+    except FileNotFoundError:
+        responder.send_json({"ok": False, "error": "Job not found"}, status=HTTPStatus.NOT_FOUND)
+        return
+    body = req.json_body
+    token = body.get("check_token") if isinstance(body, dict) and set(body) == {"check_token"} else None
+    entry = TOKEN_STORE.get(token, job_id) if isinstance(token, str) and token else None
+    if entry is None:
+        responder.send_json({"ok": True, "state": "stale"})
+        return
+    entry["state_root"] = config.state_root
+    responder.send_json(run_check(entry))
 
 
 def _job_load_failure(exc: Exception):

@@ -47,6 +47,7 @@ from src.ui_handlers import (
     handle_save_profile,
     handle_set_scoring_preset,
     handle_job_explain,
+    handle_job_explain_check,
     handle_job_salary_benchmark,
     handle_qualitative_assess,
     handle_evaluate_form,
@@ -314,7 +315,7 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
                 profile_id = req.query.get("profile_id", config.profile_path.stem)
                 render_profile(req, config, responder, profile_id, flash=req.query.get("flash"))
                 return
-            explain_match = re.match(r"^/job/([^/]+)/explain$", parsed.path)
+            explain_match = re.match(r"^/job/([^/]+)/(?:explain|explain-check)$", parsed.path)
             if explain_match:
                 responder.send_bytes(HTTPStatus.METHOD_NOT_ALLOWED, b"Use POST.", "text/plain", {"Allow": "POST"})
                 return
@@ -367,6 +368,10 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             req = _parse_request(self)
             responder = UIResponder(self)
             parsed = urlparse(self.path)
+            check_match = re.match(r"^/job/([^/]+)/explain-check$", parsed.path)
+            if check_match:
+                handle_job_explain_check(req, config, responder, check_match.group(1))
+                return
             explain_match = re.match(r"^/job/([^/]+)/explain$", parsed.path)
             if explain_match:
                 handle_job_explain(req, config, responder, explain_match.group(1))
