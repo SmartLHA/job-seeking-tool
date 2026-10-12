@@ -364,21 +364,8 @@ def _parse_json_from_text(raw: str) -> dict | None:
 # Public API  (signatures unchanged — callers need no modification)
 # ---------------------------------------------------------------------------
 
-def explain_job_match_with_llm(
-    profile: "Any",
-    job: "Any",
-    analysis: "Any",
-    *,
-    raise_on_rate_limit: bool = False,
-) -> tuple[dict[str, str] | None, str | None]:
-    """Generate a structured explanation of the job–candidate fit via Gemini.
-
-    Returns ({"fit": ..., "risk": ..., "action": ..., "model_used": ...}, None) on success,
-    or (None, error_message) on failure.
-
-    ``raise_on_rate_limit`` (D6 worker): when True and the whole model chain failed
-    with 429, raise :class:`RateLimited` instead of returning an error string, so the
-    worker can back off + requeue rather than fail-fast."""
+def build_explain_fields(profile: "Any", job: "Any", analysis: "Any") -> dict:
+    """Build the exact values interpolated into the Gemini explanation prompt."""
     s_min = getattr(job, "salary_min_gbp", None)
     s_max = getattr(job, "salary_max_gbp", None)
     if s_min and s_max:
@@ -400,7 +387,7 @@ def explain_job_match_with_llm(
     missing_pref_str = ", ".join(getattr(analysis, "missing_preferred_skills", [])) or "none"
     description_excerpt = (getattr(job, "description_raw", "") or "")[:1500]
 
-    prompt = _EXPLAIN_PROMPT.format(
+    return dict(
         skills=skills_str,
         years=getattr(profile, "years_experience", "unknown"),
         salary=profile_salary_str,
@@ -421,6 +408,37 @@ def explain_job_match_with_llm(
         missing_preferred=missing_pref_str,
         blockers=blockers_str,
     )
+
+
+
+def explain_source_text(fields: dict) -> str:
+    """Return the labelled data block in explanation-template order.
+
+    Includes CANDIDATE: Skills, Years experience, Salary floor, Remote preference,
+    Target roles, Industries; JOB: Title at company, Location, Salary, Required
+    skills, Preferred skills, Description (excerpt); RULE-BASED SCORING SUMMARY:
+    Match score and Decision, Strengths found, Missing required skills, Missing
+    preferred skills, Blockers. Excludes fixed instructions and output format.
+    """
+    return _EXPLAIN_PROMPT[_EXPLAIN_PROMPT.index("CANDIDATE:\n"):].format(**fields)
+
+
+def explain_job_match_with_llm(
+    profile: "Any",
+    job: "Any",
+    analysis: "Any",
+    *,
+    raise_on_rate_limit: bool = False,
+) -> tuple[dict[str, str] | None, str | None]:
+    """Generate a structured explanation of the job–candidate fit via Gemini.
+
+    Returns ({"fit": ..., "risk": ..., "action": ..., "model_used": ...}, None) on success,
+    or (None, error_message) on failure.
+
+    ``raise_on_rate_limit`` (D6 worker): when True and the whole model chain failed
+    with 429, raise :class:`RateLimited` instead of returning an error string, so the
+    worker can back off + requeue rather than fail-fast."""
+    prompt = _EXPLAIN_PROMPT.format(**build_explain_fields(profile, job, analysis))
 
     raw, error, model_used, all_rate_limited = _call_gemini_reasoning(prompt)
     if raw is None:
