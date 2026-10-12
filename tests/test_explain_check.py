@@ -30,6 +30,58 @@ def test_split_and_preserve():
     assert sum('reason' not in r for r in rows) == 9
 
 
+def test_whitespace_never_becomes_a_statement():
+    text = '. \n'.join(['One', 'Two', 'Three', 'Four', 'Five', 'Six']) + '.'
+    rows = m.split_statements({'fit': text})
+    assert len(rows) == 6
+    assert all('reason' not in r for r in rows)
+    assert all(r['text'].strip() for r in rows)
+    assert ''.join(r['text'] for r in rows) == text
+    rows = m.split_statements({'fit': '\n One. Two.\n'})
+    assert [r['text'] for r in rows] == ['\n One. ', 'Two.\n']
+    assert m.split_statements({'fit': ' \n ', 'risk': '\n'}) == []
+
+
+def test_create_check_survives_a_concurrent_explain_for_the_same_job(monkeypatch):
+    store = m.TokenStore()
+    monkeypatch.setattr(m, 'TOKEN_STORE', store)
+    real_create = store.create
+    created, results, errors, fired = [], [], [], []
+
+    def call(text):
+        try:
+            results.append(m.create_check('job', 'source', {'fit': text}))
+        except Exception as exc:
+            errors.append(exc)
+
+    rival = threading.Thread(target=call, args=('Second.',))
+
+    def create(*args, **kwargs):
+        token = real_create(*args, **kwargs)
+        created.append(token)
+        if not fired:
+            fired.append(True)
+            # Force the interleaving: the rival explain runs right after this
+            # token exists. With a lock held across create and the snapshot
+            # read it blocks here and finishes afterwards instead.
+            rival.start()
+            rival.join(.2)
+        return token
+
+    monkeypatch.setattr(store, 'create', create)
+    call('First.')
+    rival.join(2)
+    assert not rival.is_alive()
+    assert errors == []
+    assert len(created) == 2 and len(results) == 2
+    by_token = {r['check_token']: r for r in results}
+    assert set(by_token) == set(created)
+    assert by_token[created[0]]['statements'][0]['text'] == 'First.'
+    assert by_token[created[1]]['statements'][0]['text'] == 'Second.'
+    assert store.get(created[1], 'job') is not None
+    assert store.get(created[0], 'job') is None
+
+
 def test_store():
     now = [0]
     store = m.TokenStore(lambda: now[0])

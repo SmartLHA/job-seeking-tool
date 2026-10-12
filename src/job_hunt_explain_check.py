@@ -42,15 +42,25 @@ def split_statements(fit, risk=None, action=None):
             boundaries.append(end)
         if not boundaries or boundaries[-1] != len(text):
             boundaries.append(len(text))
+        pieces = []
+        pending = ''
         previous = 0
-        index = 0
         for end in boundaries:
             piece = text[previous:end]
             previous = end
-            if not piece:
+            if not piece.strip():
+                # Whitespace never becomes its own statement: it stays attached
+                # to the previous one, or to the next one when none exists yet.
+                # A section made only of whitespace has no statements (as for '').
+                if pieces:
+                    pieces[-1] += piece
+                else:
+                    pending += piece
                 continue
+            pieces.append(pending + piece)
+            pending = ''
+        for index, piece in enumerate(pieces):
             row = {'id': f'{section}-{index}', 'section': section, 'text': piece}
-            index += 1
             if section == 'action':
                 row['reason'] = 'advice'
             elif eligible >= 10 or len(piece) > 600:
@@ -298,8 +308,13 @@ CHECK_SERVICE = ExplainCheckService(TOKEN_STORE)
 
 
 def create_check(job_id, source, explanation):
-    token = TOKEN_STORE.create(job_id, source, split_statements(explanation))
-    return {'check_token': token, 'statements': TOKEN_STORE.get(token, job_id)['statements']}
+    statements = split_statements(explanation)
+    # One lock hold (the store lock is re-entrant) so a second explain for the
+    # same job cannot supersede this token between create and the snapshot read.
+    with TOKEN_STORE.lock:
+        token = TOKEN_STORE.create(job_id, source, statements)
+        snapshot = TOKEN_STORE.get(token, job_id)['statements']
+    return {'check_token': token, 'statements': snapshot}
 
 
 def check_explanation(job_id, token, state_root, deadline_seconds=90):
