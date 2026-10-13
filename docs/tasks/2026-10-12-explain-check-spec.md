@@ -1,4 +1,4 @@
-<!-- STATUS: approved 2026-10-12 (Mike: "approve"); build in progress -->
+<!-- STATUS: built and independently verified 2026-10-13 (commits a144d36, 10cf099, 85c6e21, 33e9f4e, 125f1a0); approved 2026-10-12 (Mike: "approve") -->
 # Explain check — local "could not confirm" labels on Gemini's job explanation (spec, 2026-10-12)
 
 ## Goal
