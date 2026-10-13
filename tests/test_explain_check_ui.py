@@ -30,6 +30,12 @@ const explanation=(token)=>({ok:true,fit:'legacy fit',risk:'legacy risk',action:
  statements:[{id:'fit-0',section:'fit',text:'<img src=x onerror=alert(1)>'},{id:'fit-1',section:'fit',text:'Second fit.'},
  {id:'risk-0',section:'risk',text:'Risk.'},{id:'action-0',section:'action',text:'Apply.'}]});
 const label=id=>_aiStatements[id].label.textContent;
+const status=()=>elements['ai-check-status'].textContent;
+const explanationFour=(token)=>{const d=explanation(token);d.statements.splice(3,0,{id:'risk-1',section:'risk',text:'Second risk.'});return d;};
+const explanationOne=(token)=>({ok:true,fit:'f',risk:'r',action:'a',check_token:token,
+ statements:[{id:'fit-0',section:'fit',text:'Only fit.'},{id:'action-0',section:'action',text:'Apply.'}]});
+const allOk={'fit-0':{verdict:'ok'},'fit-1':{verdict:'ok'},'risk-0':{verdict:'ok'},'risk-1':{verdict:'ok'},'action-0':{verdict:'ok'}};
+const DONE_FOUR='Local check done: 4 sentences checked, 0 could not be confirmed';
 '''
 
 
@@ -77,6 +83,44 @@ runAiAnalysis();await reply(0,{ok:true,fit:'Old fit <b>literal</b>',risk:'Old ri
 assert.equal(requests.length,1);assert.equal(elements['ai-fit'].textContent,'Old fit <b>literal</b>');
 assert.equal(elements['ai-risk'].textContent,'Old risk');assert.equal(elements['ai-action'].textContent,'Old action');
 assert.equal(elements['ai-check-footer'].style.display,'none');
+''',
+    # Summary line: done, nothing flagged. The action result must not be counted (4, not 5).
+    r'''
+runAiAnalysis();await reply(0,explanationFour('one'));
+assert.equal(status(),'Checking against the information Gemini was given (local model)...');
+await reply(1,{ok:true,state:'done',results:allOk});
+assert.equal(status(),DONE_FOUR);
+''',
+    # Summary line: singular wording when exactly one sentence was checked and flagged.
+    r'''
+runAiAnalysis();await reply(0,explanationOne('one'));
+await reply(1,{ok:true,state:'done',results:{'fit-0':{verdict:'could_not_confirm'},'action-0':{verdict:'could_not_confirm'}}});
+assert.equal(status(),'Local check done: 1 sentence checked, 1 could not be confirmed');
+''',
+    # Summary line: partial. K counts not_checked plus statements with no result; action never counts.
+    r'''
+runAiAnalysis();await reply(0,explanationFour('one'));
+await reply(1,{ok:true,state:'partial',results:{'fit-0':{verdict:'ok'},'fit-1':{verdict:'could_not_confirm'},
+ 'risk-0':{verdict:'not_checked',reason:'time'},'action-0':{verdict:'could_not_confirm'}}});
+assert.equal(status(),'Local check stopped early: 2 checked, 1 could not be confirmed, 2 not checked');
+''',
+    # Summary line: a response for an old token must not overwrite the summary of the current run.
+    r'''
+runAiAnalysis();await reply(0,explanationFour('old'));
+runAiAnalysis();await reply(2,explanationFour('new'));
+await reply(3,{ok:true,state:'done',results:allOk});
+assert.equal(status(),DONE_FOUR);
+await reply(1,{ok:true,state:'partial',results:{'fit-0':{verdict:'could_not_confirm'}}});
+assert.equal(status(),DONE_FOUR);assert.equal(label('fit-0'),'');
+''',
+    # Summary line: a late reply from a superseded request for the SAME token must not overwrite it either.
+    r'''
+runAiAnalysis();await reply(0,explanationFour('one'));await reply(1,{ok:true,state:'busy'});
+_aiCheck(_aiToken);_aiCheck(_aiToken);
+await reply(3,{ok:true,state:'done',results:allOk});
+assert.equal(status(),DONE_FOUR);
+await reply(2,{ok:true,state:'partial',results:{'fit-0':{verdict:'could_not_confirm'}}});
+assert.equal(status(),DONE_FOUR);assert.equal(label('fit-0'),'');
 ''',
 ])
 def test_explanation_check_browser_behaviour(tmp_path, scenario):
