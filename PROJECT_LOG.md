@@ -1,3 +1,13 @@
+## 2026-10-13
+
+### Test isolation — the test suite no longer writes real files in `data/raw/` and `output/` (test only, no app change)
+- **Status:** ✅ Done — commits `6b0c720` and `4c473f5`. Checked by fresh-context verifier runs on 2026-10-13 (a full suite after each fix); results are recorded in the spec.
+- **Motivation:** A full `pytest tests` run created `data/raw/adzuna/raw_<timestamp>.json` and overwrote `output/cover_letters/cand-001/cover-apply-001.txt`, `output/tailored_cvs/tailor-apply-001.md` and `output/tailored_cvs/job-review-cv_ai_reviewed.md` (noticed 2026-10-12; the oldest leftover file found was dated 2026-07-08). These folders are git-ignored, so an overwritten file cannot be restored from git.
+- **Changes:** 11 tests now write into pytest's `tmp_path` (`monkeypatch.chdir(tmp_path)`): 6 Adzuna fetch tests and the 2 `TestReedSaveRawResponse` tests in `tests/test_reed_adzuna_clients.py`, the `/tailor` and `/cover-letter` route tests in `tests/test_ui.py`, and the AI review CV test in `tests/test_ui_handlers_uncovered.py`. No `src/` change and no assert changed ([spec](docs/tasks/test-isolation-tmp-path-2026-10-13.md)). New Lessons Learned entry in `docs/development_rules.md`.
+- **Cleanup (not in git):** 127 test-leftover files moved to the macOS Trash: 123 Adzuna raw files identical to the tests' mocked empty response, and 4 test output files. Each Trash folder has an `ORIGINAL_PATHS.txt`. The 17 real Adzuna raw files were kept. Backup of `data/` and `output/` taken before the work: `backups/data-output.bak-20261013-094305.tgz`.
+- **Evidence:** Full suite before and after the change: the same 21 failing tests (they failed before this change and are unrelated to it). After the fix, a full run leaves `data/raw/` and `output/` unchanged.
+- **Limits:** `data/state` still changes during a test run while the UI server (port 9000) is running. That is the server, not pytest: exclude `data/state` or stop the server when checking.
+
 ## 2026-10-04
 
 ### Audit repair contracts and documentation refresh

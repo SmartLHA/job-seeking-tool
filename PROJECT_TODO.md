@@ -5,7 +5,7 @@
 
 ---
 
-**Last updated:** 2026-10-04 — audit fixes F1-F4 (see "Audit fixes 2026-09-20" below). Prior: 2026-07-29 — SSF-F3 complete: the real-browser test covers keyword chip add (Enter/comma), remove, and Backspace synchronisation.
+**Last updated:** 2026-10-13 — test isolation: the test suite no longer writes real files in `data/raw/` and `output/` (see PROJECT_LOG 2026-10-13). Prior: 2026-10-04 — audit fixes F1-F4 (see "Audit fixes 2026-09-20" below).
 
 ## Audit repairs — implementation and remaining verification
 

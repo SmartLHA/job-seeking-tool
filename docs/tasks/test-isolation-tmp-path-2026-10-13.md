@@ -41,7 +41,7 @@ Redirect these 9 tests to pytest `tmp_path`, without changing what they assert.
 5. Only the three test files above are edited.
 
 ## Result (2026-10-13)
-All 9 tests use `monkeypatch.chdir(tmp_path)`; the saves still run, into tmp. Criteria 2-5 met.
+All 9 tests use `monkeypatch.chdir(tmp_path)`; the saves still run, into tmp. Criteria 2-5 met (confirmed by a fresh-context verifier run, 2026-10-13).
 Criterion 1: the four paths above stay unchanged. The only mtime that moved was the
 `data/state` directory, written every 30 s by a live UI server (scheduler poll), not by pytest
 (audit hook in the pytest process saw no writes there; an isolated copy with no server was clean).
@@ -50,6 +50,9 @@ Open: `TestReedSaveRawResponse` (2 tests) still calls a real `mkdir data/raw/ree
 ## Follow-up 2026-10-13 (Mike: "yes to both, delete the leftovers and fix Reed tests")
 Leftovers: the 18 `data/raw/adzuna/raw_20261012_*`/`raw_20261013_*` files (33-byte empty
 payload) and the 3 test output files were moved to the macOS Trash, not hard-deleted.
+Later the same day (Mike approved), 105 older Adzuna raw files byte-identical to that payload
+(oldest dated 2026-07-08) and `output/cover_letters/cover-apply-001.txt` (test text) were also
+moved: 127 files in total (123 Adzuna + 4 output); each Trash folder has an `ORIGINAL_PATHS.txt`.
 
 Reed fix spec: the 2 tests in `tests/test_reed_adzuna_clients.py::TestReedSaveRawResponse`
 patch `pathlib.Path`, which does not reach `src/job_sources/reed_client.py` (it binds `Path`
@@ -61,5 +64,5 @@ Acceptance:
 7. No `assert` line changed; only `tests/test_reed_adzuna_clients.py` edited.
 8. Full suite: failing set still equals the 21-ID baseline; no change under `data/raw/` or
    `output/`.
-Result: criteria 6-8 met (2 tests pass; with `data/raw/reed` removed in a copy it is no longer
+Result (fresh-context verifier run, 2026-10-13): criteria 6-8 met (2 tests pass; with `data/raw/reed` removed in a copy it is no longer
 recreated, the HEAD version recreates it; full suite: same 21 failures, `data/raw` and `output/` unchanged).
