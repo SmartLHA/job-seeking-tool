@@ -186,6 +186,13 @@ class TestReedSaveRawResponse:
 class TestFetchAdzunaJobs:
     """Tests for adzuna_client.fetch_adzuna_jobs"""
 
+    @pytest.fixture
+    def adzuna_tmp_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        """Run in tmp_path: save_raw_response writes a CWD-relative data/raw/adzuna/ file."""
+        monkeypatch.chdir(tmp_path)
+        return tmp_path
+
+    @pytest.mark.usefixtures("adzuna_tmp_cwd")
     def test_fetch_adzuna_jobs_success(self) -> None:
         """Successful API call should return results."""
         fake_response_json = {
@@ -206,6 +213,7 @@ class TestFetchAdzunaJobs:
         assert len(results) == 1
         assert results[0]["id"] == "abc123"
 
+    @pytest.mark.usefixtures("adzuna_tmp_cwd")
     def test_fetch_adzuna_jobs_empty(self) -> None:
         """Empty results should return empty list."""
         fake_response_json = {"results": [], "count": 0}
@@ -229,6 +237,7 @@ class TestFetchAdzunaJobs:
         mock_get.assert_not_called()
         assert results == []
 
+    @pytest.mark.usefixtures("adzuna_tmp_cwd")
     def test_fetch_adzuna_jobs_rate_limit_429(self) -> None:
         """HTTP 429 should return empty list."""
         mock_response = MagicMock()
@@ -241,6 +250,7 @@ class TestFetchAdzunaJobs:
 
         assert results == []
 
+    @pytest.mark.usefixtures("adzuna_tmp_cwd")
     def test_fetch_adzuna_jobs_malformed_json(self) -> None:
         """Bad JSON should return empty list."""
         mock_response = MagicMock()
@@ -254,6 +264,7 @@ class TestFetchAdzunaJobs:
 
         assert results == []
 
+    @pytest.mark.usefixtures("adzuna_tmp_cwd")
     def test_fetch_adzuna_jobs_pagination_calculation(self) -> None:
         """Pagination should calculate page from skip and max_results."""
         fake_response_json = {"results": [], "count": 0}
@@ -271,6 +282,7 @@ class TestFetchAdzunaJobs:
         # URL format: /search/{page}
         assert "/search/3" in call_url
 
+    @pytest.mark.usefixtures("adzuna_tmp_cwd")
     def test_fetch_adzuna_jobs_skip_zero_gives_page_one(self) -> None:
         """skip=0 should give page 1."""
         fake_response_json = {"results": [], "count": 0}

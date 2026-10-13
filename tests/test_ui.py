@@ -1760,7 +1760,9 @@ def _write_master_cv(profile_path: Path) -> None:
 # POST /tailor route tests
 # ---------------------------------------------------------------------------
 
-def test_post_tailor_returns_tailored_cv_result_for_apply_job(tmp_path: Path) -> None:
+def test_post_tailor_returns_tailored_cv_result_for_apply_job(tmp_path: Path, monkeypatch) -> None:
+    # Handlers write to CWD-relative output/; keep that inside tmp_path.
+    monkeypatch.chdir(tmp_path)
     with _running_ui_server(tmp_path) as (base_url, config):
         _write_master_cv(config.profile_path)
         _write_apply_job_state(config.state_root, "tailor-apply-001")
@@ -1838,7 +1840,9 @@ def test_cv_read_errors_do_not_disclose_local_path(tmp_path: Path) -> None:
 # POST /cover-letter route tests
 # ---------------------------------------------------------------------------
 
-def test_post_cover_letter_returns_letter_for_apply_job(tmp_path: Path) -> None:
+def test_post_cover_letter_returns_letter_for_apply_job(tmp_path: Path, monkeypatch) -> None:
+    # Handlers write to CWD-relative output/; keep that inside tmp_path.
+    monkeypatch.chdir(tmp_path)
     with _running_ui_server(tmp_path) as (base_url, config):
         _write_apply_job_state(config.state_root, "cover-apply-001")
         status, data = _http_post_json(

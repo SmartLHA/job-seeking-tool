@@ -711,7 +711,9 @@ class TestHandleAiReviewCv:
         assert "cannot have CV reviewed" in responder.json_sent["error"]
         assert responder.last_status == HTTPStatus.FORBIDDEN
 
-    def test_handle_ai_review_cv_success_with_mock_llm(self, tmp_path: Path) -> None:
+    def test_handle_ai_review_cv_success_with_mock_llm(self, tmp_path: Path, monkeypatch) -> None:
+        # Handler writes to CWD-relative output/tailored_cvs/; keep that inside tmp_path.
+        monkeypatch.chdir(tmp_path)
         config = UIServerConfig(
             profile_path=_setup_test_profile(tmp_path),
             state_root=tmp_path / "state",
