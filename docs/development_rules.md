@@ -35,3 +35,9 @@ A project can have hundreds of files. `ui.py` tells you nothing about what it do
 
 ### Why phase-by-phase matters
 Building all phases at once leads to integration gaps. Each phase has a clear exit criterion and QA gate. Skipping QA to go faster usually means re-doing work.
+
+### Tests must not write real project files (2026-10-13)
+`src/` saves to paths relative to the current directory (`output/...`, `data/raw/...`). The folders those tests wrote to (`output/tailored_cvs/`, `output/cover_letters/`, `data/raw/`) are git-ignored, so a test that reaches save code can add or overwrite real files that git cannot restore. Observed on 2026-10-12 and 2026-10-13: 9 tests wrote real files (fixed in commit 6b0c720). Also found on 2026-10-13: 2 Reed tests ran a real `mkdir` (fixed in the same commit as this note). Details: `docs/tasks/test-isolation-tmp-path-2026-10-13.md`.
+- Any test that reaches save code calls `monkeypatch.chdir(tmp_path)` first.
+- Patching `pathlib.Path` or constants in `src/job_hunt_config.py` does not redirect modules that already imported the name (`from x import Path` / `DEFAULT_TAILORING_POLICY`). Patch the name where it is used, or use `chdir`.
+- When checking that a test run leaves `data/` unchanged, exclude `data/state` or stop the UI server first: a running UI server updated `data/state` during test runs (observed once, 2026-10-13).

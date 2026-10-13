@@ -151,8 +151,13 @@ class TestFetchReedJobs:
 class TestReedSaveRawResponse:
     """Tests for reed_client.save_raw_response"""
 
-    def test_save_raw_response_valid_json_calls_json_dump(self) -> None:
+    def test_save_raw_response_valid_json_calls_json_dump(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Valid JSON should be parsed and re-dumped."""
+        # reed_client binds Path at import, so patching pathlib.Path does not reach it;
+        # run in tmp_path so the relative data/raw/reed mkdir cannot touch the project tree.
+        monkeypatch.chdir(tmp_path)
         json_content = '{"results": [{"id": 1}]}'
         with patch("pathlib.Path") as mock_path_class:
             mock_path = MagicMock()
@@ -166,8 +171,12 @@ class TestReedSaveRawResponse:
                     if mock_open.called:
                         mock_open.assert_called()
 
-    def test_save_raw_response_invalid_json_fallback(self) -> None:
+    def test_save_raw_response_invalid_json_fallback(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Invalid JSON should be written without parsing."""
+        # See the valid-JSON test above: chdir keeps the relative mkdir inside tmp_path.
+        monkeypatch.chdir(tmp_path)
         invalid_json = "{invalid"
         with patch("pathlib.Path") as mock_path_class:
             mock_path = MagicMock()

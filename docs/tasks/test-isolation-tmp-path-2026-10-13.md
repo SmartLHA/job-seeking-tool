@@ -46,3 +46,20 @@ Criterion 1: the four paths above stay unchanged. The only mtime that moved was 
 `data/state` directory, written every 30 s by a live UI server (scheduler poll), not by pytest
 (audit hook in the pytest process saw no writes there; an isolated copy with no server was clean).
 Open: `TestReedSaveRawResponse` (2 tests) still calls a real `mkdir data/raw/reed` (no-op while it exists).
+
+## Follow-up 2026-10-13 (Mike: "yes to both, delete the leftovers and fix Reed tests")
+Leftovers: the 18 `data/raw/adzuna/raw_20261012_*`/`raw_20261013_*` files (33-byte empty
+payload) and the 3 test output files were moved to the macOS Trash, not hard-deleted.
+
+Reed fix spec: the 2 tests in `tests/test_reed_adzuna_clients.py::TestReedSaveRawResponse`
+patch `pathlib.Path`, which does not reach `src/job_sources/reed_client.py` (it binds `Path`
+at import), so `raw_dir.mkdir(...)` runs against the real `data/raw/reed`. Add
+`monkeypatch.chdir(tmp_path)` to those 2 tests only (same pattern as above).
+Acceptance:
+6. The 2 tests pass alone; with `data/raw/reed` absent from the working directory, running
+   them does not create it in the project tree (it appears under tmp only).
+7. No `assert` line changed; only `tests/test_reed_adzuna_clients.py` edited.
+8. Full suite: failing set still equals the 21-ID baseline; no change under `data/raw/` or
+   `output/`.
+Result: criteria 6-8 met (2 tests pass; with `data/raw/reed` removed in a copy it is no longer
+recreated, the HEAD version recreates it; full suite: same 21 failures, `data/raw` and `output/` unchanged).
