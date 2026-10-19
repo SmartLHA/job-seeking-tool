@@ -87,6 +87,15 @@ DEFAULT_DECISION_POLICY = DecisionPolicy(
 )
 
 
+
+# Qualitative grade bands (A-F) on the 0-100 match score. Grade A starts at
+# DEFAULT_DECISION_POLICY.apply_threshold and grade C at its review_threshold,
+# so grades never disagree with the decision bands. B and D are display-only
+# sub-bands with no decision meaning (Slice 1, 2026-10-19).
+GRADE_B_THRESHOLD: float = 72.0
+GRADE_D_THRESHOLD: float = 50.0
+
+
 SOURCE_QUALITY_SKIP_THRESHOLD: int = 40
 SOURCE_QUALITY_REVIEW_THRESHOLD: int = 70
 

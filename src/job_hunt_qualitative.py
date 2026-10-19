@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from src.job_hunt_config import DEFAULT_DECISION_POLICY, GRADE_B_THRESHOLD, GRADE_D_THRESHOLD
 from src.job_hunt_models import CandidateProfile, Skill
 from src.text_grounding import normalize_grounding_text, quote_in_text
 
@@ -50,13 +51,13 @@ DECISION_GRADE_CAPS = {"apply": "A", "review": "B", "skip": "D"}
 
 def derive_base_grade(match_score: float) -> str:
     score = float(match_score)
-    if score >= 80:
+    if score >= DEFAULT_DECISION_POLICY.apply_threshold:
         return "A"
-    if score >= 72:
+    if score >= GRADE_B_THRESHOLD:
         return "B"
-    if score >= 65:
+    if score >= DEFAULT_DECISION_POLICY.review_threshold:
         return "C"
-    if score >= 50:
+    if score >= GRADE_D_THRESHOLD:
         return "D"
     return "F"
 
