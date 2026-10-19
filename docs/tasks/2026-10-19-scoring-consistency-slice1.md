@@ -57,4 +57,5 @@ Full suite (Linux VM, Python 3.10): 1850 passed (after 1b) / 30 failed / 8 skipp
 - Not added to the SQLite jobs index, digest feed or exports.
 - "Flag when two runs differ" not built: re-evaluate does not re-extract skills (`_reevaluate_digest_jobs_locked` docstring), so a difference needs a second import of the same ad — rare. Revisit with Slice 2 measurement.
 
-**Tests:** `tests/test_skill_extraction_method.py` (28). Full suite (Linux VM, Python 3.10): 1878 passed / 30 failed / 8 skipped; failures identical to the pre-change baseline.
+**Tests:** `tests/test_skill_extraction_method.py` (28). Full suite (Linux VM, Python 3.10): working tree (incl. owner's other uncommitted work) 1878 passed / 30 failed / 8 skipped, failures identical to the pre-session baseline; clean HEAD `e9c4231` 1762 passed / 34 failed — the extra 4 are `tests/test_market_position_route.py` and also fail at pre-session commit `1a52149` and with this slice reverted (not caused by 1c). Independent verifier (Python 3.13): 28/28; no BLOCKER/MAJOR.
+- Also a limit: an "llm" result that returns an empty skill list is still labelled "llm".
