@@ -142,9 +142,8 @@ def test_ui_display_rule_matches_decision_reason_rule(score: float) -> None:
 
 
 def test_ui_render_has_no_module_level_domain_imports() -> None:
-    # Module-level only: four pre-existing function-local imports
-    # (salary_benchmark, scoring_presets) predate Slice 1 and are tracked
-    # separately in PROJECT_TODO.
+    # Module-level check; tests/test_ui_render_purity.py also checks
+    # function-local imports (removed 2026-10-19).
     tree = ast.parse(Path("src/ui_render.py").read_text(encoding="utf-8"))
     imported = [
         node.module for node in tree.body

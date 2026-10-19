@@ -12,7 +12,13 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
-from src.ui_utils import escape, format_salary_range, format_score_display
+from src.ui_utils import (
+    SCORING_PRESET_LABELS,
+    escape,
+    format_salary_range,
+    format_score_display,
+    market_badge_display,
+)
 from src.ui_state import _HOME_TABS, _PAGE_UPDATED
 
 
@@ -1302,11 +1308,10 @@ def render_salary_benchmark_panel(job_id: str, market_snapshot: dict | None = No
     hit POST /job/{id}/market-position(/clear) — an explicit user action only,
     never triggered by this panel's own advisory fetch.
     """
-    from src.job_hunt_salary_benchmark import market_badge_text
     job_id_esc = escape(job_id)
     saved_html = ""
     if market_snapshot is not None:
-        badge_text = market_badge_text(market_snapshot) or "Saved, but not enough data to classify a position."
+        badge_text = market_badge_display(market_snapshot) or "Saved, but not enough data to classify a position."
         saved_html = (
             '<div style="margin-bottom:10px;padding:8px 10px;background:var(--surface-sunk);'
             'border:1px solid var(--line);border-radius:var(--r-md);display:flex;align-items:center;'
@@ -1464,8 +1469,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         """Market-aware salary (2026-09-22, revision 2): the always-on reminder
         badge. Amber for "bottom", neutral for "typical"/"top"; nothing for
         "unknown" or no saved snapshot at all."""
-        from src.job_hunt_salary_benchmark import market_badge_text
-        text = market_badge_text(vm.market_snapshot)
+        text = market_badge_display(vm.market_snapshot)
         if not text:
             return ""
         is_bottom = isinstance(vm.market_snapshot, dict) and vm.market_snapshot.get("position") == "bottom"
@@ -1648,10 +1652,9 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         # only; it does NOT imply the score was adjusted (that's market_adjustment).
         below_market_html = ""
         if isinstance(vm.market_snapshot, dict) and vm.market_snapshot.get("position") == "bottom":
-            from src.job_hunt_salary_benchmark import market_badge_text
             below_market_html = (
                 f'<p style="margin:8px 0 0;font-size:13px;color:var(--skip);font-weight:600;line-height:1.5;">'
-                f'&#9888; Below market: {escape(market_badge_text(vm.market_snapshot) or "")}</p>'
+                f'&#9888; Below market: {escape(market_badge_display(vm.market_snapshot) or "")}</p>'
             )
         market_adjustment_html = ""
         if vm.market_adjustment is not None:
@@ -2558,14 +2561,12 @@ def render_profile_page(
     )
 
     # Scoring weight presets (Slice C, 2026-07-21 search/score/filter plan).
-    # Plain HTML form (no JS required) so it degrades gracefully; imported
-    # lazily to keep the render layer free of a module-load-order dependency
-    # on the scoring-presets module.
-    from src.job_hunt_scoring_presets import PRESET_LABELS
+    # Plain HTML form (no JS required) so it degrades gracefully. Labels come
+    # from ui_utils.SCORING_PRESET_LABELS (pinned to job_hunt_scoring_presets).
 
     _preset_options = "".join(
         f'<option value="{escape(name)}"' + (' selected' if name == active_scoring_preset else '') + f'>{escape(label)}</option>'
-        for name, label in PRESET_LABELS.items()
+        for name, label in SCORING_PRESET_LABELS.items()
     )
     scoring_preset_section = (
         '<section class="panel" id="scoring-preset-panel">'

@@ -149,6 +149,30 @@ def skill_extraction_method_from_warning(warning: str | None) -> str:
     return "keyword" if warning else "llm"
 
 
+# Display copies of two domain constants/formatters, so ui_render needs no
+# domain imports (INDEX: ui_render is pure). Pinned to the originals by
+# tests/test_ui_render_purity.py; change both together.
+MARKET_POSITION_LABELS: dict[str, str] = {
+    "bottom": "bottom quarter", "typical": "typical range", "top": "top quartile",
+}
+SCORING_PRESET_LABELS: dict[str, str] = {
+    "balanced": "Balanced", "salary_focused": "Salary-focused", "skills_focused": "Skills-focused",
+}
+
+
+def market_badge_display(snapshot: Any) -> str | None:
+    """Mirror of job_hunt_salary_benchmark.market_badge_text (pinned by test)."""
+    if not isinstance(snapshot, dict):
+        return None
+    label = MARKET_POSITION_LABELS.get(snapshot.get("position"))
+    if label is None:
+        return None
+    n = snapshot.get("sample_total")
+    date = str(snapshot.get("histogram_date") or "")[:10] or "unknown date"
+    n_text = f"n={n}" if n is not None else "n=?"
+    return f"Market: {label} ({n_text}, as of {date}, Adzuna)"
+
+
 def format_score_display(score: float) -> str:
     """Display rule for a 0-100 match score: truncate, never round up.
 
