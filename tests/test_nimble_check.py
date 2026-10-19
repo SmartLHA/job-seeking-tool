@@ -312,15 +312,19 @@ def test_score_levels_use_rubric_for_1_3_5_and_between_for_2_4():
         assert levels[3].startswith("Between") and mid in levels[3] and high in levels[3]
 
 
-def test_rubric_wording_has_not_drifted_from_qualitative_prompt():
-    from src.job_hunt_models import CandidateProfile
-    from src.job_hunt_qualitative import DIMENSIONS, build_qualitative_prompt
+def test_frozen_rubric_wording_is_unchanged():
+    # The blind check keeps the pre-2026-10-19 1/3/5 wording on purpose so
+    # results stay comparable; the app prompt moved to 5 described levels
+    # (Slice 3). This pins the frozen copy against accidental edits.
+    from src.job_hunt_qualitative import DIMENSIONS
 
     assert set(nc.DIMENSION_RUBRIC) == set(DIMENSIONS)
-    prompt = build_qualitative_prompt("jd", CandidateProfile(candidate_id="c1", target_roles=["Business Analyst"]))
-    for name, (low, mid, high) in nc.DIMENSION_RUBRIC.items():
-        line = next(l for l in prompt.splitlines() if l.startswith(f"- {name}:"))
-        assert f"1 = {low}" in line and f"3 = {mid}" in line and f"5 = {high}" in line
+    assert nc.DIMENSION_RUBRIC == {
+        "seniority_fit": ("clearly too junior/senior", "unclear or partial match", "strong seniority match"),
+        "culture_signals": ("evidence of poor fit or unhealthy signals", "little/no evidence", "strong positive signals"),
+        "red_flags": ("material red flags", "limited/unclear warning signs", "no meaningful red flags in the JD"),
+        "role_archetype_alignment": ("poor alignment with target roles", "mixed/unclear", "strong archetype match"),
+    }
 
 
 def test_tier_criteria_match_app_tiers():

@@ -83,8 +83,11 @@ TOKEN_WARN = 7000
 # Threshold for "Nimble yes" on the noul questions (P(yes) >= 0.5). Set before any live run.
 THRESHOLD = 0.5
 
-# Level 1 / 3 / 5 wording of the four dimension rubrics, copied from
-# build_qualitative_prompt in src/job_hunt_qualitative.py (a test guards against drift).
+# Level 1 / 3 / 5 wording of the four dimension rubrics, FROZEN from the
+# pre-2026-10-19 build_qualitative_prompt so blind-check results stay comparable.
+# The app prompt now defines all five levels (job_hunt_qualitative.RUBRICS,
+# Slice 3); this copy deliberately does not follow it (Mike, 2026-10-19).
+# tests/test_nimble_check.py pins this wording.
 DIMENSION_RUBRIC = {
     "seniority_fit": ("clearly too junior/senior", "unclear or partial match", "strong seniority match"),
     "culture_signals": ("evidence of poor fit or unhealthy signals", "little/no evidence", "strong positive signals"),

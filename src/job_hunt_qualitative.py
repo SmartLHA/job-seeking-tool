@@ -280,6 +280,52 @@ def run_qualitative_assessment_pipeline(
     return QualitativeRunResult(ok=False, error=last_error, model=model_used)
 
 
+# Slice 3 (2026-10-19): each 1-5 level has its own descriptor, replacing the
+# old 1/3/5 anchor points (Mike's standing rule: ranges, not anchors). Level 2
+# matters most: derive_grade caps the grade when culture_signals or red_flags
+# score <= 2, so 2 must mean a real, evidenced concern, not "slightly unsure".
+RUBRICS: dict[str, dict[int, str]] = {
+    "seniority_fit": {
+        1: "clearly mismatched: role is two or more levels too junior or too senior",
+        2: "noticeable mismatch: about one level off, or key seniority expectations not met",
+        3: "unclear or mixed: level not stated, or signals point both ways",
+        4: "good fit with minor gaps: level matches, one expectation stretches the candidate",
+        5: "strong fit: stated level, scope and responsibilities match the candidate",
+    },
+    "culture_signals": {
+        1: "clear unhealthy signals quoted in the JD (e.g. always-on, blame, chronic overtime)",
+        2: "some evidenced concerns that suggest poor fit; quote them",
+        3: "little or no evidence either way",
+        4: "some positive, specific signals (e.g. flexibility, learning, team practices)",
+        5: "strong, specific positive signals with concrete commitments",
+    },
+    "red_flags": {
+        1: "material red flags (e.g. unrealistic scope, pay far below role, vague employer)",
+        2: "one or more real warning signs worth checking before applying",
+        3: "limited or unclear warning signs",
+        4: "minor issues only (e.g. generic wording, missing salary)",
+        5: "no meaningful red flags in the JD",
+    },
+    "role_archetype_alignment": {
+        1: "poor alignment: role is a different archetype from all target roles",
+        2: "weak alignment: overlaps a target archetype in a minority of duties",
+        3: "mixed or unclear: about half the duties match a target archetype",
+        4: "good alignment: most duties match a target archetype",
+        5: "strong alignment: duties and title match a target archetype",
+    },
+}
+
+
+def _render_rubrics() -> str:
+    lines = []
+    for dimension in DIMENSIONS:
+        levels = RUBRICS[dimension]
+        lines.append(f"- {dimension}:")
+        for level in range(1, 6):
+            lines.append(f"  {level} = {levels[level]}")
+    return "\n".join(lines)
+
+
 def build_qualitative_prompt(jd_text: str, profile: CandidateProfile) -> str:
     target_roles = [r.strip() for r in getattr(profile, "target_roles", []) if str(r).strip()]
     relevant_skills = _relevant_profile_skills(jd_text, profile)
@@ -320,11 +366,9 @@ UK BA/PM archetypes:
 - Hybrid BA-PM/Product Owner: mixes BA discovery with backlog ownership, prioritisation, roadmap and delivery coordination.
 - Business Change/Transformation: change impact, comms, adoption, process transformation, operating model change.
 
-Rubrics:
-- seniority_fit: 1 = clearly too junior/senior, 3 = unclear or partial match, 5 = strong seniority match.
-- culture_signals: 1 = evidence of poor fit or unhealthy signals, 3 = little/no evidence, 5 = strong positive signals.
-- red_flags: 1 = material red flags, 3 = limited/unclear warning signs, 5 = no meaningful red flags in the JD.
-- role_archetype_alignment: 1 = poor alignment with target roles, 3 = mixed/unclear, 5 = strong archetype match.
+Rubrics (every level is defined; pick the level whose description fits best,
+do not interpolate between levels):
+{_render_rubrics()}
 
 Rules:
 - {archetype_instruction}

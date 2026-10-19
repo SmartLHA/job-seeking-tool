@@ -35,7 +35,7 @@ Full suite (Linux VM, Python 3.10): 1850 passed (after 1b) / 30 failed / 8 skipp
 - 1b: (corrected 2026-10-19) the digest feed is not filtered by `digest_threshold`; that setting (default 70) gates AI-analysis queueing and re-evaluate resurfacing (unread flag). The profile label "Show jobs scoring ≥" is misleading. The earlier claim that it hides Review jobs 65–69 from the feed was wrong. ✅ Done 2026-10-19 (label only, Mike's choice): label now "AI analysis for jobs scoring ≥ (0–100)"; `JobHuntProfile.digest_threshold` comment corrected.
 - 1c: ✅ Done 2026-10-19 — see "Slice 1c" below.
 - 2: borderline flag — only after measuring score variance on 20–30 re-extracted jobs.
-- 3: qualitative rubric range descriptors (replace 1/3/5 anchors).
+- 3: ✅ Done 2026-10-19 — see "Slice 3" below.
 - Pre-existing: ui_render has 4 function-local domain imports (`job_hunt_salary_benchmark` ×3, `job_hunt_scoring_presets` ×1) that break the "pure" contract; not touched here.
 - Open: should a very low score with a critical risk go to Review (current spec) or Skip? Behaviour kept; text fixed.
 
@@ -59,3 +59,13 @@ Full suite (Linux VM, Python 3.10): 1850 passed (after 1b) / 30 failed / 8 skipp
 
 **Tests:** `tests/test_skill_extraction_method.py` (28). Full suite (Linux VM, Python 3.10): working tree (incl. owner's other uncommitted work) 1878 passed / 30 failed / 8 skipped, failures identical to the pre-session baseline; clean HEAD `e9c4231` 1762 passed / 34 failed — the extra 4 are `tests/test_market_position_route.py` and also fail at pre-session commit `1a52149` and with this slice reverted (not caused by 1c). Independent verifier (Python 3.13): 28/28; no BLOCKER/MAJOR.
 - Also a limit: an "llm" result that returns an empty skill list is still labelled "llm".
+
+
+## Slice 3 — qualitative rubric defines every level (2026-10-19)
+
+- `job_hunt_qualitative.py`: `RUBRICS` (4 dimensions × levels 1–5, each with its own descriptor) rendered into the prompt by `_render_rubrics()`; prompt tells the model to pick the best-fitting level and not interpolate. Replaces the 1/3/5 anchor-only rubric.
+- Level 2 for culture_signals / red_flags is worded as an evidenced concern, because `derive_grade` caps the grade at score ≤ 2.
+- `scripts/nimble_check.py` keeps its frozen pre-change 1/3/5 copy (Mike's choice, so blind-check results stay comparable); `tests/test_nimble_check.py` drift test now pins that frozen wording instead of matching the app prompt.
+- **Behaviour:** advisory only — no score or decision change; Gemini's 1–5 qualitative scores (and therefore grade caps) may shift for new assessments. Existing stored assessments are not re-run.
+- **Not done:** no calibration run comparing old vs new rubric on real ads.
+- **Tests:** `tests/test_qualitative_rubric.py` (12). Full suite (Linux VM, Python 3.10, working tree): 1890 passed / 30 failed, failures identical to the pre-session baseline.
