@@ -301,7 +301,7 @@ RUBRICS: dict[str, dict[int, str]] = {
     },
     "red_flags": {
         1: "material red flags (e.g. unrealistic scope, pay far below role, vague employer)",
-        2: "one or more real warning signs worth checking before applying",
+        2: "at least one material warning sign that must be checked before applying",
         3: "limited or unclear warning signs",
         4: "minor issues only (e.g. generic wording, missing salary)",
         5: "no meaningful red flags in the JD",
