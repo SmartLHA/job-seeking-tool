@@ -61,7 +61,7 @@ from src.job_hunt_storage import (
     save_reviewed_job,
 )
 from src.job_sources.source_registry import get_source
-from src.ui_utils import reviewed_job_payload_from_ui_result
+from src.ui_utils import reviewed_job_payload_from_ui_result, skill_extraction_method_from_warning
 
 logger = logging.getLogger(__name__)
 
@@ -224,6 +224,7 @@ def _run_digest_pipeline_locked(
                 required, preferred, _warn = extract_skills_from_text(payload["description_raw"])
                 payload["required_skills"] = required
                 payload["preferred_skills"] = preferred
+                payload["skill_extraction_method"] = skill_extraction_method_from_warning(_warn)  # Slice 1c
                 job = reviewed_job_from_dict(payload)
                 analysis = evaluate_reviewed_job(profile, job, scoring_policy=_scoring_policy)
             except Exception as exc:

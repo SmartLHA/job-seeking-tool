@@ -876,7 +876,13 @@ def _render_add_job_form_fields(values: dict[str, str]) -> str:
             return f'<label>{label_span}<textarea name="{escape(name)}" placeholder="{escape(placeholder)}">{value}</textarea></label>'
         return f'<label>{label_span}<input name="{escape(name)}" value="{value}" placeholder="{escape(placeholder)}"></label>'
 
+    # Slice 1c: always present so the paste/URL prefill JSON can fill it by name.
+    skill_method_hidden = (
+        f'<input type="hidden" name="skill_extraction_method" '
+        f'value="{escape(values.get("skill_extraction_method", ""))}">'
+    )
     return f"""
+      {skill_method_hidden}
       <div class="grid two-col">
         {field('job_id', 'Job id (leave blank to auto-generate)')}
         {field('input_method', 'Input method', placeholder='url or copied_text')}
@@ -917,9 +923,14 @@ def render_input_form(values: dict[str, str]) -> str:
     # Daily Digest D2: carry the stable provider id so the manual flow persists it
     # (dedup key on rebuild). Display-only source_ref/url are separate fields above.
     source_job_id_hidden = f'<input type="hidden" name="source_job_id" value="{escape(values.get("source_job_id", ""))}">' if values.get("source_job_id") else ""
+    skill_method_hidden = (
+        f'<input type="hidden" name="skill_extraction_method" '
+        f'value="{escape(values.get("skill_extraction_method", ""))}">'
+    )
     return f"""
       {source_snapshot_hidden}
       {source_job_id_hidden}
+      {skill_method_hidden}
       <section class="panel subtle" id="prefill-panel">
         <h3>Quick prefill</h3>
         <div class="tab-row" role="tablist" aria-label="Prefill method tabs">
@@ -1042,6 +1053,22 @@ class JobPageViewModel:
     flash_kind: str
     embed: bool
     model_label: str
+    skill_extraction_method: str | None = None  # Slice 1c
+
+
+SKILL_METHOD_LABELS = {
+    "llm": "Skills prefilled by Gemini",
+    "keyword": "Skills prefilled by keyword fallback (Gemini not used)",
+}
+
+
+def skill_method_note(method: str | None) -> str:
+    """Slice 1c: small note under Required skills on the job page."""
+    text = SKILL_METHOD_LABELS.get(method or "", "Skills source not recorded")
+    return (
+        f'<div data-skill-method="{escape(method or "unknown")}" '
+        f'style="font-size:11px;color:var(--ink-faint);margin-top:4px;">{escape(text)}</div>'
+    )
 
 
 # F1 v2 — keyword-match panel as a standalone, full-wrapper renderer. Used by BOTH
@@ -2365,6 +2392,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         f'<div style="margin-top:14px;">'
         f'<div style="font-size:11px;font-weight:700;color:var(--ink-faint);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Required skills</div>'
         f'{_pill_list(list(vm.required_skills))}'
+        f'{skill_method_note(vm.skill_extraction_method)}'
         f'</div>'
         f'<div style="margin-top:14px;">'
         f'<div style="font-size:11px;font-weight:700;color:var(--ink-faint);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Preferred skills</div>'

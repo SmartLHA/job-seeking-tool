@@ -38,6 +38,7 @@ from src.ui_state import (
     _SELECT_FORM_FIELD_LIMITS,
 )
 from src.ui_utils import (
+    skill_extraction_method_from_warning,
     default_form_values,
     escape,
     squash_whitespace,
@@ -445,6 +446,7 @@ def select_handler(post_form: dict, config: Any) -> dict:
             "description_raw": description_raw,
             "required_skills": ", ".join(_req_skills),
             "preferred_skills": ", ".join(_pref_skills),
+            "skill_extraction_method": skill_extraction_method_from_warning(_skill_warn),  # Slice 1c
             "notes": (
                 "Prefilled from LinkedIn search result (best effort). "
                 "Review all fields before evaluation."

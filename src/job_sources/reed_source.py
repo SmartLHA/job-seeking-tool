@@ -36,6 +36,7 @@ from src.ui_state import (
     _ALLOWED_EMPLOYMENT_TYPES,
 )
 from src.ui_utils import (
+    skill_extraction_method_from_warning,
     escape,
     squash_whitespace,
     normalize_optional_int_text,
@@ -184,6 +185,7 @@ def reed_select_form_to_evaluate_values(form: dict[str, str], config: "object | 
             "description_raw": full_description,
             "required_skills": ", ".join(_req_skills),
             "preferred_skills": ", ".join(_pref_skills),
+            "skill_extraction_method": skill_extraction_method_from_warning(_skill_warn),  # Slice 1c
             "notes": "Prefilled from Reed search result. Review all fields before evaluation.",
             "source_snapshot_json": serialize_reed_source_snapshot(source_snapshot),
         }

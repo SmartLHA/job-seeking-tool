@@ -33,8 +33,28 @@ Full suite (Linux VM, Python 3.10): 1850 passed (after 1b) / 30 failed / 8 skipp
 
 ## Not in this slice (separate approval)
 - 1b: (corrected 2026-10-19) the digest feed is not filtered by `digest_threshold`; that setting (default 70) gates AI-analysis queueing and re-evaluate resurfacing (unread flag). The profile label "Show jobs scoring ≥" is misleading. The earlier claim that it hides Review jobs 65–69 from the feed was wrong. ✅ Done 2026-10-19 (label only, Mike's choice): label now "AI analysis for jobs scoring ≥ (0–100)"; `JobHuntProfile.digest_threshold` comment corrected.
-- 1c: record which skill extractor ran (Gemini vs keyword fallback) per job.
+- 1c: ✅ Done 2026-10-19 — see "Slice 1c" below.
 - 2: borderline flag — only after measuring score variance on 20–30 re-extracted jobs.
 - 3: qualitative rubric range descriptors (replace 1/3/5 anchors).
 - Pre-existing: ui_render has 4 function-local domain imports (`job_hunt_salary_benchmark` ×3, `job_hunt_scoring_presets` ×1) that break the "pure" contract; not touched here.
 - Open: should a very low score with a critical risk go to Review (current spec) or Skip? Behaviour kept; text fixed.
+
+
+## Slice 1c — record which skill extractor ran (2026-10-19)
+
+**Why:** `extract_skills_from_text` silently falls back from Gemini to a local keyword scan; required skills carry weight 35, so the same ad could score differently depending on Gemini availability, with no record of which ran.
+
+**Changes**
+- `job_hunt_models.py`: `SKILL_EXTRACTION_METHODS = ("llm", "keyword")`; `JobPosting.skill_extraction_method: str | None = None` (validated). None = legacy record or skills typed by hand.
+- `job_hunt_reviewed_input.py`: allowed key; `_skill_extraction_method()` normalises (blank → None, case-folded) and rejects unknown values; `reviewed_job_to_dict` writes it. Old JSON records load unchanged (None).
+- `ui_utils.py`: `skill_extraction_method_from_warning(warning)` (warning → "keyword", none → "llm"); form payload, default form values and saved-job → form values carry the field.
+- Writers (where extraction runs): Reed / Adzuna / LinkedIn select prefill (`*_source.py`), digest pipeline (`job_hunt_scheduler.run_digest_pipeline`), paste/URL prefill (`ui_handlers.handle_prefill` → "keyword", because `parse_job_from_text` uses the keyword scan).
+- `ui_render.py`: hidden `skill_extraction_method` input in both job forms (always present so prefill JSON can fill it); `JobPageViewModel.skill_extraction_method`; `skill_method_note()` under "Required skills" on the job page ("Skills prefilled by Gemini" / "…keyword fallback (Gemini not used)" / "Skills source not recorded").
+- `job_hunt_parsing.py` not touched.
+
+**Limits**
+- Records the PREFILL method. If skills are edited by hand afterwards, the label still shows the prefill method.
+- Not added to the SQLite jobs index, digest feed or exports.
+- "Flag when two runs differ" not built: re-evaluate does not re-extract skills (`_reevaluate_digest_jobs_locked` docstring), so a difference needs a second import of the same ad — rare. Revisit with Slice 2 measurement.
+
+**Tests:** `tests/test_skill_extraction_method.py` (28). Full suite (Linux VM, Python 3.10): 1878 passed / 30 failed / 8 skipped; failures identical to the pre-change baseline.

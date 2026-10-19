@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import partial
 from typing import Any
 
-from src.job_hunt_models import JobPosting
+from src.job_hunt_models import SKILL_EXTRACTION_METHODS, JobPosting
 from src import job_hunt_validation as _v
 
 
@@ -41,6 +41,7 @@ OPTIONAL_REVIEWED_JOB_FIELDS = {
     "source_quality_score",
     "url",
     "source_job_id",
+    "skill_extraction_method",
 }
 
 
@@ -98,7 +99,21 @@ def reviewed_job_from_dict(
         salary_max_gbp=_optional_non_negative_int(payload.get("salary_max_gbp"), "salary_max_gbp"),
         source_quality_score=_optional_non_negative_int(payload.get("source_quality_score"), "source_quality_score"),
         source_job_id=_optional_string(payload.get("source_job_id"), "source_job_id", empty_as_none=True),
+        skill_extraction_method=_skill_extraction_method(payload.get("skill_extraction_method")),
     )
+
+
+def _skill_extraction_method(value: Any) -> str | None:
+    """Slice 1c: blank/None -> None; otherwise one of SKILL_EXTRACTION_METHODS."""
+    method = _optional_string(value, "skill_extraction_method", empty_as_none=True)
+    if method is None:
+        return None
+    method = method.strip().lower()
+    if method not in SKILL_EXTRACTION_METHODS:
+        raise ReviewedInputValidationError(
+            f"skill_extraction_method must be one of {', '.join(SKILL_EXTRACTION_METHODS)} or blank"
+        )
+    return method
 
 
 def reviewed_job_to_dict(job: JobPosting) -> dict[str, Any]:
@@ -124,6 +139,7 @@ def reviewed_job_to_dict(job: JobPosting) -> dict[str, Any]:
         "salary_max_gbp": job.salary_max_gbp,
         "source_quality_score": job.source_quality_score,
         "source_job_id": job.source_job_id,
+        "skill_extraction_method": job.skill_extraction_method,
     }
 
 

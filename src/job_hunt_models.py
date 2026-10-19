@@ -74,6 +74,14 @@ class CandidateProfile:
 # Job posting models capture the reviewed structured job record that scoring will
 # consume. Unknowns are allowed because MVP input may start from copied text or a
 # simple URL and should preserve uncertainty instead of guessing.
+# Slice 1c (2026-10-19): which extractor prefilled required/preferred skills.
+# "llm" = Gemini (job_hunt_llm.extract_skills_with_llm); "keyword" = local
+# KNOWN_SKILLS keyword scan (Gemini fallback, or the paste/URL prefill parser).
+# None = unknown (records saved before this field, or skills typed by hand).
+# Skills edited by hand after a prefill keep the prefill method.
+SKILL_EXTRACTION_METHODS: tuple[str, ...] = ("llm", "keyword")
+
+
 @dataclass(slots=True)
 class JobPosting:
     job_id: str
@@ -99,8 +107,13 @@ class JobPosting:
     # a stripped string. The dedup key (with lower(source)); URL/source_ref are
     # display metadata only. Optional + default None so existing records load unchanged.
     source_job_id: str | None = None
+    skill_extraction_method: str | None = None  # Slice 1c; see SKILL_EXTRACTION_METHODS
 
     def __post_init__(self) -> None:
+        if self.skill_extraction_method is not None and self.skill_extraction_method not in SKILL_EXTRACTION_METHODS:
+            raise ValueError(
+                f"skill_extraction_method must be one of {SKILL_EXTRACTION_METHODS} or None"
+            )
         required_text_fields = {
             "job_id": self.job_id,
             "job_title": self.job_title,

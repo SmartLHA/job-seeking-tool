@@ -82,6 +82,7 @@ def reviewed_job_payload_from_form(form: dict[str, str]) -> dict[str, Any]:
         "source_ref": optional_text(form, "source_ref"),
         "url": optional_text(form, "job_url"),
         "source_job_id": optional_text(form, "source_job_id"),
+        "skill_extraction_method": optional_text(form, "skill_extraction_method"),
         "location": optional_text(form, "location"),
         "work_mode": optional_text(form, "work_mode"),
         "employment_type": optional_text(form, "employment_type"),
@@ -139,6 +140,15 @@ def normalize_optional_int_text(value: str) -> str:
     return str(max(0, number))
 
 
+def skill_extraction_method_from_warning(warning: str | None) -> str:
+    """Slice 1c: map extract_skills_from_text()'s warning to a method label.
+
+    extract_skills_from_text returns a warning only when Gemini failed and the
+    keyword fallback ran, so: warning -> "keyword", no warning -> "llm".
+    """
+    return "keyword" if warning else "llm"
+
+
 def format_score_display(score: float) -> str:
     """Display rule for a 0-100 match score: truncate, never round up.
 
@@ -184,6 +194,7 @@ def default_form_values() -> dict[str, str]:
         "notes": "",
         "source_snapshot_json": "",
         "source_job_id": "",
+        "skill_extraction_method": "",
     }
 
 
@@ -203,6 +214,7 @@ def form_values_from_reviewed_job(job: Any) -> dict[str, str]:
         "source_ref": stringify_form_value(getattr(job, "source_ref", "")),
         "job_url": stringify_form_value(getattr(job, "url", "")),
         "source_job_id": stringify_form_value(getattr(job, "source_job_id", "")),
+        "skill_extraction_method": stringify_form_value(getattr(job, "skill_extraction_method", "")),
         "job_title": stringify_form_value(getattr(job, "job_title", "")),
         "company": stringify_form_value(getattr(job, "company", "")),
         "location": stringify_form_value(getattr(job, "location", "")),

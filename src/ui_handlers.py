@@ -1385,6 +1385,8 @@ def handle_prefill(req, config, responder):
 
     values = default_form_values()
     values.update({key: stringify_form_value(value) for key, value in payload.items() if key in values})
+    # Slice 1c: parse_job_from_text/_url use the local keyword scan for skills.
+    values["skill_extraction_method"] = "keyword"
     if mode == "paste":
         values["input_method"] = "copied_text"
         values["copied_text"] = form.get("job_text", "")
@@ -3163,6 +3165,7 @@ def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash,
         description_raw=reviewed_job.description_raw,
         required_skills=list(reviewed_job.required_skills),
         preferred_skills=list(reviewed_job.preferred_skills),
+        skill_extraction_method=getattr(reviewed_job, "skill_extraction_method", None),
         has_outcome=outcome is not None,
         outcome_status=outcome.status if outcome else None,
         outcome_notes=outcome.notes if outcome else None,
