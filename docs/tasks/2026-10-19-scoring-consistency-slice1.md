@@ -28,11 +28,11 @@ The match score is deterministic (weighted rules); the LLM is advisory only. Per
 - `_subscore_bar` deliberately unchanged (dimension subscores are a different scale).
 
 ## Tests
-`tests/test_decision_boundaries.py` (50 cases): exact boundaries 80.0/79.99/65.0/64.99, low-confidence gate, critical risk in each band, marginal-source-quality default-policy-only, display rule (decision == UI), grade/policy alignment, queue tone == decision, view-model defaults == policy, no module-level domain imports in ui_render.
-Full suite (Linux VM, Python 3.10): 1849 passed / 30 failed / 8 skipped; the 30 failures are identical to the pre-change baseline. Not yet run on the Mac project venv (Python 3.14).
+`tests/test_decision_boundaries.py` (51 cases incl. Slice 1b label test): exact boundaries 80.0/79.99/65.0/64.99, low-confidence gate, critical risk in each band, marginal-source-quality default-policy-only, display rule (decision == UI), grade/policy alignment, queue tone == decision, view-model defaults == policy, no module-level domain imports in ui_render.
+Full suite (Linux VM, Python 3.10): 1850 passed (after 1b) / 30 failed / 8 skipped; the 30 failures are identical to the pre-change baseline. Not yet run on the Mac project venv (Python 3.14).
 
 ## Not in this slice (separate approval)
-- 1b: (corrected 2026-10-19) the digest feed is not filtered by `digest_threshold`; that setting only gates AI-analysis queueing (default 70). The profile label "Show jobs scoring ≥" is misleading. The earlier claim that it hides Review jobs 65–69 from the feed was wrong. ✅ Done 2026-10-19 (label only, Mike's choice): label now "AI analysis for jobs scoring ≥ (0–100)"; `JobHuntProfile.digest_threshold` comment corrected.
+- 1b: (corrected 2026-10-19) the digest feed is not filtered by `digest_threshold`; that setting (default 70) gates AI-analysis queueing and re-evaluate resurfacing (unread flag). The profile label "Show jobs scoring ≥" is misleading. The earlier claim that it hides Review jobs 65–69 from the feed was wrong. ✅ Done 2026-10-19 (label only, Mike's choice): label now "AI analysis for jobs scoring ≥ (0–100)"; `JobHuntProfile.digest_threshold` comment corrected.
 - 1c: record which skill extractor ran (Gemini vs keyword fallback) per job.
 - 2: borderline flag — only after measuring score variance on 20–30 re-extracted jobs.
 - 3: qualitative rubric range descriptors (replace 1/3/5 anchors).
