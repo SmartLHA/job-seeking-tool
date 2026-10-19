@@ -1,5 +1,12 @@
 # Scoring consistency — Slice 1 (2026-10-19)
 
+<!-- STATUS -->
+> **Implementation status:** ✅ Implemented 2026-10-19
+> **Divergences from spec:** follow-up commit moved thresholds into `ReviewQueueViewModel` so `ui_render` keeps no module-level domain imports
+> **Key functions:** `format_score()`, `_build_critical_risk_reason()`, `derive_base_grade()`, `score_tone()`, `format_score_display()`, `handle_get_review_queue()`
+> **Routes:** `GET /review-queue` (rendering only)
+<!-- /STATUS -->
+
 **Status:** ✅ Implemented 2026-10-19 — commits `7be8c83` + follow-up (ui_render purity fix). Approved by Mike 2026-10-19 ("do slice 1").
 **Origin:** design-council review (Claude plan + independent reviewer agent; Codex unavailable in Cowork). Research: knowledge-wiki `Notes/job-search-automation-sources.md`.
 
