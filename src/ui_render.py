@@ -2775,7 +2775,7 @@ def render_profile_page(
           ('<option value="true"' + (' selected' if vm.digest_enabled else '') + '>Yes</option>'),
           ('<option value="false"' + ('' if vm.digest_enabled else ' selected') + '>No</option>'),
           '</select></label>',
-          '<label><span>Show jobs scoring ≥ (0–100)</span><input name="digest_threshold" type="number" min="0" max="100" value="',   escape(str(vm.digest_threshold)),   '"></label>',
+          '<label><span>AI analysis for jobs scoring ≥ (0–100)</span><input name="digest_threshold" type="number" min="0" max="100" value="',   escape(str(vm.digest_threshold)),   '"></label>',
           '<label><span>Run time (HH:MM, local)</span><input name="digest_run_time" value="',   escape(vm.digest_run_time),   '" placeholder="07:00"></label>',
           '<label><span>Max jobs per saved search (1–200)</span><input name="digest_max_per_source" type="number" min="1" max="200" value="',   escape(str(vm.digest_max_per_source)),   '"></label>',
           '<label><span>AI analysis on top matches</span><select name="digest_llm_enabled">',

@@ -52,7 +52,7 @@ class CandidateProfile:
     # Daily Digest (D3) preferences. All defaulted so existing profiles load
     # unchanged. Validated/ranged in candidate_profile_from_dict (job_hunt_profile).
     digest_enabled: bool = True
-    digest_threshold: int = 70               # surface jobs scoring >= this (0–100)
+    digest_threshold: int = 70               # queue digest jobs scoring >= this for AI analysis (0–100); does not filter the feed
     digest_run_time: str = "07:00"           # HH:MM 24-hour, local time
     digest_max_per_source: int = 50          # cap results fetched per saved search
     digest_llm_enabled: bool = True

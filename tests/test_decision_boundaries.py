@@ -151,3 +151,16 @@ def test_ui_render_has_no_module_level_domain_imports() -> None:
         if isinstance(node, ast.ImportFrom) and node.module
     ]
     assert not [m for m in imported if m.startswith("src.job_hunt_")], imported
+
+
+# --- Slice 1b: digest_threshold label says what it does ----------------------
+def test_digest_threshold_label_describes_ai_queue_not_feed_filter() -> None:
+    from src.ui_render import ProfilePageViewModel, render_profile_page
+    vm = ProfilePageViewModel(has_profile=True, name="Synthetic", target_roles=[], locations=[],
+        remote_preference="hybrid", salary_floor_gbp=0, right_to_work_uk=True, skills=[],
+        years_experience=0, industries=[], certifications=[], achievements=[],
+        master_cv_ref="", master_cv_text="")
+    html = render_profile_page(profile_id="synthetic", vm=vm, parsed_cv_text=None,
+                               parsed_filename=None, errors={}, form_values=None)
+    assert "AI analysis for jobs scoring ≥ (0–100)" in html
+    assert "Show jobs scoring" not in html

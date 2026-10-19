@@ -32,7 +32,7 @@ The match score is deterministic (weighted rules); the LLM is advisory only. Per
 Full suite (Linux VM, Python 3.10): 1849 passed / 30 failed / 8 skipped; the 30 failures are identical to the pre-change baseline. Not yet run on the Mac project venv (Python 3.14).
 
 ## Not in this slice (separate approval)
-- 1b: (corrected 2026-10-19) the digest feed is not filtered by `digest_threshold`; that setting only gates AI-analysis queueing (default 70). The profile label "Show jobs scoring ≥" is misleading. The earlier claim that it hides Review jobs 65–69 from the feed was wrong.
+- 1b: (corrected 2026-10-19) the digest feed is not filtered by `digest_threshold`; that setting only gates AI-analysis queueing (default 70). The profile label "Show jobs scoring ≥" is misleading. The earlier claim that it hides Review jobs 65–69 from the feed was wrong. ✅ Done 2026-10-19 (label only, Mike's choice): label now "AI analysis for jobs scoring ≥ (0–100)"; `JobHuntProfile.digest_threshold` comment corrected.
 - 1c: record which skill extractor ran (Gemini vs keyword fallback) per job.
 - 2: borderline flag — only after measuring score variance on 20–30 re-extracted jobs.
 - 3: qualitative rubric range descriptors (replace 1/3/5 anchors).
