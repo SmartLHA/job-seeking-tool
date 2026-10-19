@@ -12,9 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
-from src.job_hunt_config import DEFAULT_DECISION_POLICY, DecisionPolicy
-from src.job_hunt_decision import format_score
-from src.ui_utils import escape, format_salary_range
+from src.ui_utils import escape, format_salary_range, format_score_display
 from src.ui_state import _HOME_TABS, _PAGE_UPDATED
 
 
@@ -247,9 +245,14 @@ class ReviewQueueViewModel:
     active_id: str
     ids_csv: str
     model_label: str = ""
+    # Decision-policy thresholds, passed in by ui_handlers from
+    # DEFAULT_DECISION_POLICY (ui_render stays free of domain imports).
+    # Defaults are pinned to the policy by tests/test_decision_boundaries.py.
+    apply_threshold: float = 80.0
+    review_threshold: float = 65.0
 
 
-def score_tone(score: float | None, policy: DecisionPolicy = DEFAULT_DECISION_POLICY) -> str:
+def score_tone(score: float | None, apply_threshold: float = 80.0, review_threshold: float = 65.0) -> str:
     """Colour token for a 0-100 match score, using the decision policy bands.
 
     Kept in step with decide_application(): >= apply_threshold -> apply,
@@ -258,9 +261,9 @@ def score_tone(score: float | None, policy: DecisionPolicy = DEFAULT_DECISION_PO
     """
     if score is None:
         return "var(--ink-faint)"
-    if score >= policy.apply_threshold:
+    if score >= apply_threshold:
         return "var(--apply)"
-    if score >= policy.review_threshold:
+    if score >= review_threshold:
         return "var(--review)"
     return "var(--skip)"
 
@@ -288,14 +291,15 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
             f'{escape(label)}</span>'
         )
 
-    _score_color = score_tone
+    def _score_color(score: float | None) -> str:
+        return score_tone(score, vm.apply_threshold, vm.review_threshold)
 
     queue_rows = []
     for j in jobs_info:
         jid = escape(j["job_id"])
         active = j["job_id"] == active_id
         score = j["score"]
-        score_str = format_score(score) if score is not None else "–"
+        score_str = format_score_display(score) if score is not None else "–"
         sc = _score_color(score)
         border_color = "var(--accent)" if active else "var(--line)"
         bg_color = "var(--surface-2)" if active else "transparent"

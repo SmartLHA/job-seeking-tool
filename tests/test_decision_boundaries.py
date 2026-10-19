@@ -4,6 +4,9 @@ Design: docs/tasks/2026-10-19-scoring-consistency-slice1.md
 """
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 import pytest
 
 from src.job_hunt_config import (
@@ -15,7 +18,8 @@ from src.job_hunt_config import (
 from src.job_hunt_decision import decide_application, format_score
 from src.job_hunt_models import RiskFlag
 from src.job_hunt_qualitative import derive_base_grade
-from src.ui_render import score_tone
+from src.ui_render import ReviewQueueViewModel, score_tone
+from src.ui_utils import format_score_display
 
 APPLY = DEFAULT_DECISION_POLICY.apply_threshold
 REVIEW = DEFAULT_DECISION_POLICY.review_threshold
@@ -118,3 +122,32 @@ def test_queue_score_tone_matches_decision_policy(score, tone) -> None:
 def test_queue_tone_agrees_with_decision_without_risks(score: float) -> None:
     decision = decide_application(match_score=score).decision
     assert score_tone(score) == f"var(--{decision})"
+
+
+# --- ui_render stays pure: thresholds come in via the view model -----------
+def test_review_queue_view_model_defaults_match_decision_policy() -> None:
+    vm = ReviewQueueViewModel(jobs=[], active_id="", ids_csv="")
+    assert (vm.apply_threshold, vm.review_threshold) == (APPLY, REVIEW)
+
+
+def test_score_tone_defaults_match_decision_policy() -> None:
+    assert score_tone(APPLY) == "var(--apply)"
+    assert score_tone(APPLY - 0.01) == "var(--review)"
+    assert score_tone(REVIEW - 0.01) == "var(--skip)"
+
+
+@pytest.mark.parametrize("score", [0.0, 0.5, 64.5, 64.99, 65.0, 79.6, 79.99, 80.0, 99.9, 100.0])
+def test_ui_display_rule_matches_decision_reason_rule(score: float) -> None:
+    assert format_score_display(score) == format_score(score)
+
+
+def test_ui_render_has_no_module_level_domain_imports() -> None:
+    # Module-level only: four pre-existing function-local imports
+    # (salary_benchmark, scoring_presets) predate Slice 1 and are tracked
+    # separately in PROJECT_TODO.
+    tree = ast.parse(Path("src/ui_render.py").read_text(encoding="utf-8"))
+    imported = [
+        node.module for node in tree.body
+        if isinstance(node, ast.ImportFrom) and node.module
+    ]
+    assert not [m for m in imported if m.startswith("src.job_hunt_")], imported

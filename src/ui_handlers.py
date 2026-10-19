@@ -59,7 +59,7 @@ from src.job_hunt_parsing import parse_job_from_text, parse_job_from_url
 from src.job_hunt_outcomes import allowed_next_statuses, create_outcome_record, reset_terminal_outcome, update_outcome
 from src.job_hunt_profile import load_candidate_profile, save_candidate_profile, ProfileValidationError, parse_cv_file, candidate_profile_from_dict, candidate_profile_to_dict, profile_update_lock
 from src.job_hunt_models import JobPosting, Skill
-from src.job_hunt_config import get_enabled_sources, DEFAULT_TAILORING_POLICY
+from src.job_hunt_config import get_enabled_sources, DEFAULT_TAILORING_POLICY, DEFAULT_DECISION_POLICY
 from src.job_hunt_models import effective_decision
 from src.job_hunt_tailoring import (
     select_relevant_evidence,
@@ -2108,7 +2108,11 @@ def handle_get_review_queue(req, config, responder):
     if not active_id or not any(j["job_id"] == active_id for j in jobs_info):
         active_id = jobs_info[0]["job_id"]
     ids_csv = ",".join(j["job_id"] for j in jobs_info)
-    responder.send_html(render_review_queue_page(ReviewQueueViewModel(jobs=jobs_info, active_id=active_id, ids_csv=ids_csv, model_label=config.model_label)))
+    responder.send_html(render_review_queue_page(ReviewQueueViewModel(
+        jobs=jobs_info, active_id=active_id, ids_csv=ids_csv, model_label=config.model_label,
+        apply_threshold=DEFAULT_DECISION_POLICY.apply_threshold,
+        review_threshold=DEFAULT_DECISION_POLICY.review_threshold,
+    )))
 
 
 def _batch_assess_selected_ids(req) -> list[str]:

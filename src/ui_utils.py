@@ -9,6 +9,7 @@ depends on the Reed source snapshot validator and is therefore not pure.
 from __future__ import annotations
 
 import html
+import math
 import re
 import secrets
 from typing import Any
@@ -136,6 +137,15 @@ def normalize_optional_int_text(value: str) -> str:
     except ValueError:
         return ""
     return str(max(0, number))
+
+
+def format_score_display(score: float) -> str:
+    """Display rule for a 0-100 match score: truncate, never round up.
+
+    Must match job_hunt_decision.format_score (decision reasons) so the queue
+    and the reason text show the same number; a test pins the two together.
+    """
+    return str(int(math.floor(score)))
 
 
 def format_salary_range(min_salary: int | None, max_salary: int | None) -> str:
