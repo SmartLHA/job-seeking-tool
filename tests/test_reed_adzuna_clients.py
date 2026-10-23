@@ -202,6 +202,56 @@ class TestFetchAdzunaJobs:
         return tmp_path
 
     @pytest.mark.usefixtures("adzuna_tmp_cwd")
+    @pytest.mark.parametrize("status", [403, None, "fake-adzuna-key-in-url", True, 600])
+    def test_fetch_adzuna_jobs_http_error_redacts_url(
+        self, status: object, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import requests as req_lib
+
+        fake_key = "fake-adzuna-key-in-url"
+        url = f"https://api.adzuna.com/v1/api/jobs/gb/search/1?app_key={fake_key}"
+        response = req_lib.Response()
+        response.status_code = status
+        response.url = url
+        error = req_lib.exceptions.HTTPError(f"private HTTP failure for url: {url}", response=response)
+
+        with patch("requests.get", side_effect=error):
+            with patch.dict(os.environ, {"ADZUNA_APP_ID": "app1", "ADZUNA_APP_KEY": fake_key}):
+                results = adzuna_client.fetch_adzuna_jobs("BA", "London")
+
+        expected = "HTTP error occurred while fetching from Adzuna"
+        if type(status) is int and 100 <= status <= 599:
+            expected += f" (status {status})"
+        assert results == []
+        assert caplog.messages == [expected + "."]
+        assert fake_key not in caplog.text
+        assert url not in caplog.text
+        assert "private HTTP failure" not in caplog.text
+        assert all(record.exc_info is None for record in caplog.records)
+
+    @pytest.mark.usefixtures("adzuna_tmp_cwd")
+    @pytest.mark.parametrize("exception_name", ["RequestException", "ConnectionError", "Timeout"])
+    def test_fetch_adzuna_jobs_request_error_redacts_url(
+        self, exception_name: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import requests as req_lib
+
+        fake_key = "fake-adzuna-key-in-url"
+        url = f"https://api.adzuna.com/v1/api/jobs/gb/search/1?app_key={fake_key}"
+        error = getattr(req_lib.exceptions, exception_name)(f"private request failure for url: {url}")
+
+        with patch("requests.get", side_effect=error):
+            with patch.dict(os.environ, {"ADZUNA_APP_ID": "app1", "ADZUNA_APP_KEY": fake_key}):
+                results = adzuna_client.fetch_adzuna_jobs("BA", "London")
+
+        assert results == []
+        assert caplog.messages == [f"Request error occurred while fetching from Adzuna ({exception_name})."]
+        assert fake_key not in caplog.text
+        assert url not in caplog.text
+        assert "private request failure" not in caplog.text
+        assert all(record.exc_info is None for record in caplog.records)
+
+    @pytest.mark.usefixtures("adzuna_tmp_cwd")
     def test_fetch_adzuna_jobs_success(self) -> None:
         """Successful API call should return results."""
         fake_response_json = {

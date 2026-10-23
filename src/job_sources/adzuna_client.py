@@ -64,10 +64,14 @@ def fetch_adzuna_jobs(keyword: str, location: str, max_results: int = 50, *, ski
         return data.get("results", []) if isinstance(data, dict) else []
 
     except requests.exceptions.HTTPError as e:
-        logger.error(f"HTTP error occurred while fetching from Adzuna: {e}")
+        status = getattr(e.response, "status_code", None)
+        if type(status) is int and 100 <= status <= 599:
+            logger.error("HTTP error occurred while fetching from Adzuna (status %s).", status)
+        else:
+            logger.error("HTTP error occurred while fetching from Adzuna.")
         return []
     except requests.exceptions.RequestException as e:
-        logger.error(f"Request error occurred while fetching from Adzuna: {e}")
+        logger.error("Request error occurred while fetching from Adzuna (%s).", type(e).__name__)
         return []
     except json.JSONDecodeError:
         logger.error("Failed to decode JSON response from Adzuna.")
