@@ -1697,9 +1697,19 @@ _ATS_RECHECK_LOCKS: "defaultdict[str, threading.Lock]" = defaultdict(threading.L
 def handle_ats_recheck(req, config, responder, job_id):
     """POST /job/{id}/ats-recheck — re-score keyword match against the latest tailored CV."""
     with _ATS_RECHECK_LOCKS[job_id]:
-        # Tailored CV first (path-safety / empty-file gates) before any state read.
+        # Validate the active identity before reading any tailored CV.
         try:
-            tailored = load_latest_tailored_cv(job_id)
+            profile = load_candidate_profile(config.profile_path)
+        except (OSError, ValueError):
+            responder.send_json(
+                {"ok": False, "error": "Could not load active profile."},
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+            return
+
+        # Tailored CV path-safety / empty-file gates precede job-analysis reads.
+        try:
+            tailored = load_latest_tailored_cv(job_id, expected_profile_id=profile.candidate_id)
         except EmptyTailoredCVError:
             responder.send_json(
                 {"ok": False, "error": "Tailored CV is empty — re-tailor your CV first."},
