@@ -300,9 +300,10 @@ def test_actual_initial_more_keep_long_vector(tmp_path, monkeypatch, source_id, 
     monkeypatch.setattr('src.job_sources.dedup.deduplicate_jobs', lambda rows: rows)
     monkeypatch.setattr('src.job_hunt_not_interested.filter_results', lambda rows, **kw: (rows, 0))
     captured = []
-    monkeypatch.setattr('src.ui_handlers.render_home', lambda *args, **kw: captured.append(kw['search_values']))
+    monkeypatch.setattr('src.ui_handlers.render_home', lambda *args, **kw: (captured.append(kw['search_values']) or 'Synthetic prepared HTML'))
     terms = ['A' * 120, 'B' * 120, 'C' * 120]
     req = SimpleNamespace(query={'keywords': ', '.join(terms), take_key: '1'})
+    (tmp_path/'profile.json').write_text('{"candidate_id": "synthetic"}')
     config = UIServerConfig(profile_path=tmp_path/'profile.json', state_root=tmp_path/'state', report_dir=tmp_path/'reports')
     responder = Mock()
     handle_source_search(req, config, responder, source_id)
@@ -319,9 +320,16 @@ def test_actual_initial_more_keep_long_vector(tmp_path, monkeypatch, source_id, 
     assert calls == [(term, offset) for offset in (0, 1, 2) for term in terms]
     query['keywordCursors'] = '3,5,7'
     handle_source_search_more(SimpleNamespace(query=query), config, responder, source_id)
+    assert responder.send_json.call_args.kwargs['status'] == 409
+    assert responder.send_json.call_args.args[0]['restart_required'] is True
+    assert calls == [(term, offset) for offset in (0, 1, 2) for term in terms]
+    # The lower-level helper still accepts complete independent vectors; the
+    # handler additionally rejects vectors that it never issued.
+    from src.ui_handlers import _run_multi_keyword_search
+    _, _, _, next_offsets = _run_multi_keyword_search(source,
+        {take_key: '1', skip_key: '0'}, terms, offsets=[3, 5, 7])
     assert calls[-3:] == list(zip(terms, (3, 5, 7)))
-    next_query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(responder.send_json.call_args.args[0]['next_url']).query))
-    assert next_query['keywordCursors'] == '4,6,8'
+    assert next_offsets == [4, 6, 8]
     for cursor in ('-1,1,1', '1,1'):
         query['keywordCursors'] = cursor
         before = len(calls)
@@ -356,7 +364,8 @@ def test_failed_initial_term_remains_retryable_with_short_or_full_success(tmp_pa
     monkeypatch.setattr('src.job_sources.relevance.bucket_jobs_by_relevance', lambda rows, _: (rows, []))
     monkeypatch.setattr('src.job_sources.dedup.deduplicate_jobs', lambda rows: rows)
     monkeypatch.setattr('src.job_hunt_not_interested.filter_results', lambda rows, **kw: (rows, 0))
-    monkeypatch.setattr('src.ui_handlers.render_home', lambda *args, **kw: captured.append(kw['search_values']))
+    monkeypatch.setattr('src.ui_handlers.render_home', lambda *args, **kw: (captured.append(kw['search_values']) or 'Synthetic prepared HTML'))
+    (tmp_path/'profile.json').write_text('{"candidate_id": "synthetic"}')
     config = UIServerConfig(profile_path=tmp_path/'profile.json', state_root=tmp_path/'state', report_dir=tmp_path/'reports')
     responder = Mock()
     handle_source_search(SimpleNamespace(query={'keywords': terms[0]+'x, '+terms[1]+'x', take_key: '2'}), config, responder, source_id)

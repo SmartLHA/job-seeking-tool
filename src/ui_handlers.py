@@ -9,6 +9,7 @@ domain modules; it is imported by ``ui_routes`` (dispatch) and ``job_hunt_ui``.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import logging
 import re
@@ -520,7 +521,7 @@ def parse_multipart_form(req):
     return result
 
 
-def render_home(req, config, responder, *, values=None, error=None, tab='search', search_values=None, reed_results=None, reed_error=None, evaluate_notice=None, reed_other_results=None):
+def render_home(req, config, responder, *, values=None, error=None, tab='search', search_values=None, reed_results=None, reed_error=None, evaluate_notice=None, reed_other_results=None, prepare_only=False):
     tab = _normalize_home_tab(tab)
     profile = load_candidate_profile(config.profile_path)
     history = load_recent_job_history(config.state_root)
@@ -545,6 +546,8 @@ def render_home(req, config, responder, *, values=None, error=None, tab='search'
         evaluate_notice=evaluate_notice,
         model_label=config.model_label,
     )
+    if prepare_only:
+        return page
     responder.send_html(page)
 
 
@@ -1181,6 +1184,33 @@ def _apply_exclude_filter(results, raw_exclude: str):
     return kept, excluded
 
 
+def _search_binding(config, source_id: str, search_values: dict, exclude_raw: str):
+    """Bind a search to its active namespace and a frozen hidden-job lookup."""
+    from src.job_hunt_not_interested import hidden_lookup
+    profile = load_candidate_profile(config.profile_path)
+    lookup = hidden_lookup(state_root=config.state_root)
+    _take_key, skip_key = _take_skip_param_keys(search_values)
+    criteria = {
+        str(key): value for key, value in search_values.items()
+        if not str(key).startswith("_") and key not in {skip_key, "searchId", "keywordCursors", "excludeKeywords"}
+    }
+    criteria["excludeKeywords"] = sorted(_parse_exclude_terms(exclude_raw))
+    identity = [str(Path(config.state_root).resolve()), str(Path(config.profile_path).resolve()),
+                profile.candidate_id, source_id, criteria, sorted(lookup[0]), sorted(lookup[1])]
+    binding = hashlib.sha256(json.dumps(identity, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return binding, lookup
+
+
+def _search_restart_url(source_id: str, search_values: dict, exclude_raw: str) -> str:
+    from urllib.parse import quote, urlencode
+    _take_key, skip_key = _take_skip_param_keys(search_values)
+    params = {str(key): str(value) for key, value in search_values.items()
+              if not str(key).startswith("_") and key not in {skip_key, "searchId", "keywordCursors"}}
+    if exclude_raw:
+        params["excludeKeywords"] = exclude_raw
+    return "/search/" + quote(source_id, safe="") + "?" + urlencode(params)
+
+
 def handle_source_search(req, config, responder, source_id):
     params = req.query
     from src.job_sources.source_registry import get_source
@@ -1199,6 +1229,7 @@ def handle_source_search(req, config, responder, source_id):
     exclude_raw = (params.get("excludeKeywords") or "").strip()
     if exclude_raw:
         search_values["excludeKeywords"] = exclude_raw
+    binding, hidden_snapshot = _search_binding(config, source_id, search_values, exclude_raw)
     error: str | None = None
     results: list[dict[str, Any]] = []
     try:
@@ -1236,10 +1267,10 @@ def handle_source_search(req, config, responder, source_id):
             from src.job_hunt_not_interested import filter_results as _filter_ni
             _hidden_ct_total = 0
             if results:
-                results, _hidden_ct = _filter_ni(results, state_root=config.state_root)
+                results, _hidden_ct = _filter_ni(results, state_root=config.state_root, lookup=hidden_snapshot)
                 _hidden_ct_total += _hidden_ct
             if other_results:
-                other_results, _hidden_ct = _filter_ni(other_results, state_root=config.state_root)
+                other_results, _hidden_ct = _filter_ni(other_results, state_root=config.state_root, lookup=hidden_snapshot)
                 _hidden_ct_total += _hidden_ct
             if _hidden_ct_total:
                 search_values["_hidden_count"] = str(_hidden_ct_total)
@@ -1258,11 +1289,9 @@ def handle_source_search(req, config, responder, source_id):
             search_values["_excluded_count"] = str(_excl_ct_total)
     if other_results:
         search_values["_other_count"] = str(len(other_results))
-    # New search (Slice B): mint a fresh search-id and seed its "seen" set
-    # with both buckets, so later pages cannot reintroduce a result that was
-    # initially shown under Other results.
-    from src.job_sources.search_state import start_search
-    _search_id = start_search(results + other_results)
+    # Mint the ID locally; no seen state is consumed until rendering succeeds.
+    from src.job_sources.search_state import commit_initial_search, SearchRestartRequired
+    _search_id = uuid.uuid4().hex
     # Build "More jobs" URL for ANY source: same params, skip cursor advanced by
     # one page. Sources differ in param naming (Reed/Adzuna use camelCase
     # resultsToTake/resultsSkip; LinkedIn uses snake_case results_to_take/
@@ -1275,6 +1304,7 @@ def handle_source_search(req, config, responder, source_id):
     # Offer another page for any pending per-term cursor, including failures.
     # Successful short/empty pages exhaust only their own term; a failed first
     # page remains at its requested offset instead of being encoded as exhausted.
+    next_cursor = None
     if not error and _take > 0 and any(offset is not None for offset in _next_offsets):
         try:
             _cur_skip = int(search_values.get(skip_key, "0") or "0")
@@ -1289,7 +1319,25 @@ def handle_source_search(req, config, responder, source_id):
             _more_params["keywordCursors"] = _encode_keyword_cursors(_next_offsets)
         _more_params["searchId"] = _search_id
         search_values["_more_url"] = f"/search/{source_id}/more?" + _urlencode_ss(_more_params)
-    render_home(req, config, responder, tab="search", search_values=search_values, reed_results=results, reed_error=error, reed_other_results=other_results)
+        next_cursor = (_cur_skip + _take, tuple(_next_offsets))
+    if error:
+        render_home(req, config, responder, tab="search", search_values=search_values,
+                    reed_results=results, reed_error=error, reed_other_results=other_results)
+        return
+    page = render_home(req, config, responder, tab="search", search_values=search_values,
+                       reed_results=results, reed_error=None, reed_other_results=other_results, prepare_only=True)
+    if not isinstance(page, str):
+        raise TypeError("Search renderer must return prepared HTML")
+    try:
+        if _search_binding(config, source_id, search_values, exclude_raw)[0] != binding:
+            raise SearchRestartRequired("Search settings changed. Run the search again.")
+        commit_initial_search(_search_id, binding, results + other_results, next_cursor)
+    except SearchRestartRequired as exc:
+        search_values.pop("_more_url", None)
+        render_home(req, config, responder, tab="search", search_values=search_values,
+                    reed_results=[], reed_error=str(exc), reed_other_results=[])
+        return
+    responder.send_html(page)
 
 
 def handle_source_select(req, config, responder, source_id):
@@ -1855,6 +1903,10 @@ def handle_batch_evaluate(req, config, responder):
     responder.send_json({"ok": True, "jobs": results, "errors": errors})
 
 
+class _SearchPageSourceError(RuntimeError):
+    """A retryable provider failure; it must not consume search state."""
+
+
 def handle_source_search_more(req, config, responder, source_id):
     """GET /search/{source_id}/more?... — AJAX endpoint returning the next page of
     cards as JSON, for any source that registered a ``render_cards_fragment``.
@@ -1899,8 +1951,14 @@ def handle_source_search_more(req, config, responder, source_id):
         return
     exclude_raw = (req.query.get("excludeKeywords") or "").strip()
     search_id = (req.query.get("searchId") or "").strip() or None
+    from src.job_sources.search_state import prepare_page, PreparedSearchPage, SearchRestartRequired
+    try:
+        binding, hidden_snapshot = _search_binding(config, source_id, search_values, exclude_raw)
+    except Exception:
+        responder.send_json({"ok": False, "error": "Could not load search settings. Try again."})
+        return
 
-    def _prepare_page(raw_results: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:
+    def _prepare_page(raw_results, draft) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:
         """Apply the same bucket/filter/dedup pipeline as an initial search."""
         hidden_count = 0
         hidden_or_excluded_count = 0
@@ -1919,10 +1977,10 @@ def handle_source_search_more(req, config, responder, source_id):
             try:
                 from src.job_hunt_not_interested import filter_results as _filter_ni
                 if main_results:
-                    main_results, hidden_count = _filter_ni(main_results, state_root=config.state_root)
+                    main_results, hidden_count = _filter_ni(main_results, state_root=config.state_root, lookup=hidden_snapshot)
                     hidden_or_excluded_count += hidden_count
                 if other_page_results:
-                    other_page_results, other_hidden_count = _filter_ni(other_page_results, state_root=config.state_root)
+                    other_page_results, other_hidden_count = _filter_ni(other_page_results, state_root=config.state_root, lookup=hidden_snapshot)
                     hidden_count += other_hidden_count
                     hidden_or_excluded_count += other_hidden_count
             except Exception as exc:
@@ -1936,81 +1994,73 @@ def handle_source_search_more(req, config, responder, source_id):
             hidden_count += excluded_count
             hidden_or_excluded_count += excluded_count
         if main_results:
-            from src.job_sources.search_state import filter_new_page
             before_cross_page = len(main_results)
-            main_results = filter_new_page(search_id, main_results)
+            main_results = draft.filter_new(main_results)
             hidden_count += before_cross_page - len(main_results)
         if other_page_results:
-            from src.job_sources.search_state import filter_new_page
             before_cross_page = len(other_page_results)
-            other_page_results = filter_new_page(search_id, other_page_results)
+            other_page_results = draft.filter_new(other_page_results)
             hidden_count += before_cross_page - len(other_page_results)
         return main_results, other_page_results, hidden_count, hidden_or_excluded_count
 
-    # When a whole requested page is hidden/excluded, inspect only a bounded
-    # number of following source pages. A visible "Other result" is a valid
-    # result and therefore stops look-ahead without promoting it to the main
-    # bucket.
-    raw_count = 0
-    hidden_count = 0
-    results: list[dict[str, Any]] = []
-    other_results: list[dict[str, Any]] = []
-    any_full_page = False
-    next_offsets = offsets
-    current_offsets = offsets
-    pages_advanced = 0
-    while True:
-        try:
+    def produce_page(draft):
+        # Look ahead only through entirely hidden/excluded source pages. All
+        # draft changes remain local until fragments and the successor render.
+        raw_count = hidden_count = pages_advanced = 0
+        next_offsets = current_offsets = offsets
+        while True:
             raw_results, any_full_page, kw_sub_errors, next_offsets = _run_multi_keyword_search(
                 source, search_values, effective_terms, offsets=current_offsets,
             )
-        except Exception as exc:
-            responder.send_json({"ok": False, "error": str(exc)})
-            return
-        if kw_sub_errors and not raw_results and len(kw_sub_errors) == sum(offset is not None for offset in current_offsets):
-            responder.send_json({"ok": False, "error": "; ".join(kw_sub_errors)})
-            return
-        raw_count += len(raw_results)
-        results, other_results, page_hidden_count, page_hidden_or_excluded_count = _prepare_page(raw_results)
-        hidden_count += page_hidden_count
-        if (
-            results
-            or other_results
-            or bool(kw_sub_errors)
-            or not any_full_page
-            or not page_hidden_or_excluded_count
-            or pages_advanced >= _MAX_HIDDEN_PAGE_LOOKAHEAD
-        ):
-            break
-        pages_advanced += 1
-        current_offsets = next_offsets
-    nonce = create_select_nonce()
-    display_skip = skip + (take * pages_advanced)
-    cards_html = source.render_cards_fragment(results, skip=display_skip, nonce=nonce)
-    other_results_html = _render_other_results_fragment(source, other_results, skip=display_skip + len(results), nonce=nonce, main_results=results)
-    has_more = take > 0 and any(offset is not None for offset in next_offsets)
-    next_params = {
-        str(k): str(v) for k, v in search_values.items()
-        if not str(k).startswith("_") and k != skip_key
-    }
-    if exclude_raw:
-        next_params["excludeKeywords"] = exclude_raw
-    next_params[skip_key] = str(display_skip + take)
-    if len(keyword_terms) > 1:
-        next_params["keywordCursors"] = _encode_keyword_cursors(next_offsets)
-    if search_id:
+            if kw_sub_errors and not raw_results and len(kw_sub_errors) == sum(offset is not None for offset in current_offsets):
+                raise _SearchPageSourceError("; ".join(kw_sub_errors))
+            raw_count += len(raw_results)
+            results, other_results, page_hidden_count, page_hidden_or_excluded_count = _prepare_page(raw_results, draft)
+            hidden_count += page_hidden_count
+            if (results or other_results or kw_sub_errors or not any_full_page
+                    or not page_hidden_or_excluded_count or pages_advanced >= _MAX_HIDDEN_PAGE_LOOKAHEAD):
+                break
+            pages_advanced += 1
+            current_offsets = next_offsets
+        nonce = create_select_nonce()
+        display_skip = skip + (take * pages_advanced)
+        cards_html = source.render_cards_fragment(results, skip=display_skip, nonce=nonce)
+        other_results_html = _render_other_results_fragment(source, other_results, skip=display_skip + len(results), nonce=nonce, main_results=results)
+        has_more = take > 0 and any(offset is not None for offset in next_offsets)
+        next_params = {
+            str(k): str(v) for k, v in search_values.items()
+            if not str(k).startswith("_") and k != skip_key
+        }
+        if exclude_raw:
+            next_params["excludeKeywords"] = exclude_raw
+        next_params[skip_key] = str(display_skip + take)
+        if len(keyword_terms) > 1:
+            next_params["keywordCursors"] = _encode_keyword_cursors(next_offsets)
         next_params["searchId"] = search_id
-    next_url = f"/search/{source_id}/more?" + _urlencode(next_params)
-    responder.send_json({
-        "ok": True,
-        "cards_html": cards_html,
-        "other_results_html": other_results_html,
-        "has_more": has_more,
-        "next_url": next_url,
-        "count": raw_count,
-        "visible_count": len(results) + len(other_results),
-        "hidden_count": hidden_count,
-    })
+        next_url = f"/search/{source_id}/more?" + _urlencode(next_params)
+        return PreparedSearchPage({
+            "ok": True, "cards_html": cards_html, "other_results_html": other_results_html,
+            "has_more": has_more, "next_url": next_url, "count": raw_count,
+            "visible_count": len(results) + len(other_results), "hidden_count": hidden_count,
+        }, (display_skip + take, tuple(next_offsets)) if has_more else None)
+
+    try:
+        payload = prepare_page(
+            search_id, binding, (skip, tuple(offsets)), produce_page,
+            current_binding=lambda: _search_binding(config, source_id, search_values, exclude_raw)[0],
+        )
+    except SearchRestartRequired as exc:
+        responder.send_json({"ok": False, "restart_required": True, "error": str(exc),
+                             "restart_url": _search_restart_url(source_id, search_values, exclude_raw)},
+                            status=HTTPStatus.CONFLICT)
+        return
+    except _SearchPageSourceError as exc:
+        responder.send_json({"ok": False, "error": str(exc)})
+        return
+    except Exception:
+        responder.send_json({"ok": False, "error": "Could not prepare next page. Try again."})
+        return
+    responder.send_json(payload)
 
 
 def _read_json_body(req, responder) -> dict | None:

@@ -214,7 +214,8 @@ def hidden_lookup(*, state_root: str | Path) -> tuple[frozenset[str], frozenset[
 
 
 def filter_results(
-    results: list[dict[str, Any]], *, state_root: str | Path
+    results: list[dict[str, Any]], *, state_root: str | Path,
+    lookup: tuple[frozenset[str], frozenset[str]] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Drop not-interested jobs from a source's UI result dicts.
 
@@ -223,7 +224,7 @@ def filter_results(
     callers must keep paging math (skip / has_more) based on the RAW count."""
     if not results:
         return results, 0
-    keys, fps = hidden_lookup(state_root=state_root)
+    keys, fps = lookup if lookup is not None else hidden_lookup(state_root=state_root)
     if not keys and not fps:
         return results, 0
     visible: list[dict[str, Any]] = []
