@@ -101,6 +101,50 @@ def test_loader_profile_id_fail_closed(tmp_path: Path) -> None:
     assert load_latest_tailored_cv("nohdr", expected_profile_id="cand-001", policy=policy) is None
 
 
+@pytest.mark.parametrize("ai_text", [
+    "<!-- ai_reviewed: true | profile_id: cand-A -->\nProfile A private text",
+    "<!-- ai_reviewed: true | profile_id: cand-A -->\n   ",
+    "Headerless profile A text",
+    "profile_id: cand-B\nHeaderless text is not trusted metadata",
+    "<!-- ai_reviewed: true -->\nMissing profile identity",
+])
+def test_loader_mismatched_ai_falls_back_to_matching_ordinary(tmp_path: Path, ai_text: str) -> None:
+    policy = _policy(tmp_path)
+    _write_cv(policy, "reed-1_ai_reviewed.md", ai_text)
+    _write_cv(policy, "reed-1.md", "<!-- profile_id: cand-B -->\nProfile B ordinary CV")
+
+    assert load_latest_tailored_cv("reed-1", expected_profile_id="cand-B", policy=policy) == "Profile B ordinary CV"
+
+
+def test_loader_matching_ai_remains_preferred(tmp_path: Path) -> None:
+    policy = _policy(tmp_path)
+    _write_cv(policy, "reed-1_ai_reviewed.md", "<!-- profile_id: cand-B -->\nProfile B AI CV")
+    _write_cv(policy, "reed-1.md", "<!-- profile_id: cand-B -->\nProfile B ordinary CV")
+
+    assert load_latest_tailored_cv("reed-1", expected_profile_id="cand-B", policy=policy) == "Profile B AI CV"
+
+
+@pytest.mark.parametrize("ordinary_text", [
+    "<!-- profile_id: cand-A -->\nProfile A ordinary CV",
+    "profile_id: cand-B\nHeaderless ordinary CV",
+])
+def test_loader_no_matching_candidate_returns_none(tmp_path: Path, ordinary_text: str) -> None:
+    policy = _policy(tmp_path)
+    _write_cv(policy, "reed-1_ai_reviewed.md", "<!-- profile_id: cand-A -->\nProfile A AI CV")
+    _write_cv(policy, "reed-1.md", ordinary_text)
+
+    assert load_latest_tailored_cv("reed-1", expected_profile_id="cand-B", policy=policy) is None
+
+
+def test_loader_empty_matching_ai_still_raises(tmp_path: Path) -> None:
+    policy = _policy(tmp_path)
+    _write_cv(policy, "reed-1_ai_reviewed.md", "<!-- profile_id: cand-B -->\n   ")
+    _write_cv(policy, "reed-1.md", "<!-- profile_id: cand-B -->\nProfile B ordinary CV")
+
+    with pytest.raises(EmptyTailoredCVError):
+        load_latest_tailored_cv("reed-1", expected_profile_id="cand-B", policy=policy)
+
+
 # ────────────────────────── storage roundtrip (H2) ──────────────────────────
 
 def _analysis(**overrides) -> JobAnalysis:

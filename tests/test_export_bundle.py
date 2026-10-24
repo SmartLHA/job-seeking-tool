@@ -126,6 +126,18 @@ def test_cv_only_lists_missing_parts(env):
     assert "analysis.md: job has not been evaluated yet" in readme
 
 
+def test_export_uses_matching_ordinary_cv_after_other_profile_ai(env):
+    _write_cv(env["policy"].output_dir, "job-1", "other-profile", body="Other profile private AI CV", reviewed=True)
+    _write_cv(env["policy"].output_dir, "job-1", "cand-1", body="Active profile ordinary CV")
+
+    data, manifest = _build(env)
+    zf = _open(data)
+
+    assert zf.read("cv.md").decode().strip() == "Active profile ordinary CV"
+    assert "cv.md" not in manifest["missing"]
+    assert all(b"Other profile private AI CV" not in zf.read(name) for name in zf.namelist())
+
+
 def test_nothing_generated_is_partial_not_error(env):
     data, manifest = _build(env)
     zf = _open(data)

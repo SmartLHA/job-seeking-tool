@@ -56,7 +56,8 @@ def load_latest_tailored_cv(
     header-stripping (distinct from "no file", which returns None).
 
     When ``expected_profile_id`` is given, the loader fails closed: an absent,
-    unparsable, or mismatched ``profile_id`` header returns None.
+    unparsable, or mismatched ``profile_id`` header skips that candidate. Returns
+    None when neither candidate matches the expected profile.
     """
     if not isinstance(job_id, str) or not _SAFE_JOB_ID.match(job_id) or job_id in (".", ".."):
         raise ValueError("invalid job_id")
@@ -71,13 +72,14 @@ def load_latest_tailored_cv(
             continue
         lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
         first = lines[0].strip() if lines else ""
-        if first.startswith("<!--") and first.endswith("-->"):
+        has_header = first.startswith("<!--") and first.endswith("-->")
+        if has_header:
             body = "".join(lines[1:])           # drop ONLY the first metadata line
         else:
             body = "".join(lines)               # no header → keep full text
         if expected_profile_id is not None:
-            if _parse_profile_id(first) != expected_profile_id:   # fail-closed
-                return None
+            if not has_header or _parse_profile_id(first) != expected_profile_id:  # fail-closed
+                continue
         body = body.strip()
         if not body:
             raise EmptyTailoredCVError("tailored CV is empty")
