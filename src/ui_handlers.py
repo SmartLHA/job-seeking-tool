@@ -72,6 +72,7 @@ from src.job_hunt_tailoring import (
 )
 from src.job_hunt_keyword_match import compute_keyword_match
 from src.job_hunt_cover_letter import generate_cover_letter_text, save_cover_letter
+from src.job_hunt_cv_storage import write_cv_text
 from src.job_hunt_storage import (
     ensure_storage_layout,
     archive_qualitative_assessment,
@@ -341,10 +342,9 @@ def handle_parse_cv(req, config, responder):
                         if _profile_obj is None:
                             _profile_obj = candidate_profile_from_dict({"candidate_id": _pid})
                         # The extractor returns plain text, irrespective of upload format.
-                        _docs_dir = _profile_dir / "docs"
-                        _docs_dir.mkdir(parents=True, exist_ok=True)
-                        _cv_path = _docs_dir / "master_cv.txt"
-                        _cv_path.write_text(text, encoding="utf-8")
+                        _cv_path = write_cv_text(
+                            _DATA_ROOT, _profile_dir.relative_to(_DATA_ROOT) / "docs" / "master_cv.txt", text,
+                        )
                         # Update only the CV fields — leave everything else intact
                         _profile_obj.master_cv_text = text
                         _profile_obj.master_cv_ref = str(_cv_path.resolve())
@@ -447,18 +447,24 @@ def handle_save_profile(req, config, responder):
             responder.send_json({"ok": False, "errors": {"form": str(exc)}}, status=HTTPStatus.BAD_REQUEST)
             return
 
-        profile_dir.mkdir(parents=True, exist_ok=True)
-        save_candidate_profile(profile_obj, profile_json_path)
-
-        # If master_cv_text was provided, save master CV file
+        # Persist the CV before changing any saved profile fields or references.
         if cv_text_provided:
-            docs_dir = profile_dir / "docs"
-            docs_dir.mkdir(parents=True, exist_ok=True)
-            cv_path = docs_dir / "master_cv.txt"
-            cv_path.write_text(profile_obj.master_cv_text, encoding="utf-8")
+            try:
+                cv_path = write_cv_text(
+                    _DATA_ROOT, profile_dir.relative_to(_DATA_ROOT) / "docs" / "master_cv.txt",
+                    profile_obj.master_cv_text,
+                )
+            except (OSError, ValueError):
+                responder.send_json(
+                    {"ok": False, "errors": {"master_cv_text": "CV could not be saved safely."}},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+                return
             # Store as absolute path to avoid ambiguous relative resolution
             profile_obj.master_cv_ref = str(cv_path.resolve())
-            save_candidate_profile(profile_obj, profile_json_path)
+
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        save_candidate_profile(profile_obj, profile_json_path)
 
         # Keep startup profile in sync when profile_id matches its stem
         # so that tailor/cover-letter/evaluate all see the latest data
@@ -1667,12 +1673,9 @@ def handle_ai_review_cv(req, config, responder, job_id):
     try:
         if not re.fullmatch(r"[A-Za-z0-9._-]+", job_id) or job_id in {".", ".."}:
             raise ValueError("invalid job_id")
-        output_dir = DEFAULT_TAILORING_POLICY.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        save_path = output_dir / f"{job_id}_ai_reviewed.md"
-        save_path.write_text(
+        save_path = write_cv_text(
+            DEFAULT_TAILORING_POLICY.output_dir, f"{job_id}_ai_reviewed.md",
             f"<!-- ai_reviewed: true | model: {model_used} | profile_id: {profile.candidate_id} -->\n{reviewed_cv.strip()}\n",
-            encoding="utf-8",
         )
         logger.info("AI-reviewed CV saved to %s", save_path)
     except Exception as exc:

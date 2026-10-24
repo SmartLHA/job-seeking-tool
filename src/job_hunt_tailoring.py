@@ -7,6 +7,7 @@ from src.job_hunt_config import DEFAULT_TAILORING_POLICY, TailoringPolicy
 from src.job_hunt_models import CandidateProfile, JobAnalysis, JobPosting, TailoredCVResult
 
 from src.job_hunt_cover_letter import generate_cover_letter
+from src.job_hunt_cv_storage import write_cv_text
 from src.text_grounding import quote_in_text
 
 
@@ -411,12 +412,8 @@ def save_tailored_cv(
     if not isinstance(markdown_content, str) or not markdown_content.strip():
         raise ValueError("cv_text must be a non-empty string")
 
-    output_dir = policy.output_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
-    destination = output_dir / f"{normalized_job_id}.md"
     content = f"<!-- profile_id: {profile_id.strip()} -->\n{markdown_content.strip()}\n"
-    destination.write_text(content, encoding="utf-8")
-    return destination
+    return write_cv_text(policy.output_dir, f"{normalized_job_id}.md", content)
 
 
 def _extract_bullet_lines(text: str, section_heading: str) -> list[str]:
