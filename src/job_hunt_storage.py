@@ -95,11 +95,56 @@ def load_reviewed_job(job_id: str, root: str | Path) -> JobPosting:
     return reviewed_job_from_dict(payload, job_id=job_id)
 
 
-def save_job_analysis(analysis: JobAnalysis, root: str | Path) -> Path:
+def save_job_analysis(
+    analysis: JobAnalysis, root: str | Path, *, preserved_llm_fields: dict[str, Any] | None = None,
+) -> Path:
     """Persist derived analysis separately from the reviewed structured job."""
     path = _state_file_path(root, "analyses", analysis.job_id)
-    _write_json(path, job_analysis_to_dict(analysis))
+    payload = job_analysis_to_dict(analysis)
+    if preserved_llm_fields is None:
+        _write_json(path, payload)
+    else:
+        if not isinstance(preserved_llm_fields, dict) or any(
+            not isinstance(key, str) or not key.startswith("llm_") for key in preserved_llm_fields
+        ):
+            raise StorageError("preserved analysis fields must belong to the llm_ group")
+        payload.update(preserved_llm_fields)
+        _write_analysis_snapshot(path, payload)
     return path
+
+
+def load_analysis_llm_fields(job_id: str, root: str | Path) -> dict[str, Any]:
+    """Read the whole persisted AI group, including fields unknown to this model."""
+    payload = _read_json(_state_file_path(root, "analyses", job_id))
+    if not isinstance(payload, dict):
+        raise StorageError("analysis file must contain an object")
+    return {key: value for key, value in payload.items() if key.startswith("llm_")}
+
+
+def _write_analysis_snapshot(path: Path, payload: dict[str, Any]) -> None:
+    """Replace one rescore snapshot without exposing an AI-free intermediate."""
+    # Local imports keep this scoped path independent of unrelated storage work.
+    import os
+    import tempfile
+
+    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=".rescore-", suffix=".tmp", delete=False) as stream:
+            temporary = stream.name
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
 
 
 def save_qualitative_assessment(job_id: str, assessment: dict[str, Any], root: str | Path) -> Path:

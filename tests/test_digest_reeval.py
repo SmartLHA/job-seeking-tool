@@ -11,6 +11,8 @@ reviewed_job JSON on disk, so the re-score can load + re-evaluate them with no n
 from __future__ import annotations
 
 import json
+from pathlib import Path
+import pytest
 import threading
 import urllib.parse
 import urllib.error
@@ -380,3 +382,83 @@ def test_reevaluate_digest_jobs_applies_score_effect_when_switch_on(tmp_path, mo
     restored = load_job_analysis("j1", cfg.state_root)
     assert restored.match_score == max(0.0, raw_score - 5.0)
     assert restored.market_adjustment == -5.0
+
+
+def _seed_full_ai_analysis(config, db):
+    job = _seed(config, db, "ai-result", old_score=88, llm_status="done", seen=True, status="applied")
+    profile = _profile(threshold=0)
+    baseline = evaluate_reviewed_job(profile, job)
+    save_job_analysis(dataclasses.replace(baseline, match_score=1, decision="skip", decision_reason="old derived",
+        user_decision="review", user_decision_note="Keep my manual note", llm_fit_summary="Earlier fit",
+        llm_risk_summary="Earlier risk", llm_recommended_action="Earlier action", llm_model="synthetic-model",
+        llm_generated_at="2026-07-09T10:00:00", ats_score=1), config.state_root)
+    path = config.state_root / "analyses" / "ai-result.json"
+    raw = json.loads(path.read_text())
+    raw.update(llm_future_details={"nested": ["香港", None, {"risk": False}]}, llm_future_null=None)
+    path.write_text(json.dumps(raw))
+    group = {key: value for key, value in raw.items() if key.startswith("llm_")}
+    return profile, baseline, path, group
+
+
+def test_rescore_keeps_complete_ai_group_done_manual_state_and_one_snapshot(tmp_path, monkeypatch):
+    import os
+    from unittest.mock import Mock
+    config, db = _setup(tmp_path)
+    profile, baseline, path, group = _seed_full_ai_analysis(config, db)
+    provider = Mock(side_effect=AssertionError("Deterministic rescore must not call a provider"))
+    monkeypatch.setattr("src.job_hunt_llm._call_gemini_reasoning", provider)
+    original, snapshots = os.replace, []
+
+    def replace(source, destination):
+        if Path(destination) == path:
+            old = json.loads(path.read_text())
+            fresh = json.loads(Path(source).read_text())
+            assert {key: value for key, value in old.items() if key.startswith("llm_")} == group
+            assert {key: value for key, value in fresh.items() if key.startswith("llm_")} == group
+            snapshots.append(fresh)
+        return original(source, destination)
+
+    monkeypatch.setattr(os, "replace", replace)
+    result = reevaluate_digest_jobs(config=config, profile=profile, db_path=db)
+    raw, saved, row = json.loads(path.read_text()), load_job_analysis("ai-result", config.state_root), _read(db, "ai-result")
+    assert result.jobs_rescored == 1 and result.jobs_llm_requeued == 0 and result.jobs_resurfaced == 0
+    assert result.errors == [] and len(snapshots) == 1
+    assert {key: value for key, value in raw.items() if key.startswith("llm_")} == group
+    assert saved.llm_fit_summary == group["llm_fit_summary"] and saved.llm_risk_summary == group["llm_risk_summary"]
+    assert saved.llm_recommended_action == group["llm_recommended_action"]
+    assert saved.llm_model == group["llm_model"] and saved.llm_generated_at == group["llm_generated_at"]
+    assert saved.user_decision == "review" and saved.user_decision_note == "Keep my manual note"
+    assert saved.match_score == baseline.match_score and saved.decision == baseline.decision
+    assert saved.decision_reason == baseline.decision_reason and saved.ats_score == baseline.ats_score
+    assert row["llm_status"] == "done" and row["digest_seen"] == 1 and row["status"] == "applied"
+    provider.assert_not_called()
+
+
+def test_failed_atomic_rescore_keeps_old_ai_snapshot_and_done_queue(tmp_path, monkeypatch):
+    import os
+    config, db = _setup(tmp_path)
+    profile, baseline, path, group = _seed_full_ai_analysis(config, db)
+    before, original = path.read_bytes(), os.replace
+
+    def fail_replace(source, destination):
+        if Path(destination) == path:
+            raise OSError("Synthetic rescore replacement failure")
+        return original(source, destination)
+
+    monkeypatch.setattr(os, "replace", fail_replace)
+    result = reevaluate_digest_jobs(config=config, profile=profile, db_path=db)
+    assert result.jobs_rescored == 0 and "replacement failure" in result.errors[0]
+    assert path.read_bytes() == before and not list(path.parent.glob(".rescore-*.tmp"))
+    assert _read(db, "ai-result")["llm_status"] == "done" and _read(db, "ai-result")["match_score"] == 88
+
+
+@pytest.mark.parametrize("overlay", [{"match_score": 999}, {"user_decision": "skip"}, {5: "invalid key"}])
+def test_ai_preservation_loader_and_save_reject_non_ai_overlay(tmp_path, overlay):
+    from src.job_hunt_storage import load_analysis_llm_fields, StorageError
+    config, db = _setup(tmp_path)
+    profile, baseline, path, group = _seed_full_ai_analysis(config, db)
+    assert load_analysis_llm_fields("ai-result", config.state_root) == group
+    before = path.read_bytes()
+    with pytest.raises(StorageError, match="llm_"):
+        save_job_analysis(baseline, config.state_root, preserved_llm_fields=overlay)
+    assert path.read_bytes() == before

@@ -375,6 +375,7 @@ def reevaluate_digest_jobs(*, config: Any, profile: Any, db_path: Path) -> Reeva
 
 
 def _reevaluate_digest_jobs_locked(*, config: Any, profile: Any, db_path: Path) -> ReevalResult:
+    from src.job_hunt_storage import load_analysis_llm_fields
     started_at = datetime.now().isoformat(timespec="seconds")
     run_date = datetime.now().date().isoformat()
     threshold = profile.digest_threshold
@@ -410,6 +411,11 @@ def _reevaluate_digest_jobs_locked(*, config: Any, profile: Any, db_path: Path) 
             _market_snapshot = _previous_analysis.market_snapshot
         except (FileNotFoundError, StorageError):
             pass
+        _preserved_llm_fields = {}
+        try:
+            _preserved_llm_fields = load_analysis_llm_fields(job_id, config.state_root)
+        except (FileNotFoundError, StorageError):
+            pass
         try:
             analysis = evaluate_reviewed_job(
                 profile, reviewed, scoring_policy=_scoring_policy, market_snapshot=_market_snapshot,
@@ -425,13 +431,19 @@ def _reevaluate_digest_jobs_locked(*, config: Any, profile: Any, db_path: Path) 
                 analysis, user_decision=_previous_analysis.user_decision,
                 user_decision_note=_previous_analysis.user_decision_note,
             )
+        # Keep typed AI fields coherent with the complete raw group that will be
+        # serialized. Future llm_* keys survive without a model/schema change.
+        _typed_llm_names = {field.name for field in dataclasses.fields(analysis) if field.name.startswith("llm_")}
+        analysis = dataclasses.replace(analysis, **{
+            key: value for key, value in _preserved_llm_fields.items() if key in _typed_llm_names
+        })
 
         new_score = analysis.match_score
 
         # --- Persist JSON, then index-write. A failure here is an error (the score
         # is computed; the row just isn't updated yet — a later run retries). ---
         try:
-            save_job_analysis(analysis, config.state_root)
+            save_job_analysis(analysis, config.state_root, preserved_llm_fields=_preserved_llm_fields)
             upsert_job(db_path, {
                 "job_id": job_id,
                 "job_title": reviewed.job_title,
