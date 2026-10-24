@@ -323,7 +323,7 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
             f'<div style="display:grid;grid-template-columns:24px 1fr;gap:8px;align-items:start;">'
             f'<input type="checkbox" name="job_id" value="{jid}" aria-label="Select {title_esc}" '
             f'style="margin-top:14px;width:16px;height:16px;">'
-            f'<button type="button" onclick="rqSwitch({chr(39)}{jid}{chr(39)})" '
+            f'<button type="button" data-rq-job-id="{jid}" '
             f'id="rq-row-{jid}" '
             f'style="text-align:left;padding:12px 13px;border-radius:var(--r-md);width:100%;'
             f'min-width:0;overflow:hidden;'
@@ -343,22 +343,29 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
         )
 
     rows_html = "\n".join(queue_rows)
-    active_id_esc = escape(active_id)
+    active_id_url = escape(quote(active_id, safe=""))
     n_str = str(n)
 
     # JS: switch active job by updating iframe src and sidebar highlight
     rq_js = (
         '<script>(function(){'
-        'window.rqSwitch=function(jobId){'
+        'function switchJob(jobId){'
         'var iframe=document.getElementById("rq-iframe");'
-        'if(iframe)iframe.src="/job/"+encodeURIComponent(jobId)+"?embed=1";'
-        'document.querySelectorAll("[id^=\\"rq-row-\\"]").forEach(function(el){'
-        'var sel=el.id==="rq-row-"+jobId;'
+        "var encodedId=encodeURIComponent(jobId).replace(/[!'()*]/g,function(c){"
+        'return "%"+c.charCodeAt(0).toString(16).toUpperCase();});'
+        'if(iframe)iframe.src="/job/"+encodedId+"?embed=1";'
+        'document.querySelectorAll("button[data-rq-job-id]").forEach(function(el){'
+        'var sel=el.dataset.rqJobId===jobId;'
         'el.style.borderColor=sel?"var(--accent)":"var(--line)";'
         'el.style.background=sel?"var(--surface-2)":"transparent";'
         'el.style.boxShadow=sel?"var(--shadow-sm)":"none";'
         '});'
-        '};'
+        '}'
+        'var list=document.querySelector(".rq-list");'
+        'if(list)list.addEventListener("click",function(event){'
+        'var row=event.target.closest("button[data-rq-job-id]");'
+        'if(row&&list.contains(row))switchJob(row.dataset.rqJobId);'
+        '});'
         '})();</script>'
     )
 
@@ -418,7 +425,7 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
           </div>
           </form>
         </div>
-        <iframe id="rq-iframe" class="rq-frame" src="/job/{active_id_esc}?embed=1"
+        <iframe id="rq-iframe" class="rq-frame" src="/job/{active_id_url}?embed=1"
                 title="Job detail"></iframe>
       </div>
     </div>
