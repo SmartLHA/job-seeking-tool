@@ -1061,12 +1061,16 @@ def reset_stale_eval_queue_running(
                 continue
             cancelled = conn.execute("SELECT 1 FROM eval_batch WHERE batch_id=? AND cancel_requested_at IS NOT NULL",
                                      (row["batch_id"],)).fetchone()
-            retries = row["retries"] if cancelled else row["retries"] + 1
-            status = "cancelled" if cancelled else "error" if retries >= max_retries else "pending"
+            qualitative = conn.execute("SELECT * FROM qualitative_index WHERE job_ref=?", (row["job_ref"],)).fetchone()
+            waiting = bool(qualitative and qualitative["status"] == "running" and _active(qualitative, stamp))
+            # A mismatched queue lease is waiting on an existing provider owner,
+            # not another failed provider attempt, including at the retry cap.
+            retries = row["retries"] if cancelled or waiting else row["retries"] + 1
+            status = "cancelled" if cancelled else "pending" if waiting else "error" if retries >= max_retries else "pending"
             conn.execute("""UPDATE eval_queue SET status=?,claim_token=NULL,lease_until=NULL,retries=?,
                 error_text=?,started_at=CASE WHEN ?='pending' THEN NULL ELSE started_at END,
                 finished_at=CASE WHEN ?='pending' THEN NULL ELSE ? END WHERE id=? AND status='running'""",
-                (status,retries,None if cancelled else 'stale running row exceeded retry cap' if status=='error' else row["error_text"],
+                (status,retries,None if cancelled else 'qualitative assessment already in flight' if waiting else 'stale running row exceeded retry cap' if status=='error' else row["error_text"],
                  status,status,stamp.isoformat(timespec="microseconds"),row["id"]))
             changed += 1
         return changed

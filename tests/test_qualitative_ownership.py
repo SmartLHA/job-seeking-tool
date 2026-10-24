@@ -118,9 +118,11 @@ def test_legacy_running_migration_is_recoverable_and_idempotent(env):
     assert recovered["claimed"] and recovered["owner"].previous is None
 
 
-def test_queue_recovery_waits_for_longer_qualitative_lease_without_retry_budget(env, monkeypatch):
+@pytest.mark.parametrize("retries", [0, 4])
+def test_queue_recovery_waits_for_longer_qualitative_lease_without_retry_budget(env, monkeypatch, retries):
     batch, queue, owner = pair(env)
     with index.open_db(env.db) as conn:
+        conn.execute("UPDATE eval_queue SET retries=? WHERE id=?", (retries, queue["id"]))
         conn.execute("UPDATE qualitative_index SET lease_until=? WHERE job_ref='job-1'",
                      ((env.now[0] + timedelta(seconds=ownership.LEASE_SECONDS*2)).isoformat(),))
     env.now[0] += timedelta(seconds=ownership.LEASE_SECONDS)
@@ -129,12 +131,57 @@ def test_queue_recovery_waits_for_longer_qualitative_lease_without_retry_budget(
     for _ in range(7):
         result = process_eval_queue_once(config=env.config, profile=_profile(), db_path=env.db, now=clock(env), sleep=lambda _: None)
         assert result.requeued == 1 and result.failed == 0
-        assert index.get_eval_batch(env.db, batch)[0]["retries"] == 1
+        row = index.get_eval_batch(env.db, batch)[0]
+        assert row["retries"] == retries and row["status"] == "pending"
+        assert "in flight" in row["error_text"]
         assert index.get_qualitative_index_row(env.db, "job-1")["claim_token"] == owner.token
     provider.assert_not_called()
     env.now[0] += timedelta(seconds=ownership.LEASE_SECONDS)
-    monkeypatch.setattr("src.job_hunt_llm._call_gemini_reasoning", lambda *a, **kw: (_llm_payload(), None, "recovered", False))
+    recovered_provider = Mock(return_value=(_llm_payload(), None, "recovered", False))
+    monkeypatch.setattr("src.job_hunt_llm._call_gemini_reasoning", recovered_provider)
     assert process_eval_queue_once(config=env.config, profile=_profile(), db_path=env.db, now=clock(env), sleep=lambda _: None).processed == 1
+    assert recovered_provider.call_count == 1 and index.get_eval_batch(env.db, batch)[0]["retries"] == retries
+
+
+@pytest.mark.parametrize("retries", [0, 4])
+def test_stale_queue_waiting_on_live_qualitative_owner_still_prefers_cancel(env, monkeypatch, retries):
+    batch, queue, owner = pair(env)
+    with index.open_db(env.db) as conn:
+        conn.execute("UPDATE eval_queue SET retries=? WHERE id=?", (retries, queue["id"]))
+        conn.execute("UPDATE qualitative_index SET lease_until=? WHERE job_ref='job-1'",
+                     ((env.now[0] + timedelta(seconds=ownership.LEASE_SECONDS*2)).isoformat(),))
+    index.cancel_eval_batch(env.db, batch, now=env.now[0].isoformat())
+    env.now[0] += timedelta(seconds=ownership.LEASE_SECONDS)
+    provider = Mock(side_effect=AssertionError("Cancelled waiting must not call provider"))
+    monkeypatch.setattr("src.job_hunt_llm._call_gemini_reasoning", provider)
+    assert index.reset_stale_eval_queue_running(env.db, clock=clock(env)) == 1
+    result = process_eval_queue_once(config=env.config, profile=_profile(), db_path=env.db, now=clock(env), sleep=lambda _: None)
+    row = index.get_eval_batch(env.db, batch)[0]
+    assert row["status"] == "cancelled" and row["retries"] == retries
+    assert row["claim_token"] is None and row["lease_until"] is None and row["error_text"] is None
+    assert result.processed == result.failed == result.requeued == 0
+    assert index.get_qualitative_index_row(env.db, "job-1")["claim_token"] == owner.token
+    provider.assert_not_called()
+
+
+@pytest.mark.parametrize("operation", ["finish", "retry", "release"])
+def test_standalone_queue_transition_rejects_managed_owner_replacement(env, operation):
+    batch, queue, old = pair(env)
+    with index.open_db(env.db) as conn:
+        conn.execute("UPDATE qualitative_index SET lease_until=? WHERE job_ref='job-1'",
+                     ((env.now[0] + timedelta(minutes=10)).isoformat(),))
+    env.now[0] += timedelta(minutes=10)
+    replacement = claim(env)
+    before = snapshots(env, batch)
+    args = (env.db, queue["id"], queue["claim_token"])
+    if operation == "finish":
+        changed = index.finish_eval_queue_row(*args, status="done", now=env.now[0].isoformat())
+    elif operation == "retry":
+        changed = index.requeue_eval_queue_row(*args, retries=1, now=env.now[0].isoformat())
+    else:
+        changed = index.return_eval_queue_row_to_pending(*args, clock=clock(env))
+    assert changed is False and snapshots(env, batch) == before
+    assert publish(env, replacement) == "done"
 
 
 def test_renewal_prevents_started_at_based_stale_reset(env):

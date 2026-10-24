@@ -276,10 +276,13 @@ def checkpoint(db_path, claim, *, state_root, clock=utc_now):
 
 
 def queue_transition(db_path, row_id, token, *, status, clock=utc_now, error=None, retries=None):
-    """Standalone queue CAS compatibility; expired tokens cannot transition."""
+    """Unmanaged queue compatibility; managed jobs require the paired owner API."""
     with guard(db_path, clock=clock) as (conn, now):
         queue = conn.execute("SELECT * FROM eval_queue WHERE id=?", (row_id,)).fetchone()
         if queue is None or queue["claim_token"] != token or queue["status"] != "running" or not _active(queue, now):
+            return False
+        qualitative = conn.execute("SELECT generation FROM qualitative_index WHERE job_ref=?", (queue["job_ref"],)).fetchone()
+        if qualitative is not None and qualitative["generation"] is not None:
             return False
         cancelled = _cancelled(conn, queue)
         _finish_queue(conn, queue, status="cancelled" if cancelled else status, now=now,
