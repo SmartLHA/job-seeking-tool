@@ -289,7 +289,7 @@ def handle_parse_cv(req, config, responder):
 
     # Size check
     if len(content) > _MAX_CV_SIZE_BYTES:
-        responder.send_json({"ok": False, "error": "File too large. Maximum size is 5 MB."}, status=HTTPStatus.PAYLOAD_TOO_LARGE)
+        responder.send_json({"ok": False, "error": "File too large. Maximum size is 5 MB."}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
         return
 
     # MIME check (basic)

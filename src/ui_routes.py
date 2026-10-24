@@ -24,8 +24,8 @@ from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
 
-# Global request-body limit for every UI POST. The local UI accepts form and JSON
-# payloads only; 1 MiB leaves ample room for CV text while bounding memory use.
+# Default request-body limit for UI forms and JSON; CV multipart uploads have a
+# separate bounded allowance for the file and multipart overhead.
 MAX_REQUEST_BODY_BYTES = 1_048_576
 
 
@@ -33,7 +33,9 @@ class _IPv6ThreadingHTTPServer(ThreadingHTTPServer):
     address_family = socket.AF_INET6
 
 
-from src.ui_state import UIServerConfig
+from src.ui_state import UIServerConfig, _MAX_CV_SIZE_BYTES
+
+MAX_CV_UPLOAD_BODY_BYTES = _MAX_CV_SIZE_BYTES + 65_536
 from src.ui_utils import job_id_from_request_path
 from src.ui_render import render_page
 from src.job_hunt_profile import load_candidate_profile
@@ -614,8 +616,8 @@ def _validate_browser_origin(handler: Any) -> None:
         raise RequestValidationError(HTTPStatus.FORBIDDEN, "Cross-origin requests are not allowed.")
 
 
-def _content_length(headers: Any) -> int:
-    """Validate Content-Length and enforce MAX_REQUEST_BODY_BYTES before reading."""
+def _content_length(headers: Any, max_bytes: int = MAX_REQUEST_BODY_BYTES) -> int:
+    """Validate Content-Length and enforce the selected limit before reading."""
     raw_length = headers.get("Content-Length")
     if raw_length is None:
         return 0
@@ -625,10 +627,10 @@ def _content_length(headers: Any) -> int:
             "Invalid Content-Length header.",
         )
     length = int(raw_length)
-    if length > MAX_REQUEST_BODY_BYTES:
+    if length > max_bytes:
         raise RequestValidationError(
             HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-            f"Request body exceeds the {MAX_REQUEST_BODY_BYTES}-byte limit.",
+            f"Request body exceeds the {max_bytes}-byte limit.",
         )
     return length
 
@@ -640,7 +642,11 @@ def _parse_request(handler) -> "UIRequest":
     content_type = headers.get("Content-Type", "") or ""
     raw_body = b""
     if handler.command == "POST":
-        length = _content_length(headers)
+        max_bytes = MAX_REQUEST_BODY_BYTES
+        if (parsed.path == "/profile/parse-cv"
+                and content_type.split(";", 1)[0].strip() == "multipart/form-data"):
+            max_bytes = MAX_CV_UPLOAD_BODY_BYTES
+        length = _content_length(headers, max_bytes)
         if length:
             raw_body = handler.rfile.read(length)
     form: dict = {}

@@ -14,6 +14,7 @@ from unittest import mock
 import pytest
 
 from src.ui_routes import (
+    MAX_CV_UPLOAD_BODY_BYTES,
     MAX_REQUEST_BODY_BYTES,
     _build_handler,
     _http_url,
@@ -114,6 +115,90 @@ def test_invalid_content_length_fails_before_body_read(
     status, body = _response(handler)
     assert status == expected_status
     assert json.loads(body)["ok"] is False
+    handler.rfile.read.assert_not_called()
+
+
+@pytest.mark.parametrize("file_size", [2 * 1024 * 1024, 5 * 1024 * 1024, 5 * 1024 * 1024 + 1])
+def test_cv_upload_dispatcher_preserves_file_size_limit(tmp_path: Path, file_size: int) -> None:
+    boundary = "synthetic-cv-boundary"
+    body = (
+        f'--{boundary}\r\nContent-Disposition: form-data; name="cv_file"; filename="synthetic.txt"\r\n'
+        'Content-Type: text/plain\r\n\r\n'
+    ).encode() + b"X" * file_size + f"\r\n--{boundary}--\r\n".encode()
+    handler = _make_handler(tmp_path, headers={
+        "Host": "127.0.0.1:9000", "Origin": "http://127.0.0.1:9000",
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "Content-Length": str(len(body)),
+    }, body=body)
+    handler.path = "/profile/parse-cv"
+
+    def parse_synthetic_cv(path: Path) -> str:
+        assert path.stat().st_size == file_size
+        return "Synthetic business analyst CV"
+
+    with mock.patch("src.ui_handlers.parse_cv_file", side_effect=parse_synthetic_cv) as parse_cv:
+        with mock.patch("src.job_hunt_parsing.extract_skills_from_cv", return_value=([], None)):
+            handler.do_POST()
+
+    status, response_body = _response(handler)
+    payload = json.loads(response_body)
+    if file_size > 5 * 1024 * 1024:
+        assert status == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
+        assert payload == {"ok": False, "error": "File too large. Maximum size is 5 MB."}
+        parse_cv.assert_not_called()
+    else:
+        assert status == HTTPStatus.OK
+        assert payload["ok"] is True
+        parse_cv.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("path", "content_type", "length", "expected_status"),
+    [
+        ("/profile/parse-cv", "multipart/form-data; boundary=synthetic", str(MAX_CV_UPLOAD_BODY_BYTES + 1), 413),
+        ("/profile/parse-cv", "multipart/form-data; boundary=synthetic", "not-a-number", 400),
+        ("/profile/parse-cv", "multipart/form-data; boundary=synthetic", "-1", 400),
+        ("/profile/parse-cv", "text/plain", str(MAX_REQUEST_BODY_BYTES + 1), 413),
+        ("/profile/parse-cv", "application/json; charset=multipart/form-data", str(MAX_REQUEST_BODY_BYTES + 1), 413),
+        ("/profile/parse-cv/", "multipart/form-data; boundary=synthetic", str(MAX_REQUEST_BODY_BYTES + 1), 413),
+        ("/profile/parse-cv-extra", "multipart/form-data; boundary=synthetic", str(MAX_REQUEST_BODY_BYTES + 1), 413),
+    ],
+)
+def test_upload_transport_limit_rejects_before_read(
+    tmp_path: Path, path: str, content_type: str, length: str, expected_status: int
+) -> None:
+    handler = _make_handler(tmp_path, headers={
+        "Host": "127.0.0.1:9000", "Origin": "http://127.0.0.1:9000",
+        "Content-Type": content_type, "Content-Length": length,
+    })
+    handler.path = path
+    handler.rfile = mock.Mock()
+    handler.rfile.read.side_effect = AssertionError("body must not be read")
+
+    with mock.patch("src.ui_routes.handle_parse_cv") as parse_cv:
+        handler.do_POST()
+
+    assert _response(handler)[0] == expected_status
+    handler.rfile.read.assert_not_called()
+    parse_cv.assert_not_called()
+
+
+@pytest.mark.parametrize("headers", [
+    {"Host": "attacker.example:9000", "Origin": "http://attacker.example:9000"},
+    {"Host": "127.0.0.1:9000", "Origin": "https://attacker.example"},
+])
+def test_upload_transport_allowance_preserves_source_checks(tmp_path: Path, headers: dict[str, str]) -> None:
+    handler = _make_handler(tmp_path, headers={**headers,
+        "Content-Type": "multipart/form-data; boundary=synthetic",
+        "Content-Length": str(MAX_REQUEST_BODY_BYTES + 1),
+    })
+    handler.path = "/profile/parse-cv"
+    handler.rfile = mock.Mock()
+    handler.rfile.read.side_effect = AssertionError("body must not be read")
+
+    handler.do_POST()
+
+    assert _response(handler)[0] == HTTPStatus.FORBIDDEN
     handler.rfile.read.assert_not_called()
 
 
