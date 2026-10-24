@@ -79,6 +79,10 @@ _SKIP_REASONS = {
     "missing_description_raw",
     "adapter_error",
     "evaluation_error",
+    "linkedin_detail_invalid_id",
+    "linkedin_detail_blocked",
+    "linkedin_detail_failed",
+    "linkedin_detail_empty",
 }
 
 
@@ -201,6 +205,9 @@ def _run_digest_pipeline_locked(
             continue
 
         searches_run += 1
+        # One bounded cache per saved search prevents repeated detail requests for
+        # duplicate cards, including failures. A later run gets a fresh attempt.
+        detail_cache: dict[str, tuple[str, str | None]] = {}
         # islice so a huge/lazy adapter generator isn't fully materialised.
         for result in islice(results, profile.digest_max_per_source):
             jobs_fetched += 1
@@ -222,19 +229,32 @@ def _run_digest_pipeline_locked(
                              title=title, url=url)
                 jobs_skipped += 1
                 continue
-            if not str(result.get("description_raw") or "").strip():
+            has_description = bool(str(result.get("description_raw") or "").strip())
+            # LinkedIn cards need deduplication before their lazy detail request.
+            # Other sources retain their existing blank-description skip policy.
+            if (has_description or source_id == "linkedin") and is_already_indexed(db_path, source_id, sjid):
+                jobs_already_seen += 1
+                finish_initialization(source_id, sjid, ss.search_id)
+                continue
+            if not has_description and source_id == "linkedin":
+                if sjid not in detail_cache:
+                    from src.job_sources.linkedin_source import enrich_digest_result
+                    enriched, reason = enrich_digest_result(result)
+                    detail_cache[sjid] = (enriched.get("description_raw", ""), reason)
+                description, reason = detail_cache[sjid]
+                if reason:
+                    _log_skipped(state_root, run_date, source=source_id,
+                                 saved_search_id=ss.search_id, reason=reason, title=title, url=url)
+                    jobs_skipped += 1
+                    continue
+                result = {**result, "description_raw": description}
+                has_description = bool(description.strip())
+            if not has_description:
                 _log_skipped(state_root, run_date, source=source_id,
                              saved_search_id=ss.search_id, reason="missing_description_raw",
                              title=title, url=url)
                 jobs_skipped += 1
                 continue
-            if is_already_indexed(db_path, source_id, sjid):
-                jobs_already_seen += 1               # expected — silent, not a skip
-                # A matching explicit marker permits SQL-only recovery. Never
-                # re-evaluate or rewrite authoritative JSON for an indexed job.
-                finish_initialization(source_id, sjid, ss.search_id)
-                continue
-
             # --- Convert + deterministic evaluate (failure here = a skip) ---
             try:
                 payload = reviewed_job_payload_from_ui_result(result, source_id=source_id)

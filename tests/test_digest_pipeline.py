@@ -22,6 +22,7 @@ from src.job_hunt_storage import ensure_storage_layout, load_job_analysis, save_
 from src.job_hunt_index import is_already_indexed, open_db, upsert_job
 from src.job_hunt_digest import query_digest
 from src.job_sources.source_registry import JobSource, register
+import src.job_sources.linkedin_source as linkedin_source
 import src.job_hunt_scheduler as scheduler
 from src.job_hunt_scheduler import run_digest_pipeline
 
@@ -334,6 +335,132 @@ def test_retry_can_intentionally_complete_without_queue(tmp_path, omission):
     assert before["digest_init_search_id"] is None and before["llm_status"] is None
     again = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
     assert again.jobs_llm_queued == 0 and _indexed_job(db) == before
+
+
+def _linkedin_card(sjid="100", **over):
+    return _result(sjid, source="linkedin", description_raw="", description_preview="Card title, not a JD", **over)
+
+
+def _skip_reasons(tmp_path):
+    return [json.loads(line)["reason"] for path in (tmp_path / "logs").glob("digest_skipped_jobs_*.jsonl")
+            for line in path.read_text().splitlines()]
+
+
+def test_linkedin_digest_enriches_only_new_cards_within_existing_cap(tmp_path, monkeypatch):
+    config, db = _setup(tmp_path)
+    upsert_job(db, {"job_id": "linkedin-99", "source": "linkedin", "source_job_id": "99"})
+    cards = [_linkedin_card("99"), _linkedin_card("100"), _linkedin_card("100"), _linkedin_card("101")]
+    _register_stub(cards, source_id="linkedin")
+    detail = Mock(return_value="Real synthetic SQL and Python job description")
+    monkeypatch.setattr(linkedin_source, "_fetch_description", detail)
+    select = Mock(side_effect=AssertionError("Digest must not select through the UI"))
+    monkeypatch.setattr(linkedin_source, "select_handler", select)
+    cache_path = linkedin_source._cache_db_path
+
+    result = run_digest_pipeline(config=config, saved_searches=[_search("linkedin")],
+                                 profile=_profile(digest_max_per_source=3), db_path=db)
+
+    assert (result.jobs_fetched, result.jobs_new, result.jobs_already_seen, result.jobs_scored) == (3, 1, 2, 1)
+    detail.assert_called_once_with("100", strict=True)
+    select.assert_not_called()
+    assert linkedin_source._cache_db_path == cache_path and all(card["description_raw"] == "" for card in cards)
+    saved = json.loads((tmp_path / "reviewed_jobs/linkedin-100.json").read_text())
+    assert saved["description_raw"] == "Real synthetic SQL and Python job description"
+    assert not is_already_indexed(db, "linkedin", "101")
+
+
+def test_linkedin_failed_duplicate_details_are_bounded_per_search(tmp_path, monkeypatch):
+    config, db = _setup(tmp_path)
+    _register_stub([_linkedin_card("100"), _linkedin_card("100"), _linkedin_card("101"), _linkedin_card("102")], source_id="linkedin")
+    detail = Mock(side_effect=[linkedin_source.LinkedInBlockedError("Synthetic block"), "Real SQL job detail"])
+    monkeypatch.setattr(linkedin_source, "_fetch_description", detail)
+
+    result = run_digest_pipeline(config=config, saved_searches=[_search("linkedin")],
+                                 profile=_profile(digest_max_per_source=3), db_path=db)
+
+    assert result.jobs_fetched == 3 and result.jobs_new == 1 and result.jobs_skipped == 2
+    assert [call.args[0] for call in detail.call_args_list] == ["100", "101"]
+    assert _skip_reasons(tmp_path) == ["linkedin_detail_blocked", "linkedin_detail_blocked"]
+    assert not is_already_indexed(db, "linkedin", "102")
+
+
+@pytest.mark.parametrize("value, sjid, reason", [
+    (linkedin_source.LinkedInBlockedError("Synthetic block"), "100", "linkedin_detail_blocked"),
+    (RuntimeError("Synthetic failure"), "100", "linkedin_detail_failed"),
+    ("", "100", "linkedin_detail_empty"),
+    ("Unused", "not-numeric", "linkedin_detail_invalid_id"),
+])
+def test_linkedin_unavailable_detail_has_explicit_skip_reason(tmp_path, monkeypatch, value, sjid, reason):
+    config, db = _setup(tmp_path)
+    _register_stub([_linkedin_card(sjid)], source_id="linkedin")
+    detail = Mock(side_effect=value) if isinstance(value, Exception) else Mock(return_value=value)
+    monkeypatch.setattr(linkedin_source, "_fetch_description", detail)
+
+    result = run_digest_pipeline(config=config, saved_searches=[_search("linkedin")], profile=_profile(), db_path=db)
+
+    assert (result.jobs_new, result.jobs_scored, result.jobs_skipped) == (0, 0, 1)
+    assert _skip_reasons(tmp_path) == [reason]
+    assert not is_already_indexed(db, "linkedin", sjid)
+    assert not list((tmp_path / "reviewed_jobs").glob("*.json"))
+    if sjid == "not-numeric":
+        detail.assert_not_called()
+    else:
+        detail.assert_called_once_with(sjid, strict=True)
+
+
+@pytest.mark.parametrize("source_id", ["reed", "adzuna"])
+def test_non_linkedin_missing_description_policy_is_unchanged(tmp_path, monkeypatch, source_id):
+    config, db = _setup(tmp_path)
+    _register_stub([_result(source=source_id, description_raw="")], source_id=source_id)
+    detail = Mock(side_effect=AssertionError("Only LinkedIn uses lazy detail enrichment"))
+    monkeypatch.setattr(linkedin_source, "_fetch_description", detail)
+
+    result = run_digest_pipeline(config=config, saved_searches=[_search(source_id)], profile=_profile(), db_path=db)
+
+    assert result.jobs_skipped == 1 and result.jobs_new == 0
+    assert _skip_reasons(tmp_path) == ["missing_description_raw"]
+    detail.assert_not_called()
+
+
+def test_linkedin_existing_description_skips_detail_fetch(tmp_path, monkeypatch):
+    config, db = _setup(tmp_path)
+    card = _linkedin_card()
+    card["description_raw"] = "Real already-present SQL job detail"
+    _register_stub([card], source_id="linkedin")
+    detail = Mock(side_effect=AssertionError("Existing description must not be fetched again"))
+    monkeypatch.setattr(linkedin_source, "_fetch_description", detail)
+
+    result = run_digest_pipeline(config=config, saved_searches=[_search("linkedin")], profile=_profile(), db_path=db)
+
+    assert result.jobs_new == 1 and result.jobs_scored == 1
+    detail.assert_not_called()
+
+
+def test_linkedin_failed_detail_retries_on_next_run(tmp_path, monkeypatch):
+    config, db = _setup(tmp_path)
+    _register_stub([_linkedin_card()], source_id="linkedin")
+    detail = Mock(side_effect=[linkedin_source.LinkedInBlockedError("Synthetic block"), "Real SQL job detail"])
+    monkeypatch.setattr(linkedin_source, "_fetch_description", detail)
+
+    first = run_digest_pipeline(config=config, saved_searches=[_search("linkedin")], profile=_profile(), db_path=db)
+    retry = run_digest_pipeline(config=config, saved_searches=[_search("linkedin")], profile=_profile(), db_path=db)
+
+    assert first.jobs_skipped == 1 and retry.jobs_new == 1 and detail.call_count == 2
+
+
+def test_linkedin_empty_card_repairs_marked_initialization_without_detail_fetch(tmp_path, monkeypatch):
+    config, db = _setup(tmp_path)
+    upsert_job(db, {"job_id": "linkedin-100", "source": "linkedin", "source_job_id": "100", "match_score": 90,
+                    "digest_init_search_id": "s1", "digest_init_date": "2026-10-01", "digest_init_queue_requested": True})
+    _register_stub([_linkedin_card()], source_id="linkedin")
+    detail = Mock(side_effect=AssertionError("Indexed recovery must not fetch details"))
+    monkeypatch.setattr(linkedin_source, "_fetch_description", detail)
+
+    result = run_digest_pipeline(config=config, saved_searches=[_search("linkedin")], profile=_profile(), db_path=db)
+
+    assert result.jobs_already_seen == 1 and result.jobs_llm_queued == 1 and result.jobs_scored == 0
+    assert _indexed_job(db, "linkedin-100")["digest_init_search_id"] is None
+    detail.assert_not_called()
 
 
 def test_pipeline_skips_blank_id(tmp_path):

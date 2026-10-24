@@ -340,8 +340,12 @@ def search_handler(cleaned_params: dict) -> list[dict]:
 
 # ── select_handler (lazy description fetch) ───────────────────────────────────
 
-def _fetch_description(job_id: str) -> str:
-    """Lazily fetch full job description. Returns "" if blocked or on error."""
+def _fetch_description(job_id: str, *, strict: bool = False) -> str:
+    """Fetch a description; strict digest callers retain failure distinctions.
+
+    The default preserves select-handler behavior: blocked/failed fetches return
+    an empty string. Strict callers receive exceptions for blocked/failed pages.
+    """
     import requests
 
     url = f"https://www.linkedin.com/jobs/view/{job_id}/"
@@ -350,13 +354,19 @@ def _fetch_description(job_id: str) -> str:
     try:
         response = requests.get(url, headers=headers, timeout=(5, 10), allow_redirects=True)
     except requests.exceptions.RequestException:
+        if strict:
+            raise
         return ""
 
     html_text = response.text
     final_url = response.url
 
     if _is_blocked(final_url, html_text, response.status_code):
+        if strict:
+            raise LinkedInBlockedError("LinkedIn blocked the description request")
         return ""
+    if strict:
+        response.raise_for_status()
 
     try:
         from bs4 import BeautifulSoup
@@ -368,8 +378,33 @@ def _fetch_description(job_id: str) -> str:
         if desc_el:
             return squash_whitespace(desc_el.get_text())
     except Exception:
-        pass
+        if strict:
+            raise
     return ""
+
+
+def enrich_digest_result(result: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    """Copy a digest card and lazily fill its real description, without UI effects.
+
+    No cache-path changes, form conversion or skill extraction occur here. The
+    digest caller owns deduplication and the per-search detail-call allowance.
+    """
+    enriched = dict(result)
+    if str(enriched.get("description_raw") or "").strip():
+        return enriched, None
+    job_id = str(enriched.get("source_job_id") or "").strip()
+    if not job_id or not job_id.isdigit():
+        return enriched, "linkedin_detail_invalid_id"
+    try:
+        description = _fetch_description(job_id, strict=True)
+    except LinkedInBlockedError:
+        return enriched, "linkedin_detail_blocked"
+    except Exception:
+        return enriched, "linkedin_detail_failed"
+    if not isinstance(description, str) or not description.strip():
+        return enriched, "linkedin_detail_empty"
+    enriched["description_raw"] = description.strip()
+    return enriched, None
 
 
 def select_handler(post_form: dict, config: Any) -> dict:
