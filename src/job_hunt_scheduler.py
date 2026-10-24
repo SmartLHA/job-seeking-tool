@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.job_hunt_index import (
+    finish_digest_initialization,
     claim_batch,
     claim_eval_queue_row,
     clear_llm_queue,
@@ -43,7 +44,6 @@ from src.job_hunt_index import (
     reset_stale_llm_processing,
     resurface_digest_job,
     rpd_used_today,
-    set_digest_meta,
     set_llm_status,
     source_job_id_from_ui_result,
     upsert_job,
@@ -168,6 +168,20 @@ def _run_digest_pipeline_locked(
     # currently persisted, computed once per run (not per-job).
     _scoring_policy = get_active_scoring_policy(state_root=state_root)
 
+    def finish_initialization(source_id: str, sjid: str, search_id: str) -> None:
+        nonlocal newly_queued, jobs_llm_queued
+        try:
+            queued = finish_digest_initialization(
+                db_path, source_id=source_id, source_job_id=sjid, saved_search_id=search_id,
+                allow_queue=profile.digest_llm_enabled and newly_queued < profile.digest_max_llm_per_run,
+                threshold=profile.digest_threshold,
+            )
+            newly_queued += queued
+            jobs_llm_queued += queued
+        except Exception as exc:
+            errors.append(f"{search_id}/{source_id}/{sjid}: digest-meta/queue failed: {exc}")
+            logger.warning("digest: meta/queue failed (%s/%s): %s", source_id, sjid, exc)
+
     for ss in saved_searches:
         if not getattr(ss, "enabled", True):
             continue
@@ -216,6 +230,9 @@ def _run_digest_pipeline_locked(
                 continue
             if is_already_indexed(db_path, source_id, sjid):
                 jobs_already_seen += 1               # expected — silent, not a skip
+                # A matching explicit marker permits SQL-only recovery. Never
+                # re-evaluate or rewrite authoritative JSON for an indexed job.
+                finish_initialization(source_id, sjid, ss.search_id)
                 continue
 
             # --- Convert + deterministic evaluate (failure here = a skip) ---
@@ -260,6 +277,12 @@ def _run_digest_pipeline_locked(
                     "updated_at": run_date,
                     "salary_min": job.salary_min_gbp,
                     "salary_max": job.salary_max_gbp,
+                    "digest_init_search_id": ss.search_id,
+                    "digest_init_date": run_date,
+                    "digest_init_queue_requested": (
+                        profile.digest_llm_enabled and analysis.match_score is not None
+                        and analysis.match_score >= profile.digest_threshold
+                    ),
                 })
             except Exception as exc:
                 errors.append(f"{ss.search_id}/{job.job_id}: persist/index failed: {exc}")
@@ -267,21 +290,9 @@ def _run_digest_pipeline_locked(
                 continue
             jobs_new += 1
 
-            # --- Digest metadata + LLM queue. Best-effort: a failure is an ERROR,
-            # never un-counts the indexed job. One GLOBAL cap (across searches). ---
-            try:
-                set_digest_meta(db_path, job.job_id, digest_date=run_date,
-                                saved_search_id=ss.search_id)
-                score = analysis.match_score
-                if (profile.digest_llm_enabled and score is not None
-                        and score >= profile.digest_threshold
-                        and newly_queued < profile.digest_max_llm_per_run):
-                    set_llm_status(db_path, job.job_id, "pending")
-                    newly_queued += 1
-                    jobs_llm_queued += 1
-            except Exception as exc:
-                errors.append(f"{ss.search_id}/{job.job_id}: digest-meta/queue failed: {exc}")
-                logger.warning("digest: meta/queue failed (%s): %s", job.job_id, exc)
+            # Metadata, initial queueing and marker completion commit together.
+            # Failed initialization retains its marker for an identical search.
+            finish_initialization(source_id, sjid, ss.search_id)
 
     return DigestRunResult(
         started_at=started_at,

@@ -7,16 +7,19 @@ fast and offline (the real extract_skills_from_text tries Ollama first).
 """
 from __future__ import annotations
 
+import dataclasses
+from datetime import datetime
 import json
 import types
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
 from src.job_hunt_profile import candidate_profile_from_dict
 from src.job_hunt_saved_searches import SavedSearch, save_saved_search
-from src.job_hunt_storage import ensure_storage_layout
-from src.job_hunt_index import is_already_indexed, open_db
+from src.job_hunt_storage import ensure_storage_layout, load_job_analysis, save_job_analysis
+from src.job_hunt_index import is_already_indexed, open_db, upsert_job
 from src.job_hunt_digest import query_digest
 from src.job_sources.source_registry import JobSource, register
 import src.job_hunt_scheduler as scheduler
@@ -98,6 +101,239 @@ def test_pipeline_dedups_already_seen(tmp_path):
     r2 = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
     assert r2.jobs_new == 0
     assert r2.jobs_already_seen == 1
+
+
+def _indexed_job(db, job_id="stub-100"):
+    conn = open_db(db)
+    try:
+        return dict(conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone())
+    finally:
+        conn.close()
+
+
+def _fail_initialization(db, column):
+    conn = open_db(db)
+    try:
+        conn.execute(f"""CREATE TRIGGER synthetic_init_failure BEFORE UPDATE OF {column} ON jobs
+            WHEN NEW.job_id = 'stub-100' BEGIN
+            SELECT RAISE(ABORT, 'synthetic initialization failure'); END""")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _remove_initialization_failure(db):
+    conn = open_db(db)
+    try:
+        conn.execute("DROP TRIGGER synthetic_init_failure")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("column", ["digest_date", "llm_status"])
+def test_initialization_sql_failure_recovers_without_authoritative_rewrite(tmp_path, monkeypatch, column):
+    config, db = _setup(tmp_path)
+    _register_stub([_result()])
+    _fail_initialization(db, column)
+    first = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+    assert (first.jobs_new, first.jobs_scored, first.jobs_llm_queued) == (1, 1, 0)
+    assert first.errors and "digest-meta/queue failed" in first.errors[0]
+    row = _indexed_job(db)
+    assert row["digest_date"] is None and row["llm_status"] is None
+    assert row["digest_init_search_id"] == "s1" and row["digest_init_queue_requested"] == 1
+    original_date = row["digest_init_date"]
+    analysis = load_job_analysis("stub-100", config.state_root)
+    save_job_analysis(dataclasses.replace(analysis, user_decision="review", user_decision_note="Keep manual note"), config.state_root)
+    paths = [tmp_path / folder / "stub-100.json" for folder in ("reviewed_jobs", "analyses")]
+    before = {path: path.read_bytes() for path in paths}
+    conn = open_db(db)
+    conn.execute("UPDATE jobs SET user_decision = 'review', digest_seen = 1 WHERE job_id = 'stub-100'")
+    conn.commit()
+    conn.close()
+    _remove_initialization_failure(db)
+
+    class LaterDate(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2030, 1, 2)
+
+    monkeypatch.setattr(scheduler, "datetime", LaterDate)
+    evaluator = Mock(side_effect=AssertionError("An indexed recovery must not re-evaluate"))
+    monkeypatch.setattr(scheduler, "evaluate_reviewed_job", evaluator)
+    retry = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+    assert (retry.jobs_new, retry.jobs_scored, retry.jobs_already_seen, retry.jobs_llm_queued) == (0, 0, 1, 1)
+    assert retry.errors == []
+    row = _indexed_job(db)
+    assert (row["digest_date"], row["saved_search_id"], row["digest_seen"], row["user_decision"]) == (original_date, "s1", 1, "review")
+    assert row["llm_status"] == "pending"
+    assert all(row[key] is None for key in ("digest_init_search_id", "digest_init_date", "digest_init_queue_requested"))
+    assert {path: path.read_bytes() for path in paths} == before
+    again = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+    assert again.jobs_llm_queued == 0 and _indexed_job(db) == row
+    evaluator.assert_not_called()
+
+
+def test_initialization_repair_requires_original_saved_search(tmp_path):
+    config, db = _setup(tmp_path)
+    _register_stub([_result()])
+    _fail_initialization(db, "digest_date")
+    run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+    _remove_initialization_failure(db)
+    before = _indexed_job(db)
+
+    other = run_digest_pipeline(config=config, saved_searches=[_search(sid="other-search")], profile=_profile(), db_path=db)
+
+    assert other.jobs_already_seen == 1 and other.jobs_llm_queued == 0
+    assert _indexed_job(db) == before
+    retry = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+    assert retry.jobs_llm_queued == 1 and _indexed_job(db)["digest_init_search_id"] is None
+
+
+def test_existing_ordinary_indexed_job_is_not_digest_initialized(tmp_path, monkeypatch):
+    config, db = _setup(tmp_path)
+    upsert_job(db, {"job_id": "stub-100", "source": "stub", "source_job_id": "100",
+                    "match_score": 90, "user_decision": "review", "status": "applied"})
+    before = _indexed_job(db)
+    _register_stub([_result()])
+    evaluator = Mock(side_effect=AssertionError("Existing ordinary job must be preserved"))
+    monkeypatch.setattr(scheduler, "evaluate_reviewed_job", evaluator)
+
+    result = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+
+    assert result.jobs_already_seen == 1 and result.jobs_llm_queued == 0
+    assert _indexed_job(db) == before
+    assert not list((tmp_path / "analyses").glob("*.json"))
+    evaluator.assert_not_called()
+
+
+@pytest.mark.parametrize("omission", ["disabled", "capped"])
+def test_intentionally_unqueued_initialization_stays_complete(tmp_path, omission):
+    config, db = _setup(tmp_path)
+    _register_stub([_result()])
+    settings = {"digest_llm_enabled": False} if omission == "disabled" else {"digest_max_llm_per_run": 0}
+    first = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(**settings), db_path=db)
+    before = _indexed_job(db)
+    assert first.jobs_llm_queued == 0 and before["llm_status"] is None
+    assert before["digest_date"] and before["digest_init_search_id"] is None
+
+    retry = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+
+    assert retry.jobs_already_seen == 1 and retry.jobs_llm_queued == 0
+    assert _indexed_job(db) == before
+
+
+def test_failed_disabled_initialization_keeps_original_queue_omission(tmp_path):
+    config, db = _setup(tmp_path)
+    _register_stub([_result()])
+    _fail_initialization(db, "digest_date")
+    run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(digest_llm_enabled=False), db_path=db)
+    assert _indexed_job(db)["digest_init_queue_requested"] == 0
+    _remove_initialization_failure(db)
+
+    retry = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+
+    assert retry.jobs_llm_queued == 0
+    row = _indexed_job(db)
+    assert row["llm_status"] is None and row["digest_init_search_id"] is None
+
+
+@pytest.mark.parametrize("status", ["pending", "processing", "done", "failed", "skipped"])
+def test_initialization_preserves_existing_queue_first_seen_and_manual_state(tmp_path, status):
+    config, db = _setup(tmp_path)
+    _register_stub([_result()])
+    _fail_initialization(db, "llm_status")
+    run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+    _remove_initialization_failure(db)
+    conn = open_db(db)
+    conn.execute("""UPDATE jobs SET llm_status = ?, llm_attempts = 3, llm_next_attempt_at = '2030-01-01',
+        llm_claimed_at = '2026-01-01', llm_claim_token = 'existing-owner', digest_date = '2025-01-01',
+        saved_search_id = 'first-search', digest_seen = 1, user_decision = 'review', status = 'interview'
+        WHERE job_id = 'stub-100'""", (status,))
+    conn.commit()
+    conn.close()
+    before = _indexed_job(db)
+
+    result = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+
+    assert result.jobs_llm_queued == 0 and result.errors == []
+    after = _indexed_job(db)
+    for key, value in before.items():
+        assert after[key] == (None if key.startswith("digest_init_") else value)
+
+
+@pytest.mark.parametrize("manual", [{"user_decision": "skip"}, {"status": "rejected"}, {"status": "withdrawn"}])
+def test_manual_rejection_before_initialization_is_not_queued(tmp_path, manual):
+    config, db = _setup(tmp_path)
+    _register_stub([_result()])
+    _fail_initialization(db, "digest_date")
+    run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+    _remove_initialization_failure(db)
+    key, value = next(iter(manual.items()))
+    conn = open_db(db)
+    conn.execute(f"UPDATE jobs SET {key} = ? WHERE job_id = 'stub-100'", (value,))
+    conn.commit()
+    conn.close()
+
+    result = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+
+    row = _indexed_job(db)
+    assert result.jobs_llm_queued == 0 and row["llm_status"] is None
+    assert row[key] == value and row["digest_init_search_id"] is None
+
+
+def test_failed_queue_initialization_does_not_consume_global_cap(tmp_path):
+    config, db = _setup(tmp_path)
+    _register_stub([_result("100"), _result("101")])
+    _fail_initialization(db, "llm_status")
+    profile = _profile(digest_max_llm_per_run=1)
+    first = run_digest_pipeline(config=config, saved_searches=[_search()], profile=profile, db_path=db)
+    assert first.jobs_new == 2 and first.jobs_llm_queued == 1
+    assert _indexed_job(db)["digest_init_search_id"] == "s1"
+    assert _indexed_job(db, "stub-101")["llm_status"] == "pending"
+    _remove_initialization_failure(db)
+
+    retry = run_digest_pipeline(config=config, saved_searches=[_search()], profile=profile, db_path=db)
+
+    assert retry.jobs_new == 0 and retry.jobs_scored == 0 and retry.jobs_llm_queued == 1
+    assert _indexed_job(db)["llm_status"] == "pending"
+
+
+def test_already_done_initialization_does_not_consume_global_cap(tmp_path):
+    config, db = _setup(tmp_path)
+    _register_stub([_result()])
+    _fail_initialization(db, "digest_date")
+    run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+    _remove_initialization_failure(db)
+    conn = open_db(db)
+    conn.execute("UPDATE jobs SET llm_status = 'done' WHERE job_id = 'stub-100'")
+    conn.commit()
+    conn.close()
+    _register_stub([_result("100"), _result("101")])
+
+    result = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(digest_max_llm_per_run=1), db_path=db)
+
+    assert result.jobs_new == 1 and result.jobs_llm_queued == 1
+    assert _indexed_job(db)["llm_status"] == "done"
+    assert _indexed_job(db, "stub-101")["llm_status"] == "pending"
+
+
+@pytest.mark.parametrize("omission", ["disabled", "capped"])
+def test_retry_can_intentionally_complete_without_queue(tmp_path, omission):
+    config, db = _setup(tmp_path)
+    _register_stub([_result()])
+    _fail_initialization(db, "llm_status")
+    run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+    _remove_initialization_failure(db)
+    settings = {"digest_llm_enabled": False} if omission == "disabled" else {"digest_max_llm_per_run": 0}
+
+    retry = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(**settings), db_path=db)
+
+    assert retry.jobs_llm_queued == 0
+    before = _indexed_job(db)
+    assert before["digest_init_search_id"] is None and before["llm_status"] is None
+    again = run_digest_pipeline(config=config, saved_searches=[_search()], profile=_profile(), db_path=db)
+    assert again.jobs_llm_queued == 0 and _indexed_job(db) == before
 
 
 def test_pipeline_skips_blank_id(tmp_path):

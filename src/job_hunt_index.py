@@ -28,8 +28,8 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 """
 
-# Daily Digest D2 — ten new columns added by idempotent migration (never in the
-# base CREATE so existing DBs upgrade in place). See backlog-01 design §3.1/§3.2.
+# Digest and queue columns are added by idempotent migration so existing DBs
+# upgrade in place. See backlog-01 design §3.1/§3.2.
 _MIGRATION_COLUMNS: list[tuple[str, str]] = [
     ("source_job_id",       "TEXT"),                 # dedup key (with lower(source)); C1
     ("apply_url",           "TEXT"),                 # apply/advert URL — display only, NEVER dedup
@@ -41,6 +41,9 @@ _MIGRATION_COLUMNS: list[tuple[str, str]] = [
     ("llm_next_attempt_at", "TEXT"),                 # ISO datetime backoff gate; NULL = ready
     ("llm_claimed_at",      "TEXT"),                 # ISO datetime a worker claimed the row
     ("llm_claim_token",     "TEXT"),                 # per-claim UUID; only the claimer processes it
+    ("digest_init_search_id", "TEXT"),              # non-NULL only during incomplete digest ingestion
+    ("digest_init_date", "TEXT"),                   # original first-seen date for that ingestion
+    ("digest_init_queue_requested", "INTEGER"),     # original eligibility; NULL when initialization is done
 ]
 
 # Daily-digest indexes (§3.1a). Partial UNIQUE is the dedup invariant guard; the
@@ -185,11 +188,13 @@ _UPSERT_SQL = """
     INSERT INTO jobs
         (job_id, job_title, company, location, source, source_job_id, apply_url,
          match_score, decision, user_decision, ats_score,
-         tailoring_ready, status, updated_at, salary_min, salary_max)
+         tailoring_ready, status, updated_at, salary_min, salary_max,
+         digest_init_search_id, digest_init_date, digest_init_queue_requested)
     VALUES
         (:job_id, :job_title, :company, :location, :source, :source_job_id, :apply_url,
          :match_score, :decision, :user_decision, :ats_score,
-         :tailoring_ready, :status, :updated_at, :salary_min, :salary_max)
+         :tailoring_ready, :status, :updated_at, :salary_min, :salary_max,
+         :digest_init_search_id, :digest_init_date, :digest_init_queue_requested)
     ON CONFLICT(job_id) DO UPDATE SET
         job_title       = excluded.job_title,
         company         = excluded.company,
@@ -209,6 +214,7 @@ _UPSERT_SQL = """
     -- Deliberately NOT in the SET list, so preserved unchanged on conflict (C6):
     --   digest_date, digest_seen, saved_search_id,
     --   llm_status, llm_attempts, llm_next_attempt_at, llm_claimed_at, llm_claim_token
+    --   digest_init_search_id, digest_init_date, digest_init_queue_requested
 """
 
 
@@ -256,6 +262,12 @@ def upsert_job(db_path: Path, row: dict[str, Any]) -> None:
         "updated_at": row.get("updated_at"),
         "salary_min": row.get("salary_min"),
         "salary_max": row.get("salary_max"),
+        "digest_init_search_id": row.get("digest_init_search_id"),
+        "digest_init_date": row.get("digest_init_date"),
+        "digest_init_queue_requested": (
+            None if row.get("digest_init_queue_requested") is None
+            else int(bool(row["digest_init_queue_requested"]))
+        ),
     }
 
     conn = open_db(db_path)
@@ -500,6 +512,64 @@ def set_digest_meta(
             },
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def finish_digest_initialization(
+    db_path: Path,
+    *,
+    source_id: str,
+    source_job_id: str,
+    saved_search_id: str,
+    allow_queue: bool,
+    threshold: float,
+) -> int:
+    """Complete only the marked ingestion for this source/search in one SQL commit.
+
+    The DB supplies the profile/state namespace. The source, provider ID and
+    saved-search marker must all match. Ordinary indexed rows and intentionally
+    unqueued, completed initializations have no marker and remain untouched.
+    Returns the number of actual NULL-to-pending queue transitions (0 or 1).
+    JSON persistence preceding the initial index insert is not crash-atomic.
+    """
+    conn = open_db(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT * FROM jobs WHERE source = ? AND source_job_id = ? AND digest_init_search_id = ?",
+            ((source_id or "").lower(), _norm_source_job_id(source_job_id), saved_search_id),
+        ).fetchone()
+        if row is None:
+            return 0
+        conn.execute(
+            """UPDATE jobs SET digest_date = COALESCE(digest_date, digest_init_date),
+                   saved_search_id = COALESCE(saved_search_id, digest_init_search_id)
+               WHERE job_id = ?""",
+            (row["job_id"],),
+        )
+        queued = 0
+        if (row["digest_init_queue_requested"] and allow_queue
+                and row["match_score"] is not None and row["match_score"] >= threshold):
+            cursor = conn.execute(
+                """UPDATE jobs SET llm_status = 'pending', llm_claimed_at = NULL, llm_claim_token = NULL
+                   WHERE job_id = ? AND llm_status IS NULL
+                     AND COALESCE(user_decision, '') != 'skip'
+                     AND status NOT IN ('rejected', 'withdrawn')""",
+                (row["job_id"],),
+            )
+            queued = cursor.rowcount
+        # Disabled/capped/manual omission is a completed initialization too.
+        conn.execute(
+            """UPDATE jobs SET digest_init_search_id = NULL, digest_init_date = NULL,
+                   digest_init_queue_requested = NULL WHERE job_id = ?""",
+            (row["job_id"],),
+        )
+        conn.commit()
+        return queued
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
