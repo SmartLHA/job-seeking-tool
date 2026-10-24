@@ -502,15 +502,9 @@ def test_qualitative_stale_grade_backfills_on_render(tmp_path: Path) -> None:
     assessment["job_id"] = "job-grade-backfill"
     save_qualitative_assessment("job-grade-backfill", assessment, config.state_root)
     db_path = config.state_root / "job_hunt_index.db"
-    claim_qualitative_assessment(db_path, "job-grade-backfill", now="2026-07-09T10:00:00")
-    finish_qualitative_assessment(
-        db_path,
-        "job-grade-backfill",
-        status="done",
-        grade="A",
-        legitimacy_tier="unknown_caution",
-        culture_flag="caution",
-    )
+    from src.job_hunt_index import open_db
+    with open_db(db_path) as conn:
+        conn.execute("INSERT INTO qualitative_index(job_ref,status,grade,legitimacy_tier,culture_flag) VALUES(?,'done','A','unknown_caution','caution')", ("job-grade-backfill",))
     req = types.SimpleNamespace(path="/job/job-grade-backfill", form={}, json_body=None)
     responder = _FakeResponder()
 
@@ -533,14 +527,9 @@ def test_qualitative_grade_warning_not_rendered_for_c_base_grade(tmp_path: Path)
     assessment["job_id"] = "job-grade-c"
     save_qualitative_assessment("job-grade-c", assessment, config.state_root)
     db_path = config.state_root / "job_hunt_index.db"
-    claim_qualitative_assessment(db_path, "job-grade-c", now="2026-07-09T10:00:00")
-    finish_qualitative_assessment(
-        db_path,
-        "job-grade-c",
-        status="done",
-        legitimacy_tier="unknown_caution",
-        culture_flag="caution",
-    )
+    from src.job_hunt_index import open_db
+    with open_db(db_path) as conn:
+        conn.execute("INSERT INTO qualitative_index(job_ref,status,legitimacy_tier,culture_flag) VALUES(?,'done','unknown_caution','caution')", ("job-grade-c",))
     req = types.SimpleNamespace(path="/job/job-grade-c", form={}, json_body=None)
     responder = _FakeResponder()
 
@@ -589,10 +578,11 @@ def test_post_qualitative_force_rejected_while_running(tmp_path: Path, monkeypat
     config = _ui_config(tmp_path)
     _save_evaluated_job(tmp_path, config, job_id="job-qual-running")
     from src.job_hunt_index import claim_qualitative_assessment
+    from src.job_hunt_qualitative_state import utc_now
     claim_qualitative_assessment(
         config.state_root / "job_hunt_index.db",
         "job-qual-running",
-        now="2026-07-08T10:00:00",
+        now=utc_now().isoformat(),
     )
     req = types.SimpleNamespace(path="/job/job-qual-running/qualitative-assess", form={"force": "1"}, json_body=None)
     responder = _FakeResponder()

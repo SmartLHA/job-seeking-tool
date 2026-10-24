@@ -208,7 +208,9 @@ def test_quota_exhausted_pauses_batch_without_calling_remaining_rows(tmp_path: P
     assert [r["status"] for r in rows] == ["pending", "pending"]
     assert [r["retries"] for r in rows] == [0, 0]
     assert "quota" in (rows[0]["error_text"] or "").lower()
-    assert get_qualitative_index_row(db_path, "job-1") is None
+    qualitative = get_qualitative_index_row(db_path, "job-1")
+    assert qualitative["status"] == "pending" and qualitative["claim_token"] is None
+    assert qualitative["generation"] and "quota" in qualitative["error_text"]
 
 
 def test_batch_progress_shows_quota_waiting_note(tmp_path: Path, monkeypatch) -> None:
@@ -344,7 +346,7 @@ def test_retry_transitions_atomically_prefer_cancel_and_preserve_claim_token(tmp
         if operation == '429':
             return requeue_eval_queue_row(db, row['id'], token, now='2026-07-09T10:00:03', retries=1, error_text='429')
         if operation == 'quota':
-            return return_eval_queue_row_to_pending(db, row['id'], token, error_text='quota')
+            return return_eval_queue_row_to_pending(db, row['id'], token, now='2026-07-09T10:00:03', error_text='quota')
         return finish_eval_queue_row(db, row['id'], token, status='error', now='2026-07-09T10:00:03', retries=5)
     assert transition('invalid-token') is False
     unchanged = get_eval_batch(db, batch)[0]
@@ -396,8 +398,8 @@ def test_non_cancelled_retry_and_quota_return_still_work_with_valid_token(tmp_pa
     final = get_eval_batch(db, batch)[0]
     assert final['status'] == 'pending' and final['retries'] == 1 and final['error_text'] == '429'
     row = claim_eval_queue_row(db, now='2026-07-09T10:00:03')
-    assert not return_eval_queue_row_to_pending(db, row['id'], 'wrong', error_text='quota')
-    assert return_eval_queue_row_to_pending(db, row['id'], row['claim_token'], error_text='quota')
+    assert not return_eval_queue_row_to_pending(db, row['id'], 'wrong', now='2026-07-09T10:00:04', error_text='quota')
+    assert return_eval_queue_row_to_pending(db, row['id'], row['claim_token'], now='2026-07-09T10:00:04', error_text='quota')
     final = get_eval_batch(db, batch)[0]
     assert final['status'] == 'pending' and final['retries'] == 1 and final['finished_at'] is None
 
@@ -464,12 +466,12 @@ def test_cancel_racing_retry_transition_reports_cancelled(tmp_path, monkeypatch,
     _save_job(config, 'job-1')
     db = config.state_root / 'job_hunt_index.db'
     batch = enqueue_eval_batch(db, ['job-1'], now='2026-07-09T10:00:00')
-    name = 'requeue_eval_queue_row' if kind == '429' else 'return_eval_queue_row_to_pending'
-    original = getattr(scheduler, name)
+    import src.job_hunt_qualitative_state as ownership
+    original = ownership.transition
     def cancel_before_update(*args, **kwargs):
         cancel_eval_batch(db, batch, now='2026-07-09T10:00:02')
         return original(*args, **kwargs)
-    monkeypatch.setattr(scheduler, name, cancel_before_update)
+    monkeypatch.setattr(ownership, 'transition', cancel_before_update)
     calls = []
     def provider(*args, **kwargs):
         calls.append('synthetic')
@@ -509,13 +511,14 @@ def test_cancellation_after_completed_row_does_not_misreport_outcome(tmp_path, m
     db = config.state_root / 'job_hunt_index.db'
     batch = enqueue_eval_batch(db, ['job-1'], now='2026-07-09T10:00:00')
     monkeypatch.setattr('src.job_hunt_llm._call_gemini_reasoning', lambda *a, **k: (_llm_payload(), None, 'synthetic', False))
-    original = scheduler.finish_eval_queue_row
+    import src.job_hunt_qualitative_state as ownership
+    original = ownership.publish
     def cancel_after_finish(*args, **kwargs):
         updated = original(*args, **kwargs)
-        if kwargs['status'] == 'done':
+        if updated == 'done':
             cancel_eval_batch(db, batch, now='2026-07-09T10:00:02')
         return updated
-    monkeypatch.setattr(scheduler, 'finish_eval_queue_row', cancel_after_finish)
+    monkeypatch.setattr(ownership, 'publish', cancel_after_finish)
     result = process_eval_queue_once(config=config, profile=_profile(), db_path=db, sleep=lambda _: None)
     assert result.processed == 1 and result.cancelled == 0
     assert get_eval_batch(db, batch)[0]['status'] == 'done'

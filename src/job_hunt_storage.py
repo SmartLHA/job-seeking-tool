@@ -112,7 +112,15 @@ def save_qualitative_assessment(job_id: str, assessment: dict[str, Any], root: s
 
 
 def load_qualitative_assessment(job_id: str, root: str | Path) -> dict[str, Any]:
-    """Load a qualitative assessment payload for a job."""
+    """Load only a completed qualitative publication under its SQLite guard."""
+    from src.job_hunt_qualitative_state import read_accepted
+    if not _qualitative_assessment_path(root, job_id).exists():
+        raise FileNotFoundError(job_id)
+    return read_accepted(job_id, root)
+
+
+def _load_qualitative_assessment_raw(job_id: str, root: str | Path) -> dict[str, Any]:
+    """Internal raw read; authoritative callers hold the qualitative guard."""
     payload = _read_json(_qualitative_assessment_path(root, job_id))
     if not isinstance(payload, dict):
         raise StorageError("qualitative assessment file must contain an object")
@@ -120,6 +128,18 @@ def load_qualitative_assessment(job_id: str, root: str | Path) -> dict[str, Any]
 
 
 def archive_qualitative_assessment(job_id: str, root: str | Path) -> Path | None:
+    """Legacy archive entry point; managed archives require a current owner."""
+    from src.job_hunt_qualitative_state import guard
+    if not _qualitative_assessment_path(root, job_id).exists():
+        return None
+    with guard(Path(root) / "job_hunt_index.db") as (conn, _now):
+        row = conn.execute("SELECT generation FROM qualitative_index WHERE job_ref=?", (job_id,)).fetchone()
+        if row is not None and row["generation"]:
+            raise StorageError("managed qualitative archive requires its current owner")
+        return _archive_qualitative_assessment_raw(job_id, root)
+
+
+def _archive_qualitative_assessment_raw(job_id: str, root: str | Path) -> Path | None:
     """Move an existing qualitative assessment to a versioned archive path."""
     path = _qualitative_assessment_path(root, job_id)
     if not path.exists():

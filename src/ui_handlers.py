@@ -579,27 +579,14 @@ def render_job(req, config, responder, job_id, *, flash=None, flash_kind='succes
     except FileNotFoundError:
         outcome = None
     try:
-        qualitative_assessment = load_qualitative_assessment(job_id, config.state_root)
-    except FileNotFoundError:
-        qualitative_assessment = None
-    try:
-        from src.job_hunt_index import get_qualitative_index_row
-        qualitative_index = get_qualitative_index_row(_index_db_path(config), job_id)
+        from src.job_hunt_qualitative_state import read_snapshot
+        qualitative_assessment, qualitative_index = read_snapshot(job_id, config.state_root, db_path=_index_db_path(config))
     except Exception:
-        qualitative_index = None
-    qualitative_grade = _ensure_qualitative_grade(
-        config,
-        job_id,
-        analysis,
-        qualitative_assessment,
-        qualitative_index,
+        # An unreadable index cannot authorize qualitative content.
+        qualitative_assessment, qualitative_index = None, None
+    qualitative_assessment, qualitative_index, qualitative_grade = _ensure_qualitative_grade(
+        config, job_id, analysis, qualitative_assessment, qualitative_index,
     )
-    if (
-        qualitative_index is not None
-        and qualitative_grade is not None
-        and qualitative_index.get("grade") != qualitative_grade.get("display_grade")
-    ):
-        qualitative_index = {**qualitative_index, "grade": qualitative_grade.get("display_grade")}
 
     page = render_job_page(_build_job_page_vm(
         reviewed_job, analysis, outcome,
@@ -614,45 +601,23 @@ def render_job(req, config, responder, job_id, *, flash=None, flash_kind='succes
 
 def _ensure_qualitative_grade(config, job_id: str, analysis, qualitative_assessment, qualitative_index):
     if analysis is None:
-        return None
-    from src.job_hunt_index import update_qualitative_grade
-    from src.job_hunt_qualitative import apply_grade_to_assessment, derive_grade
-
+        return qualitative_assessment, qualitative_index, None
+    from src.job_hunt_qualitative import derive_grade
+    from src.job_hunt_qualitative_state import backfill_grade
+    baseline = derive_grade(analysis.match_score, effective_decision=effective_decision(analysis),
+        has_blockers=bool(analysis.blockers), confidence=analysis.confidence, decision_reason=analysis.decision_reason)
     if qualitative_assessment is None:
-        return derive_grade(
-            analysis.match_score,
-            effective_decision=effective_decision(analysis),
-            has_blockers=bool(analysis.blockers),
-            confidence=analysis.confidence,
-            decision_reason=analysis.decision_reason,
-        )
-
-    existing = {
-        "base_grade": qualitative_assessment.get("base_grade"),
-        "capped_grade": qualitative_assessment.get("capped_grade"),
-        "cap_reason": qualitative_assessment.get("cap_reason"),
-        "grade_warning": qualitative_assessment.get("grade_warning"),
-    }
-    grade = apply_grade_to_assessment(
-        analysis.match_score,
-        qualitative_assessment,
-        effective_decision=effective_decision(analysis),
-        has_blockers=bool(analysis.blockers),
-        confidence=analysis.confidence,
-        decision_reason=analysis.decision_reason,
-    )
-    changed = (
-        existing["base_grade"] != qualitative_assessment.get("base_grade")
-        or existing["capped_grade"] != qualitative_assessment.get("capped_grade")
-        or existing["cap_reason"] != qualitative_assessment.get("cap_reason")
-        or existing["grade_warning"] != qualitative_assessment.get("grade_warning")
-    )
-    if changed:
-        save_qualitative_assessment(job_id, qualitative_assessment, config.state_root)
-    if qualitative_index is not None and qualitative_index.get("grade") != grade.get("display_grade"):
-        update_qualitative_grade(_index_db_path(config), job_id, grade.get("display_grade"))
-    return grade
-
+        return None, qualitative_index, baseline
+    try:
+        # Re-read the current artifact and index under the writer guard; never
+        # rewrite the stale full dict supplied by a previous GET read.
+        current = backfill_grade(_index_db_path(config), job_id, state_root=config.state_root, analysis=analysis)
+    except Exception:
+        current = None
+    if current is None:
+        return None, None, baseline
+    assessment, grade, row = current
+    return assessment, row, grade
 
 def handle_evaluate_form(req, config, responder, job_id):
     """GET /job/<id>/evaluate-form — reload a saved job into the Evaluate form.
@@ -901,92 +866,56 @@ def handle_clear_market_position(req, config, responder, job_id):
 
 
 def handle_qualitative_assess(req, config, responder, job_id):
-    """POST /job/{id}/qualitative-assess — idempotent advisory assessment."""
-    from src.job_hunt_index import (
-        LLMQuotaExhausted,
-        claim_qualitative_assessment,
-        finish_qualitative_assessment,
-    )
+    """POST /job/{id}/qualitative-assess — owned advisory assessment."""
+    from src.job_hunt_index import LLMQuotaExhausted, claim_qualitative_assessment
     from src.job_hunt_llm import RateLimited
-    from src.job_hunt_qualitative import (
-        PROMPT_VERSION,
-        run_qualitative_assessment_pipeline,
-    )
-
+    from src.job_hunt_qualitative import PROMPT_VERSION, run_qualitative_assessment_pipeline
+    from src.job_hunt_qualitative_state import utc_now, archive_owned, transition, QualitativeOwnershipStopped
     if not job_id.strip():
-        responder.send_html(
-            render_page("Missing job id", "<p>Missing job id.</p>", model_label=config.model_label),
-            status=HTTPStatus.BAD_REQUEST,
-        )
+        responder.send_html(render_page("Missing job id", "<p>Missing job id.</p>", model_label=config.model_label), status=HTTPStatus.BAD_REQUEST)
         return
     try:
         load_reviewed_job(job_id, config.state_root)
     except FileNotFoundError:
-        responder.send_html(
-            render_page("Job not found", "<p>No saved job was found for that id.</p>", model_label=config.model_label),
-            status=HTTPStatus.NOT_FOUND,
-        )
+        responder.send_html(render_page("Job not found", "<p>No saved job was found for that id.</p>", model_label=config.model_label), status=HTTPStatus.NOT_FOUND)
         return
-
     force = str(req.form.get("force") or "").strip() == "1" or (
-        isinstance(req.json_body, dict) and str(req.json_body.get("force") or "").strip() == "1"
-    )
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        isinstance(req.json_body, dict) and str(req.json_body.get("force") or "").strip() == "1")
     db_path = _index_db_path(config)
-    claim = claim_qualitative_assessment(
-        db_path,
-        job_id,
-        now=now,
-        force=force,
-        model=None,
-        prompt_version=PROMPT_VERSION,
-    )
-    row = claim.get("row") or {}
+    claim = claim_qualitative_assessment(db_path, job_id, clock=utc_now, force=force,
+                                        model=None, prompt_version=PROMPT_VERSION)
     if not claim.get("claimed"):
-        flash = "Qualitative assessment is already running." if row.get("status") in {"pending", "running"} else None
+        flash = "Qualitative assessment is already running." if claim.get("in_flight") else None
         render_job(req, config, responder, job_id, flash=flash, flash_kind="success")
         return
-
-    if force:
-        archive_qualitative_assessment(job_id, config.state_root)
-
+    owner = claim["owner"]
     try:
+        if force:
+            outcome = archive_owned(db_path, owner, state_root=config.state_root, clock=utc_now)
+            if outcome != "active":
+                raise QualitativeOwnershipStopped(outcome)
         profile = load_candidate_profile(config.profile_path)
-    except Exception as exc:
-        finish_qualitative_assessment(
-            db_path, job_id, status="error", prompt_version=PROMPT_VERSION,
-            error_text=f"Could not load profile: {exc}",
-        )
-        render_job(req, config, responder, job_id, flash="Qualitative assessment failed.", flash_kind="error")
+        result = run_qualitative_assessment_pipeline(job_id=job_id, profile=profile,
+            state_root=config.state_root, db_path=db_path, owner=owner, clock=utc_now)
+    except QualitativeOwnershipStopped:
+        render_job(req, config, responder, job_id, flash="Qualitative assessment ownership changed. Try again.", flash_kind="error")
         return
-
-    quota_message = "daily LLM quota exhausted - try tomorrow"
-    try:
-        result = run_qualitative_assessment_pipeline(
-            job_id=job_id,
-            profile=profile,
-            state_root=config.state_root,
-            db_path=db_path,
-        )
     except LLMQuotaExhausted as exc:
-        last_error = str(exc) or quota_message
-        finish_qualitative_assessment(
-            db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=last_error,
-        )
-        render_job(req, config, responder, job_id, flash=last_error, flash_kind="error")
+        message = str(exc) or "daily LLM quota exhausted - try tomorrow"
+        transition(db_path, owner, mode="quota", error=message, state_root=config.state_root, clock=utc_now)
+        render_job(req, config, responder, job_id, flash=message, flash_kind="error")
         return
-    except RateLimited as exc:
-        last_error = str(exc) or "Gemini rate limited (429)"
-        finish_qualitative_assessment(
-            db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=last_error,
-        )
+    except Exception as exc:
+        message = str(exc) or exc.__class__.__name__
+        transition(db_path, owner, mode="error", error=message, state_root=config.state_root, clock=utc_now)
         render_job(req, config, responder, job_id, flash="Qualitative assessment failed.", flash_kind="error")
         return
-    if result.ok:
-        render_job(req, config, responder, job_id, flash="Qualitative assessment saved.")
-    else:
-        render_job(req, config, responder, job_id, flash="Qualitative assessment failed.", flash_kind="error")
-
+    if not result.ok and result.outcome not in {"lost", "cancelled"}:
+        transition(db_path, owner, mode="error", error=result.error or "qualitative assessment failed",
+                   state_root=config.state_root, clock=utc_now)
+    render_job(req, config, responder, job_id,
+        flash="Qualitative assessment saved." if result.ok else "Qualitative assessment failed.",
+        flash_kind="success" if result.ok else "error")
 
 def _take_skip_param_keys(search_values: dict) -> tuple[str, str]:
     """Return the (take_key, skip_key) param names a source uses for paging.

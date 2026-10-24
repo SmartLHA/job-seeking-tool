@@ -18,7 +18,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from itertools import islice
 from pathlib import Path
 from typing import Any, Callable
@@ -733,129 +733,72 @@ class EvalQueuePollResult:
 
 
 def process_eval_queue_once(
-    *,
-    config: Any,
-    profile: Any,
-    db_path: Path,
-    now: Callable[[], datetime] = datetime.now,
+    *, config: Any, profile: Any, db_path: Path,
+    now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     sleep: Callable[[float], None] = time.sleep,
     backoff_seconds: float = _EVAL_429_BACKOFF_SECONDS,
 ) -> EvalQueuePollResult:
-    """Process at most one qualitative eval_queue row."""
-    from src.job_hunt_index import claim_qualitative_assessment, finish_qualitative_assessment, get_qualitative_index_row
+    """Process one owned qualitative attempt, atomically with its queue row."""
+    from src.job_hunt_index import claim_qualitative_assessment
     from src.job_hunt_llm import RateLimited
     from src.job_hunt_qualitative import PROMPT_VERSION, run_qualitative_assessment_pipeline
+    from src.job_hunt_qualitative_state import defer_queue, transition, QualitativeOwnershipStopped
 
-    reset_stale_eval_queue_running(db_path, now=now(), older_than_minutes=_STALE_PROCESSING_MIN)
-    ready_iso = now().isoformat(timespec="seconds")
-    row = claim_eval_queue_row(db_path, now=ready_iso)
+    reset_stale_eval_queue_running(db_path, clock=now, older_than_minutes=_STALE_PROCESSING_MIN)
+    row = claim_eval_queue_row(db_path, clock=now)
     if row is None:
         return EvalQueuePollResult()
-
-    row_id = int(row["id"])
-    batch_id = row["batch_id"]
     job_id = row["job_ref"]
-    token = row["claim_token"]
-    retries = int(row["retries"] or 0)
-    force = bool(row.get("force"))
-    errors: list[str] = []
-
-    def _cancel_if_requested() -> bool:
-        if not is_eval_batch_cancel_requested(db_path, batch_id):
-            return False
-        finish_eval_queue_row(db_path, row_id, token, status="cancelled", now=now().isoformat(timespec="seconds"))
-        return is_eval_queue_row_cancelled(db_path, row_id)
-
-    if _cancel_if_requested():
-        return EvalQueuePollResult(cancelled=1)
-
-    existing_qrow = get_qualitative_index_row(db_path, job_id)
-    claim = claim_qualitative_assessment(
-        db_path,
-        job_id,
-        now=ready_iso,
-        force=force or bool(existing_qrow and existing_qrow.get("status") == "error"),
-        model=None,
-        prompt_version=PROMPT_VERSION,
-    )
+    # Error rows may retry; force never overrides either live claim.
+    claim = claim_qualitative_assessment(db_path, job_id, clock=now, force=bool(row.get("force")), retry_errors=True,
+        model=None, prompt_version=PROMPT_VERSION, queue=row)
     if not claim.get("claimed"):
-        qrow = claim.get("row") or {}
-        if qrow.get("status") == "done":
-            finish_eval_queue_row(db_path, row_id, token, status="done", now=now().isoformat(timespec="seconds"))
-            if _cancel_if_requested():
-                return EvalQueuePollResult(cancelled=1)
-            return EvalQueuePollResult(processed=1)
-        msg = "qualitative assessment already in flight"
-        finish_eval_queue_row(db_path, row_id, token, status="error", now=now().isoformat(timespec="seconds"), error_text=msg)
-        if _cancel_if_requested():
+        outcome = claim.get("outcome")
+        if outcome == "cancelled":
             return EvalQueuePollResult(cancelled=1)
-        return EvalQueuePollResult(failed=1, errors=[f"{job_id}: {msg}"])
+        if outcome == "lost":
+            return EvalQueuePollResult()
+        outcome = defer_queue(db_path, row, clock=now, done=outcome == "done")
+        return EvalQueuePollResult(processed=int(outcome == "done"), cancelled=int(outcome == "cancelled"),
+                                   requeued=int(outcome == "pending"))
+    owner = claim["owner"]
+    retries = int(row["retries"] or 0)
+
+    def finish(mode, message=None, new_retries=None):
+        return transition(db_path, owner, mode=mode, error=message, state_root=config.state_root,
+                          retries=new_retries, clock=now)
+
+    def outcome_result(outcome, *, message=None):
+        errors = [f"{job_id}: {message}"] if message and outcome not in {"lost", "cancelled"} else []
+        return EvalQueuePollResult(processed=int(outcome == "done"), failed=int(outcome == "error"),
+            cancelled=int(outcome == "cancelled"), requeued=int(outcome == "retry"),
+            quota_paused=outcome == "quota", errors=errors)
 
     try:
-        result = run_qualitative_assessment_pipeline(
-            job_id=job_id,
-            profile=profile,
-            state_root=config.state_root,
-            db_path=db_path,
-            before_persist=lambda: not is_eval_batch_cancel_requested(db_path, batch_id),
-            before_provider=lambda: not is_eval_batch_cancel_requested(db_path, batch_id),
-        )
+        result = run_qualitative_assessment_pipeline(job_id=job_id, profile=profile,
+            state_root=config.state_root, db_path=db_path, owner=owner, clock=now)
+    except QualitativeOwnershipStopped as exc:
+        return outcome_result(exc.outcome)
     except LLMQuotaExhausted as exc:
-        msg = str(exc) or "daily LLM quota exhausted - try tomorrow"
-        release_qualitative_assessment_claim(db_path, job_id, previous_row=existing_qrow)
-        return_eval_queue_row_to_pending(db_path, row_id, token, error_text=msg)
-        if _cancel_if_requested():
-            return EvalQueuePollResult(cancelled=1)
-        pause_eval_batch_for_quota(db_path, batch_id, now=now().isoformat(timespec="seconds"), error_text=msg)
-        if _cancel_if_requested():
-            return EvalQueuePollResult(cancelled=1)
-        return EvalQueuePollResult(quota_paused=True, errors=[f"{job_id}: {msg}"])
+        message = str(exc) or "daily LLM quota exhausted - try tomorrow"
+        return outcome_result(finish("quota", message), message=message)
     except RateLimited as exc:
-        msg = str(exc) or "Gemini rate limited (429)"
-        if _cancel_if_requested():
-            finish_qualitative_assessment(db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text="cancelled")
-            return EvalQueuePollResult(cancelled=1)
+        message = str(exc) or "Gemini rate limited (429)"
         new_retries = retries + 1
-        if new_retries >= _EVAL_MAX_ATTEMPTS:
-            finish_qualitative_assessment(db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=msg)
-            finish_eval_queue_row(
-                db_path, row_id, token, status="error", now=now().isoformat(timespec="seconds"),
-                error_text=msg, retries=new_retries,
-            )
-            if _cancel_if_requested():
-                return EvalQueuePollResult(cancelled=1)
-            return EvalQueuePollResult(failed=1, errors=[f"{job_id}: {msg}"])
-        requeue_eval_queue_row(
-            db_path, row_id, token, now=now().isoformat(timespec="seconds"),
-            retries=new_retries, error_text=msg,
-        )
-        finish_qualitative_assessment(db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=msg)
-        if _cancel_if_requested():
-            return EvalQueuePollResult(cancelled=1)
-        sleep(backoff_seconds)
-        return EvalQueuePollResult(requeued=1, errors=[f"{job_id}: {msg}"])
+        outcome = finish("error" if new_retries >= _EVAL_MAX_ATTEMPTS else "retry", message, new_retries)
+        if outcome == "retry":
+            sleep(backoff_seconds)
+        return outcome_result(outcome, message=message)
     except Exception as exc:
-        msg = str(exc) or exc.__class__.__name__
-        finish_qualitative_assessment(db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=msg)
-        finish_eval_queue_row(db_path, row_id, token, status="error", now=now().isoformat(timespec="seconds"), error_text=msg)
-        if _cancel_if_requested():
-            return EvalQueuePollResult(cancelled=1)
-        return EvalQueuePollResult(failed=1, errors=[f"{job_id}: {msg}"])
-
-    if not result.ok and result.error == "cancelled before persist":
-        finish_eval_queue_row(db_path, row_id, token, status="cancelled", now=now().isoformat(timespec="seconds"))
-        return EvalQueuePollResult(cancelled=1)
+        message = str(exc) or exc.__class__.__name__
+        return outcome_result(finish("error", message), message=message)
     if result.ok:
-        finish_eval_queue_row(db_path, row_id, token, status="done", now=now().isoformat(timespec="seconds"))
-        if _cancel_if_requested():
-            return EvalQueuePollResult(cancelled=1)
+        # The publication transaction already completed the owned queue row.
         return EvalQueuePollResult(processed=1)
-    msg = result.error or "qualitative assessment failed"
-    finish_eval_queue_row(db_path, row_id, token, status="error", now=now().isoformat(timespec="seconds"), error_text=msg)
-    if _cancel_if_requested():
-        return EvalQueuePollResult(cancelled=1)
-    errors.append(f"{job_id}: {msg}")
-    return EvalQueuePollResult(failed=1, errors=errors)
+    if result.outcome in {"cancelled", "lost"}:
+        return outcome_result(result.outcome)
+    message = result.error or "qualitative assessment failed"
+    return outcome_result(finish("error", message), message=message)
 
 
 class LLMQueueWorker:
@@ -875,7 +818,7 @@ class LLMQueueWorker:
         try:
             reset_stale_llm_processing(self._db_path, now=datetime.now(),
                                        older_than_minutes=_STALE_PROCESSING_MIN)
-            reset_stale_eval_queue_running(self._db_path, now=datetime.now(),
+            reset_stale_eval_queue_running(self._db_path, clock=lambda: datetime.now(timezone.utc),
                                            older_than_minutes=_STALE_PROCESSING_MIN)
         except Exception as exc:  # pragma: no cover
             logger.warning("llm worker: startup stale-reset failed: %s", exc)

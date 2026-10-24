@@ -10,6 +10,7 @@ from typing import Any, Callable
 from src.job_hunt_config import DEFAULT_DECISION_POLICY, GRADE_B_THRESHOLD, GRADE_D_THRESHOLD
 from src.job_hunt_models import CandidateProfile, Skill
 from src.text_grounding import normalize_grounding_text, quote_in_text
+from src.job_hunt_qualitative_state import utc_now
 
 PROMPT_VERSION = "qualitative-v1"
 
@@ -31,6 +32,7 @@ class QualitativeRunResult:
     model: str | None = None
     legitimacy_tier: str | None = None
     culture_flag: str | None = None
+    outcome: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,11 +157,14 @@ def run_qualitative_assessment_pipeline(
     profile: CandidateProfile,
     state_root: str | Path,
     db_path: Path,
+    owner,
+    clock: Callable[[], datetime] = utc_now,
     before_persist: Callable[[], bool] | None = None,
     before_provider: Callable[[], bool] | None = None,
 ) -> QualitativeRunResult:
     """Run the shared qualitative Gemini pipeline for one already-claimed job."""
-    from src.job_hunt_index import LLMQuotaExhausted, finish_qualitative_assessment, reserve_llm_rpd_attempt, rpd_used_today
+    from src.job_hunt_index import LLMQuotaExhausted, reserve_llm_rpd_attempt, rpd_used_today
+    from src.job_hunt_qualitative_state import checkpoint, publish, transition, QualitativeOwnershipStopped
     from src.job_hunt_llm import RateLimited, _call_gemini_reasoning
     from src.job_hunt_models import effective_decision
     from src.job_hunt_scheduler import rpd_date_key
@@ -171,25 +176,32 @@ def run_qualitative_assessment_pipeline(
     allow_unknown_archetype = not target_roles
     last_error = ""
     model_used = None
-    date_key = rpd_date_key(datetime.now(timezone.utc))
+    def _ensure_owner():
+        outcome = checkpoint(db_path, owner, state_root=state_root, clock=clock)
+        if outcome != "active":
+            raise QualitativeOwnershipStopped(outcome)
+        if before_provider is not None and not before_provider():
+            outcome = transition(db_path, owner, mode="cancel", error="cancelled", state_root=state_root, clock=clock)
+            raise QualitativeOwnershipStopped(outcome)
+
+    _ensure_owner()
+    date_key = rpd_date_key(clock())
     daily_cap = getattr(profile, "digest_llm_rpd", None)
     if daily_cap is not None and rpd_used_today(db_path, date_key) >= daily_cap:
         raise LLMQuotaExhausted("daily LLM quota exhausted - try tomorrow")
 
     def _reserve(_model: str) -> None:
         # Every fallback must check intent before reserving quota or calling out.
-        if before_provider is not None and not before_provider():
-            raise RuntimeError("cancelled before provider")
+        _ensure_owner()
         reserve_llm_rpd_attempt(
             db_path,
-            rpd_date_key(datetime.now(timezone.utc)),
+            rpd_date_key(clock()),
             getattr(profile, "digest_llm_rpd", None),
         )
 
     for attempt in range(2):
         # Also guard validation retries and provider wrappers that ignore callbacks.
-        if before_provider is not None and not before_provider():
-            raise RuntimeError("cancelled before provider")
+        _ensure_owner()
         try:
             raw, error, model_used, all_rate_limited = _call_gemini_reasoning(
                 prompt,
@@ -213,7 +225,7 @@ def run_qualitative_assessment_pipeline(
                 continue
             break
 
-        created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        created_at = clock().astimezone(timezone.utc).isoformat(timespec="seconds")
         assessment = {
             **parsed,
             "job_id": job_id,
@@ -246,37 +258,13 @@ def run_qualitative_assessment_pipeline(
             culture_flag=culture_flag,
         )
         if before_persist is not None and not before_persist():
-            finish_qualitative_assessment(
-                db_path,
-                job_id,
-                status="error",
-                model=model_used,
-                prompt_version=PROMPT_VERSION,
-                error_text="cancelled before persist",
-            )
-            return QualitativeRunResult(ok=False, error="cancelled before persist", model=model_used)
-        save_qualitative_assessment(job_id, assessment, state_root)
-        finish_qualitative_assessment(
-            db_path,
-            job_id,
-            status="done",
-            grade=result.grade,
-            legitimacy_tier=result.legitimacy_tier,
-            culture_flag=result.culture_flag,
-            model=result.model,
-            prompt_version=PROMPT_VERSION,
-            error_text=None,
-        )
+            outcome = transition(db_path, owner, mode="cancel", error="cancelled", state_root=state_root, clock=clock)
+            return QualitativeRunResult(ok=False, error="cancelled before persist", model=model_used, outcome=outcome)
+        outcome = publish(db_path, owner, assessment, state_root=state_root, result=result, clock=clock)
+        if outcome != "done":
+            return QualitativeRunResult(ok=False, error="qualitative ownership " + outcome, model=model_used, outcome=outcome)
         return result
 
-    finish_qualitative_assessment(
-        db_path,
-        job_id,
-        status="error",
-        model=model_used,
-        prompt_version=PROMPT_VERSION,
-        error_text=last_error,
-    )
     return QualitativeRunResult(ok=False, error=last_error, model=model_used)
 
 

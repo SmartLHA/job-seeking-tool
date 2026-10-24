@@ -137,7 +137,13 @@ def test_qualitative_claim_is_compare_and_swap(tmp_path: Path) -> None:
     assert second["claimed"] is False
     assert second["row"]["status"] == "running"
 
+    # An unowned legacy finish cannot complete a managed claim.
     finish_qualitative_assessment(db_path, "job-1", status="done", legitimacy_tier="unknown_caution")
+    from src.job_hunt_qualitative_state import publish, clock_for
+    from types import SimpleNamespace
+    assert publish(db_path, first["owner"], {"job_id": "job-1", "prompt_version": "synthetic"},
+        state_root=tmp_path, result=SimpleNamespace(grade=None, legitimacy_tier="unknown_caution", culture_flag=None, model=None),
+        clock=clock_for(now="2026-07-08T10:00:01")) == "done"
     third = claim_qualitative_assessment(db_path, "job-1", now="2026-07-08T10:00:02")
     assert third["claimed"] is False
     forced = claim_qualitative_assessment(db_path, "job-1", now="2026-07-08T10:00:03", force=True)
