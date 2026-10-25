@@ -361,12 +361,16 @@ def _fetch_description(job_id: str, *, strict: bool = False) -> str:
     html_text = response.text
     final_url = response.url
 
+    if strict:
+        if response.status_code in (999, 429, 403, 401):
+            raise LinkedInBlockedError("LinkedIn blocked the description request")
+        # HTTP failures take precedence over content/redirect heuristics for
+        # digest diagnostics; the default UI path keeps its prior behavior.
+        response.raise_for_status()
     if _is_blocked(final_url, html_text, response.status_code):
         if strict:
             raise LinkedInBlockedError("LinkedIn blocked the description request")
         return ""
-    if strict:
-        response.raise_for_status()
 
     try:
         from bs4 import BeautifulSoup

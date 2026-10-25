@@ -181,6 +181,74 @@ def test_digest_detail_http_error_is_not_accepted_as_description() -> None:
     assert reason == "linkedin_detail_failed"
 
 
+def _detail_http_response(status, *, padded, url="https://www.linkedin.com/jobs/view/12345/"):
+    import requests
+
+    response = requests.Response()
+    response.status_code = status
+    response.url = url
+    response.encoding = "utf-8"
+    response._content = (
+        '<div class="description__text">Synthetic detail</div>' + ("x" * 6000 if padded else "")
+    ).encode("utf-8")
+    return response
+
+
+@pytest.mark.parametrize("status,padded,url", [
+    (500, False, "https://www.linkedin.com/jobs/view/12345/"),
+    (500, True, "https://www.linkedin.com/jobs/view/12345/"),
+    (500, False, "https://www.linkedin.com/authwall"),
+    (500, True, "https://www.linkedin.com/login"),
+    (404, False, "https://www.linkedin.com/jobs/view/12345/"),
+    (404, True, "https://www.linkedin.com/jobs/view/12345/"),
+])
+def test_strict_detail_http_errors_precede_block_heuristics(status, padded, url):
+    import requests
+
+    response = _detail_http_response(status, padded=padded, url=url)
+    original = {"source_job_id": "12345", "description_raw": ""}
+    with patch("requests.get", return_value=response):
+        # Default selection deliberately retains its legacy handling.
+        expected_default = "Synthetic detail" if padded and "/jobs/view/" in url else ""
+        assert li._fetch_description("12345") == expected_default
+        with pytest.raises(requests.exceptions.HTTPError):
+            li._fetch_description("12345", strict=True)
+        enriched, reason = li.enrich_digest_result(original)
+    assert enriched == original
+    assert reason == "linkedin_detail_failed"
+
+
+@pytest.mark.parametrize("status", [401, 403, 429, 999])
+@pytest.mark.parametrize("padded", [False, True])
+def test_strict_detail_explicit_block_statuses_remain_blocked(status, padded):
+    response = _detail_http_response(status, padded=padded)
+    original = {"source_job_id": "12345", "description_raw": ""}
+    with patch("requests.get", return_value=response):
+        assert li._fetch_description("12345") == ""
+        with pytest.raises(li.LinkedInBlockedError):
+            li._fetch_description("12345", strict=True)
+        enriched, reason = li.enrich_digest_result(original)
+    assert enriched == original
+    assert reason == "linkedin_detail_blocked"
+
+
+@pytest.mark.parametrize("padded,url", [
+    (False, "https://www.linkedin.com/jobs/view/12345/"),
+    (True, "https://www.linkedin.com/authwall"),
+    (True, "https://www.linkedin.com/login"),
+])
+def test_strict_detail_successful_challenges_remain_blocked(padded, url):
+    response = _detail_http_response(200, padded=padded, url=url)
+    original = {"source_job_id": "12345", "description_raw": ""}
+    with patch("requests.get", return_value=response):
+        assert li._fetch_description("12345") == ""
+        with pytest.raises(li.LinkedInBlockedError):
+            li._fetch_description("12345", strict=True)
+        enriched, reason = li.enrich_digest_result(original)
+    assert enriched == original
+    assert reason == "linkedin_detail_blocked"
+
+
 # ── test 2: login wall page → LinkedInBlockedError ────────────────────────────
 
 def test_login_wall_raises_blocked_error() -> None:
