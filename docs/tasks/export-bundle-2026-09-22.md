@@ -1,6 +1,14 @@
 # Feature C: Export application package (zip) — 2026-09-22
 
 <!-- STATUS -->
+> **Current implementation status — 2026-10-25: ⚠️ Implemented; qualification PARTIAL.**
+> P2-03/10: export uses profile-aware CV candidate fallback and the same guarded accepted-generation qualitative snapshot policy as the UI. Mismatched AI CVs can fall through to matching ordinary CVs; malformed managed publication metadata and index read failures cannot use a legacy bypass. Old writers must be quiesced for ownership migration.
+> **Current references:** `build_package`, `load_latest_tailored_cv`, `src/job_hunt_qualitative_state.py`; `GET /job/{id}/export.zip`; `tests/test_export_bundle.py`, `tests/test_qualitative_ownership.py`.
+> **Evidence:** final current regression 645 passed/75 deselected; earlier P2-12 owned-loopback 86 passed including 15 mandatory Chromium cases. Clean projection 106 repeats 86 + 20; totals are not additive. Full evidence/limitations: [P2 ledger](p2-remediation-2026-10-23.md).
+> **Limits:** independent advisory review is separate; strict Gate 3 remains PARTIAL because raw reviewer startup includes generic skill instructions. Remote CI/Python 3.10/native browser OS egress/live providers/production are UNVERIFIED. Five P1 designs remain approval-pending.
+
+**Historical status record (superseded only where the current note differs):**
+
 > **2026-10-04 repair status: ⚠️ Implemented; independent verification partial/pending.** ZIP uses the active profile identity for both CV and letter; missing/legacy letters are missing components, not guessed.
 > **Repair functions:** `build_package`, `load_cover_letter`, `load_latest_tailored_cv`. **Routes:** `GET /job/{id}/export.zip`.
 > **Verification:** Producer synthetic checks are recorded in [the audit evidence](audit-remediation-2026-10-04.md); live provider/browser/real-data behavior is not certified. Issue 16 remains pending.

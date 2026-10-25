@@ -98,7 +98,81 @@ Default stack unless Mic changes it:
 - black + ruff
 - practical type hints
 
-## Current Implementation Baseline — Verified 2026-06-22
+## Current implementation — 2026-10-25
+
+P2-01–P2-12 code/test checkpoints are committed; P2-13 reconciles documentation
+in this checkpoint. The dated recovery baseline below is historical and is
+superseded by this section where behavior differs.
+
+- Reed, Adzuna and LinkedIn adapters support generic search and Next page. More
+  responses bind to the full profile/state namespace, source, normalized filters,
+  keyword cursor vector and hidden-job fingerprint. Prepared response JSON,
+  successor and seen records commit together after successful rendering and
+  serialization. Retries replay the same response; expired/evicted/unknown or
+  changed bindings visibly require a new search. A valid partial keyword page
+  retains failed terms' cursors; all-failed/source/render errors do not commit.
+- Saved searches, a local digest feed, manual Run now, deterministic re-evaluation
+  and the scheduler/worker are implemented. Scheduled digest work follows profile
+  settings; digest AI draining additionally requires its digest LLM toggle and a
+  provider key. Explicit user-requested qualitative batches use the shared worker
+  when a key is available, independently of that digest toggle. Manual AI actions
+  remain separate from deterministic scoring; no application is submitted.
+- New marked digest initialization attempts can resume metadata/queue completion
+  after failure without rewriting saved analysis or resetting done/processing
+  queue states. Unmarked legacy partial rows are not inferred or repaired.
+  LinkedIn detail enrichment is lazy after deduplication and within each saved
+  search's existing import cap; empty/blocked details are skipped without a
+  fabricated description. Initial JSON and index writes are not crash-atomic.
+- CV multipart upload permits a 5 MiB file within a 5 MiB + 64 KiB request envelope;
+  ordinary POST bodies retain the 1 MiB cap. CV writes resolve the configured
+  trust root once (an existing root symlink may work), reject descendant/leaf
+  symlinks, and replace through guarded directory descriptors. Failure leaves
+  outside files and profile references unchanged. Tailored-CV loading skips a
+  mismatched AI candidate and may use a matching ordinary candidate; ATS recheck
+  enforces profile identity when available.
+- Deterministic digest re-evaluation preserves the complete raw `llm_*` group in
+  one analysis save, including future/nested/null fields. Retained AI text can
+  reflect earlier inputs; preservation is not a freshness guarantee.
+- Qualitative work uses UTC owner tokens/leases and paired qualitative/queue
+  ownership. Guarded publication checks ownership, cancellation and row counts;
+  UI/export readers accept matching completed generations and fail closed on
+  malformed managed metadata or index failure. Legacy standalone queue APIs are
+  compatible only with unmanaged work. Waiting for a live qualitative owner
+  preserves retries, including at the retry cap; cancellation wins. JSON/SQLite
+  publication is not cross-store crash-atomic. Deployed old writers must be
+  quiesced before ownership migration.
+- Review Queue identifiers remain data in escaped attributes/static listeners;
+  initial and dynamic iframe paths are encoded. Browser CI requires Playwright
+  and Chromium with `JOB_TOOL_REQUIRE_BROWSER=1`; ordinary local browser tests
+  may remain optional. Actual remote CI execution is not claimed.
+
+Committed P2 code has synthetic evidence: **645 passed, 75 deselected** in the final
+non-HTTP/non-browser regression after the LinkedIn diagnostic follow-up. Earlier
+P2-12 evidence is **86 passed** in the separate owned-loopback
+HTTP/browser regression, including all **15 mandatory Chromium cases**. The clean
+HEAD + P2-12 projection at that earlier checkpoint passed **106 cases**,
+repeating those 86 plus 20 helper
+checks; this is dependency evidence, not an additional coverage total or a clean
+HEAD run of the latest 645 cases. Follow-up `c3a8739` corrects strict LinkedIn HTTP
+error classification before body/redirect heuristics while preserving default UI
+behavior; its working and clean focused suites each passed **120 cases, 1 HTTP
+case deselected**. Required-mode
+setup/call/teardown skip canaries deliberately fail. Each final runner recorded
+seven expected fence-preflight denials and zero unexpected Python fence events;
+loopback runners left no owned ports open. Native browser OS egress isolation is
+UNVERIFIED. Evidence: `/private/tmp/job-tool-p2-20261023/browser-ci/commands.txt`,
+`acceptance-summary.json`, and the per-run logs/manifests in that directory.
+
+Independent read-only advisory reviews are separate from producer test evidence.
+The P2-10 follow-up advisory reported no Blocker/Major/Minor findings; the P2-11/12 final-source
+advisory likewise reported no Blocker/Major/Minor findings (in-memory/static
+checks; `/private/tmp/job-tool-p2-20261023/final-source-verification/answer.txt`). Raw reviewer startup still includes generic skill
+instructions, so strict Gate 3 certification remains **PARTIAL** despite
+read-only/never settings. Remote CI, actual Python 3.10 execution, live providers,
+production behavior and deployed-writer migration are **UNVERIFIED**. All five P1
+designs remain approval-pending and outside these P2 changes.
+
+## Historical recovered baseline — recorded 2026-06-22
 
 The source of truth is the recovered implementation now merged into `main`, not the
 earlier monolithic checkout or unimplemented planning notes.

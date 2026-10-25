@@ -1,6 +1,14 @@
 # Backlog-01 Design — Daily Job Digest (Auto-Evaluate + High-Match Feed)
 
 <!-- STATUS -->
+> **Current implementation status — 2026-10-25: ⚠️ Implemented; qualification PARTIAL.**
+> P2-07/08/11: explicit marked initialization resumes metadata/queue completion after partial failure; unmarked legacy partial rows are not guessed. LinkedIn lazy detail enrichment follows deduplication and each saved search's existing cap. Deterministic re-evaluation retains all raw llm_* fields in one save; AI text may reflect older inputs. Initial JSON/index writes remain non-crash-atomic.
+> **Current references:** `run_digest_pipeline`, `reevaluate_digest_jobs`, `load_analysis_llm_fields`; saved-search Run now/digest routes; `tests/test_digest_pipeline.py`, `tests/test_digest_reeval.py`.
+> **Evidence:** final current regression 645 passed/75 deselected; earlier P2-12 owned-loopback 86 passed including 15 mandatory Chromium cases. Clean projection 106 repeats 86 + 20; totals are not additive. Full evidence/limitations: [P2 ledger](p2-remediation-2026-10-23.md).
+> **Limits:** independent advisory review is separate; strict Gate 3 remains PARTIAL because raw reviewer startup includes generic skill instructions. Remote CI/Python 3.10/native browser OS egress/live providers/production are UNVERIFIED. Five P1 designs remain approval-pending.
+
+**Historical status record (superseded only where the current note differs):**
+
 > **Implementation status:** ✅ **FULLY IMPLEMENTED 2026-06-24 — D1–D6 complete** (all design-council reviewed pre + post build; full suite 552 passed/1 skipped). D5 adds `DigestScheduler` (poll loop, once-per-day, `_PIPELINE_LOCK`); D6 adds `drain_llm_batch`/`LLMQueueWorker` (worker-lock paced Gemini, 429→backoff+requeue, Pacific-dated RPD cap, source-aware detail), `job_hunt_llm.RateLimited`, `JobAnalysis.llm_*` (5 fields), and auto-start of both daemons in `ui_routes.main` gated by profile toggles (+ Gemini key for the worker).
 > **Live routes:** `GET/POST /saved-searches` (+`/delete`,`/toggle`,`/run-now`), `GET /digest`, `GET /digest/count`, `POST /digest/mark-seen`, `POST /digest/run-llm-batch`, `GET /digest/llm-queue`, `GET /scheduler/status`.
 > **Deferred (low, single-process makes moot):** token-conditional LLM completion + claim heartbeats; `digest_job_id` lossy sanitisation (numeric ids safe + fail-loud upsert); pagination; CSRF (loopback). DST-precise scheduling deferred (local-time poll).

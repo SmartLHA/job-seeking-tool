@@ -2,16 +2,16 @@
 Run at the end of every session that changed code. Document only what actually
 happened this session — never invent changes. (2026-07-03)
 
-1. **Gather**: list what was built/fixed this session; skim `src/job_hunt_ui.py`
-   for the `_PAGE_UPDATED` dict (~lines 55–65); note any new `src/*.py` files.
+1. **Gather**: list what was built/fixed this session; locate `_PAGE_UPDATED` in `src/ui_state.py`
+   by symbol (avoid approximate line numbers); note any new `src/*.py` files.
 2. **PROJECT_LOG.md**: entries grouped by `## YYYY-MM-DD` (prepend new date block
    at top if today's absent). Per change:
    `### [title]` + Status ✅ + Motivation (1 line) + Changes (file — what) + Key facts.
 3. **PROJECT_TODO.md**: mark completed items in place:
    `**Status:** ✅ Done YYYY-MM-DD — [n] tests green` (omit test note if none ran).
    Never delete items. Add newly found tasks as `⬜ Pending`. Bump `**Last updated:**`.
-4. **INDEX.md**: update stale rows only (esp. `src/job_hunt_ui.py` description:
-   line count + endpoints). Update the `## Feature Map` table if a feature,
+4. **INDEX.md**: update stale rows only (esp. the split UI module descriptions:
+   entry point, handlers and endpoints). Update the `## Feature Map` table if a feature,
    function, route, or design spec changed:
    `| Feature | Design spec (docs/tasks/) | Key functions | Routes | UI page |`
 5. **docs/function_list.md**: grep current signatures
