@@ -8,6 +8,7 @@ from src.job_sources._multiselect import multiselect_script
 from test_review_queue_browser import queue_browser  # existing required-browser fixture
 
 
+@pytest.mark.required_browser
 @pytest.mark.parametrize("mode", ["transient", "restart", "unsafe-restart"])
 def test_more_failure_retains_cards_and_selection(queue_browser, mode, tmp_path):
     from playwright.sync_api import expect

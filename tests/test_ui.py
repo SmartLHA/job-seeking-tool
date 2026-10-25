@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import html
 import json
+import pytest
+from browser_support import playwright_sync, launch_chromium, loopback_page
 import re
 import sys
 import threading
@@ -960,26 +962,16 @@ def test_get_manual_fallback_tab_keeps_paste_and_url_flow(tmp_path: Path) -> Non
     assert 'id="tab-add_job" class="tab-content"' in body
 
 
+@pytest.mark.required_browser
 def test_add_job_parse_and_preview_browser_smoke(tmp_path: Path) -> None:
-    try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import sync_playwright
-    except ModuleNotFoundError:
-        from unittest import SkipTest
-
-        raise SkipTest("Playwright is not installed; browser smoke test was not run")
+    sync_playwright, _ = playwright_sync()
 
     with _running_ui_server(tmp_path) as (base_url, config):
         with sync_playwright() as playwright:
-            try:
-                browser = playwright.chromium.launch(headless=True)
-            except PlaywrightError as exc:
-                from unittest import SkipTest
-
-                raise SkipTest(f"Playwright Chromium is unavailable: {exc}") from exc
+            browser = launch_chromium(playwright)
 
             page_errors: list[str] = []
-            page = browser.new_page()
+            page = loopback_page(browser, base_url)
             page.on("pageerror", lambda error: page_errors.append(str(error)))
             try:
                 page.goto(f"{base_url}/?tab=add_job")
@@ -1005,26 +997,16 @@ def test_add_job_parse_and_preview_browser_smoke(tmp_path: Path) -> None:
                 browser.close()
 
 
+@pytest.mark.required_browser
 def test_search_keyword_chips_add_remove_and_backspace_browser_smoke(tmp_path: Path) -> None:
-    try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import sync_playwright
-    except ModuleNotFoundError:
-        from unittest import SkipTest
-
-        raise SkipTest("Playwright is not installed; browser smoke test was not run")
+    sync_playwright, _ = playwright_sync()
 
     with _running_ui_server(tmp_path) as (base_url, _config):
         with sync_playwright() as playwright:
-            try:
-                browser = playwright.chromium.launch(headless=True)
-            except PlaywrightError as exc:
-                from unittest import SkipTest
-
-                raise SkipTest(f"Playwright Chromium is unavailable: {exc}") from exc
+            browser = launch_chromium(playwright)
 
             page_errors: list[str] = []
-            page = browser.new_page()
+            page = loopback_page(browser, base_url)
             page.on("pageerror", lambda error: page_errors.append(str(error)))
             try:
                 page.goto(f"{base_url}/?tab=search")
@@ -1055,14 +1037,10 @@ def test_search_keyword_chips_add_remove_and_backspace_browser_smoke(tmp_path: P
                 browser.close()
 
 
+@pytest.mark.required_browser
 def test_hidden_jobs_filter_browser_smoke(tmp_path: Path, monkeypatch) -> None:
-    try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import expect, sync_playwright
-    except ModuleNotFoundError:
-        from unittest import SkipTest
-
-        raise SkipTest("Playwright is not installed; browser smoke test was not run")
+    sync_playwright, _ = playwright_sync()
+    from playwright.sync_api import expect
 
     def fake_fetch_reed_jobs(keyword, location, max_results, *, skip=0, save_raw=True):
         return [{
@@ -1084,15 +1062,10 @@ def test_hidden_jobs_filter_browser_smoke(tmp_path: Path, monkeypatch) -> None:
             state_root=config.state_root,
         )
         with sync_playwright() as playwright:
-            try:
-                browser = playwright.chromium.launch(headless=True)
-            except PlaywrightError as exc:
-                from unittest import SkipTest
-
-                raise SkipTest(f"Playwright Chromium is unavailable: {exc}") from exc
+            browser = launch_chromium(playwright)
 
             page_errors: list[str] = []
-            page = browser.new_page()
+            page = loopback_page(browser, base_url)
             page.on("pageerror", lambda error: page_errors.append(str(error)))
             try:
                 query = urllib.parse.urlencode({"keywords": "Business Analyst", "locationName": "London"})
@@ -1114,14 +1087,9 @@ def test_hidden_jobs_filter_browser_smoke(tmp_path: Path, monkeypatch) -> None:
                 browser.close()
 
 
+@pytest.mark.required_browser
 def test_shared_shell_has_no_mobile_document_overflow(tmp_path: Path) -> None:
-    try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import sync_playwright
-    except ModuleNotFoundError:
-        from unittest import SkipTest
-
-        raise SkipTest("Playwright is not installed; browser smoke test was not run")
+    sync_playwright, _ = playwright_sync()
 
     pages = [
         ("/?tab=search", "Find Jobs"),
@@ -1133,14 +1101,9 @@ def test_shared_shell_has_no_mobile_document_overflow(tmp_path: Path) -> None:
     ]
     with _running_ui_server(tmp_path) as (base_url, _config):
         with sync_playwright() as playwright:
-            try:
-                browser = playwright.chromium.launch(headless=True)
-            except PlaywrightError as exc:
-                from unittest import SkipTest
+            browser = launch_chromium(playwright)
 
-                raise SkipTest(f"Playwright Chromium is unavailable: {exc}") from exc
-
-            page = browser.new_page(viewport={"width": 390, "height": 844})
+            page = loopback_page(browser, base_url, viewport={"width": 390, "height": 844})
             try:
                 for path, nav_label in pages:
                     page.goto(f"{base_url}{path}")
@@ -1930,15 +1893,19 @@ def test_get_search_reed_more_returns_offset_page(tmp_path: Path, monkeypatch) -
                 "jobDescription": "<p>Work</p>",
                 "fullTime": True,
             }
-            for i in range(max_results)
+            for i in range(skip - 10, skip - 10 + max_results)
         ]
 
     monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
     query = urllib.parse.urlencode(
-        {"keywords": "analyst", "locationName": "London", "resultsToTake": "10", "resultsSkip": "10"}
+        {"keywords": "analyst", "locationName": "London", "resultsToTake": "10", "resultsSkip": "0"}
     )
     with _running_ui_server(tmp_path) as (base_url, _config):
-        status, body = _http_get(f"{base_url}/search/reed/more?{query}")
+        initial_status, initial_body = _http_get(f"{base_url}/search/reed?{query}")
+        assert initial_status == 200
+        more_url = initial_body.split('data-next-url="', 1)[1].split('"', 1)[0].replace("&amp;", "&")
+        assert "searchId=" in more_url
+        status, body = _http_get(f"{base_url}{more_url}")
 
     assert status == 200
     data = json.loads(body)
@@ -1967,17 +1934,21 @@ def test_get_search_adzuna_more_returns_offset_page(tmp_path: Path, monkeypatch)
                 "created": "2026-06-01T00:00:00Z",
                 "contract_type": "permanent",
             }
-            for i in range(max_results)
+            for i in range(skip - 10, skip - 10 + max_results)
         ]
 
     monkeypatch.setattr(
         "src.job_sources.adzuna_source.fetch_adzuna_jobs", fake_fetch_adzuna_jobs
     )
     query = urllib.parse.urlencode(
-        {"keywords": "analyst", "locationName": "London", "resultsToTake": "10", "resultsSkip": "10"}
+        {"keywords": "analyst", "locationName": "London", "resultsToTake": "10", "resultsSkip": "0"}
     )
     with _running_ui_server(tmp_path) as (base_url, _config):
-        status, body = _http_get(f"{base_url}/search/adzuna/more?{query}")
+        initial_status, initial_body = _http_get(f"{base_url}/search/adzuna?{query}")
+        assert initial_status == 200
+        more_url = initial_body.split('data-next-url="', 1)[1].split('"', 1)[0].replace("&amp;", "&")
+        assert "searchId=" in more_url
+        status, body = _http_get(f"{base_url}{more_url}")
 
     assert status == 200
     data = json.loads(body)
@@ -2013,7 +1984,7 @@ def test_get_search_linkedin_more_returns_offset_page(tmp_path: Path, monkeypatc
                 "description_raw": "",
                 "filter_notes": "LinkedIn does not provide salary. Results may vary.",
             }
-            for i in range(25)
+            for i in range(start - 10, start + 15)
         ]
 
     monkeypatch.setattr("src.job_sources.linkedin_source._fetch_search", fake_fetch_search)
@@ -2021,10 +1992,14 @@ def test_get_search_linkedin_more_returns_offset_page(tmp_path: Path, monkeypatc
     monkeypatch.setattr("src.job_sources.linkedin_source._cache_get", lambda key: None)
     monkeypatch.setattr("src.job_sources.linkedin_source._cache_set", lambda key, results: None)
     query = urllib.parse.urlencode(
-        {"keywords": "engineer", "location": "London", "results_to_take": "10", "results_skip": "10"}
+        {"keywords": "engineer", "location": "London", "results_to_take": "10", "results_skip": "0"}
     )
     with _running_ui_server(tmp_path) as (base_url, _config):
-        status, body = _http_get(f"{base_url}/search/linkedin/more?{query}")
+        initial_status, initial_body = _http_get(f"{base_url}/search/linkedin?{query}")
+        assert initial_status == 200
+        more_url = initial_body.split('data-next-url="', 1)[1].split('"', 1)[0].replace("&amp;", "&")
+        assert "searchId=" in more_url
+        status, body = _http_get(f"{base_url}{more_url}")
 
     assert status == 200
     data = json.loads(body)

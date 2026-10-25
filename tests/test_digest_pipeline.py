@@ -626,12 +626,12 @@ def test_run_now_route(tmp_path, monkeypatch):
     try:
         # unknown id → 404
         try:
-            urllib.request.urlopen(urllib.request.Request(base + "/saved-searches/nope/run-now", method="POST"))
+            urllib.request.urlopen(urllib.request.Request(base + "/saved-searches/nope/run-now", method="POST", headers={"Origin": base}))
             assert False
         except urllib.error.HTTPError as e:
             assert e.code == 404
         # real run → ok + counts
-        with urllib.request.urlopen(urllib.request.Request(base + "/saved-searches/route1/run-now", method="POST")) as resp:
+        with urllib.request.urlopen(urllib.request.Request(base + "/saved-searches/route1/run-now", method="POST", headers={"Origin": base})) as resp:
             body = _json.loads(resp.read())
         assert body["ok"] is True
         assert body["jobs_new"] == 1

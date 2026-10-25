@@ -16,6 +16,8 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/job-tool-playwright
 
     steps:
     - uses: actions/checkout@v4
@@ -29,6 +31,8 @@ jobs:
         pip install flake8 pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+    - name: Install Chromium for browser tests
+      run: python -m playwright install --with-deps chromium
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
@@ -37,6 +41,17 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
       run: |
-        # tests/ and poc/*/tests both define a `tests` package, so they cannot share one pytest run
-        PYTHONPATH=. pytest tests/
+        PYTHONPATH=. pytest -m "not required_browser" tests/
+    - name: Required browser coverage
+      env:
+        JOB_TOOL_REQUIRE_BROWSER: "1"
+        JOB_TOOL_BROWSER_TEST_HOME: ${{ runner.temp }}/job-tool-browser-home
+      run: |
+        mkdir -p "$JOB_TOOL_BROWSER_TEST_HOME"
+        env HOME="$JOB_TOOL_BROWSER_TEST_HOME" PYTHONPATH=. pytest --strict-markers -m required_browser \
+          tests/test_ui.py tests/test_bulk_paste.py tests/test_review_queue_browser.py tests/test_search_replay_browser.py \
+          --junitxml="${{ runner.temp }}/job-tool-browser-results.xml"
+    - name: Test proof-of-concepts
+      run: |
+        # poc/*/tests defines another tests package, so keep a separate process.
         PYTHONPATH=. pytest poc/

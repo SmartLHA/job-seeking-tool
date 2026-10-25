@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import json
-import os
 from urllib.parse import quote, urlparse
 
 import pytest
+from browser_support import playwright_sync, launch_chromium
 
 from src.ui_render import ReviewQueueViewModel, render_review_queue_page
 
@@ -22,31 +22,16 @@ ORIGIN = "http://review-queue.invalid"
 
 @pytest.fixture(scope="module")
 def queue_browser():
-    required = os.environ.get("JOB_TOOL_REQUIRE_BROWSER") == "1"
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        if required:
-            pytest.fail("Required browser tests need Playwright installed.")
-        pytest.skip("Playwright is unavailable; set JOB_TOOL_REQUIRE_BROWSER=1 to require it.")
+    sync_playwright, _ = playwright_sync()
     with sync_playwright() as playwright:
-        executable = os.environ.get("JOB_TOOL_TEST_CHROMIUM_EXECUTABLE")
-        try:
-            browser = playwright.chromium.launch(
-                headless=True,
-                executable_path=executable,
-                args=["--disable-background-networking", "--host-resolver-rules=MAP * ~NOTFOUND"],
-            )
-        except Exception as exc:
-            if required or "Executable doesn't exist" not in str(exc):
-                raise
-            pytest.skip("Chromium is unavailable; set JOB_TOOL_REQUIRE_BROWSER=1 to require it.")
+        browser = launch_chromium(playwright)
         try:
             yield browser
         finally:
             browser.close()
 
 
+@pytest.mark.required_browser
 @pytest.mark.parametrize("active_id", JOB_IDS, ids=["quote", "backslash", "unicode", "markup", "url-delimiters"])
 def test_review_queue_ids_stay_data_in_browser(queue_browser, active_id, tmp_path):
     from playwright.sync_api import expect

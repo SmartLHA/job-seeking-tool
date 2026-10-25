@@ -359,7 +359,8 @@ def _running_ui_server(tmp_path: Path):
 
 def _post(url: str, form: dict | None = None) -> tuple[int, str]:
     data = urllib.parse.urlencode(form or {}).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST")
+    origin = urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], "", "", ""))
+    req = urllib.request.Request(url, data=data, method="POST", headers={"Origin": origin})
     try:
         with urllib.request.urlopen(req) as r:
             return r.status, r.read().decode("utf-8")
