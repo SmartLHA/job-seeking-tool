@@ -1585,7 +1585,7 @@ def handle_add_gap_skills(req, config, responder, job_id):
 
 def handle_ai_review_cv(req, config, responder, job_id):
     """POST /job/{id}/ai-review-cv — Gemini lightly rewrites the master CV for this job."""
-    from src.job_hunt_llm import _MAX_CV_REVIEW_CHARS, ai_review_cv_with_llm
+    from src.job_hunt_llm import _MAX_CV_REVIEW_CHARS, ai_rewrite_cv
 
     if not isinstance(job_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", job_id) or job_id in {".", ".."}:
         responder.send_json({"ok": False, "error": "Job not found"}, status=HTTPStatus.NOT_FOUND)
@@ -1649,7 +1649,7 @@ def handle_ai_review_cv(req, config, responder, job_id):
         return
 
     # Call LLM
-    result, error, model_used = ai_review_cv_with_llm(cv_text, profile, job, analysis)
+    result, error, model_used = ai_rewrite_cv(cv_text, profile, job, analysis)
     if result is None:
         responder.send_json({"ok": False, "error": error or "AI CV review failed"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         return

@@ -467,13 +467,15 @@ def explain_job_match_with_llm(
 _MAX_CV_REVIEW_CHARS = 15_000   # generous — full CV needed for quality output
 
 
-def ai_review_cv_with_llm(
+def ai_rewrite_cv(
     cv_text: str,
     profile: "Any",
     job: "Any",
     analysis: "Any",
 ) -> tuple[dict[str, Any] | None, str | None, str | None]:
     """Use Gemini to lightly rewrite a CV to better match a job, without inventing facts.
+
+    This function rewrites the CV. It does not review it.
 
     Permitted: rephrase sentences, reorder bullets, strengthen summary, inject evidenced keywords.
     Forbidden: invent experience, change numbers, add unclaimed skills, add/remove sections.

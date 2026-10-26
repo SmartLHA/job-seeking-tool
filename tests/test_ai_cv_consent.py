@@ -1,6 +1,6 @@
 """C0: the "AI Review CV" button sends nothing to Gemini without per-click consent.
 
-Synthetic CV text only. Every test mocks the writer (``ai_review_cv_with_llm``) and
+Synthetic CV text only. Every test mocks the writer (``ai_rewrite_cv``) and
 the Gemini transport, so no test can reach the network.
 """
 from __future__ import annotations
@@ -48,7 +48,7 @@ def env(tmp_path, monkeypatch):
         candidate_id="synthetic", master_cv_text=state["cv"],
     ))
     writer = Mock(return_value=({"reviewed_cv": "Reviewed synthetic CV", "changes": ["Synthetic change"]}, None, "synthetic-model"))
-    monkeypatch.setattr(job_hunt_llm, "ai_review_cv_with_llm", writer)
+    monkeypatch.setattr(job_hunt_llm, "ai_rewrite_cv", writer)
     config = SimpleNamespace(profile_path=tmp_path / "profile.json", state_root=tmp_path)
     return SimpleNamespace(output=output, writer=writer, config=config, state=state)
 
