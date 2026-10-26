@@ -2002,11 +2002,15 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer;'
             f'border:1px solid var(--line);background:var(--surface);color:var(--ink);">'
             f'&#10024; Tailor CV</button>'
+            f'<span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;">'
             f'<button type="button" id="ai-cv-btn" data-job-id="{job_id_esc}" '
             f'style="display:inline-flex;align-items:center;gap:7px;padding:10px 15px;border-radius:var(--r-md);'
             f'font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer;'
             f'border:1px solid var(--accent);background:transparent;color:var(--accent);">'
             f'&#128161; AI Review CV</button>'
+            f'<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);">'
+            f'<input type="checkbox" id="ai-cv-consent"> Send my CV to Google Gemini for this rewrite and its check</label>'
+            f'</span>'
             f'<button type="button" id="cover-btn" '
             f'style="display:inline-flex;align-items:center;gap:7px;padding:10px 15px;border-radius:var(--r-md);'
             f'font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer;'
@@ -2099,12 +2103,22 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'if(aiCvBtn){{aiCvBtn.addEventListener("click",function(){{'
             f'var jobId=aiCvBtn.dataset.jobId;'
             f'var resultDiv=document.getElementById("tailor-result");'
+            f'var aiCvConsent=document.getElementById("ai-cv-consent");'
+            f'var useCloud=!!(aiCvConsent&&aiCvConsent.checked);'
             f'aiCvBtn.disabled=true;aiCvBtn.textContent="Reviewing… (30–60 s)";'
             f'if(resultDiv)resultDiv.innerHTML=\'<p style="color:var(--ink-faint);font-size:13px;padding:8px 0;">Gemini is reviewing your CV against this job — please wait…</p>\';'
-            f'fetch("/job/"+jobId+"/ai-review-cv",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify({{}})}})'
+            f'var aiReq=fetch("/job/"+jobId+"/ai-review-cv",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify({{use_cloud:useCloud}})}});'
+            f'if(aiCvConsent)aiCvConsent.checked=false;'
+            f'aiReq'
             f'.then(function(r){{return r.json().then(function(d){{return{{ok:r.ok,data:d}};}})}})'
             f'.then(function(res){{'
             f'aiCvBtn.disabled=false;aiCvBtn.textContent="AI Review CV";'
+            f'var aiErrCode=res.data&&res.data.error;var aiErrMsg="";'
+            f'if(aiErrCode==="consent_required")aiErrMsg="Tick the box to send your CV to Google Gemini, then click AI Review CV again.";'
+            f'else if(aiErrCode==="cv_too_long_for_ai_review")aiErrMsg="Your CV is longer than 15,000 characters, so AI review cannot run on it.";'
+            f'if(!res.ok&&aiErrMsg){{'
+            f'var aiErrP=document.createElement("p");aiErrP.style.cssText="color:var(--skip);font-size:13px;";aiErrP.textContent=aiErrMsg;'
+            f'resultDiv.textContent="";resultDiv.appendChild(aiErrP);return;}}'
             f'if(!res.ok){{resultDiv.innerHTML=\'<p style="color:var(--skip);font-size:13px;">\'+( res.data.error||"Error")+\'</p>\';return;}}'
             f'var d=res.data;'
             f'window._aiReviewedCvText=d.reviewed_cv||"";'
@@ -3329,7 +3343,7 @@ def _render_sidebar(active_tab: str = "") -> str:
       <div class="sidebar-spacer"></div>
       <div class="sidebar-privacy">
         <div class="sidebar-privacy-title">{lock_svg} Local-first</div>
-        <div class="sidebar-privacy-body">Records are stored on this device. Optional Gemini features send relevant text to Google. CV skill suggestions use Gemini only with your consent. Nothing auto-applies.</div>
+        <div class="sidebar-privacy-body">Records are stored on this device. Optional Gemini features send relevant text to Google. CV skill suggestions use Gemini only with your consent. AI CV review sends the CV to Gemini only after the per-click consent. Nothing auto-applies.</div>
       </div>
       <div class="sidebar-updated" style="padding:8px 18px 14px;font-size:10px;color:var(--ink-faint);letter-spacing:.02em;">
         Page updated {_PAGE_UPDATED.get(active_tab, "—")}

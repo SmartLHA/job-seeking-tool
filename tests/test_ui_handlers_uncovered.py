@@ -740,7 +740,7 @@ class TestHandleAiReviewCv:
         )
         save_job_analysis(analysis, config.state_root)
 
-        req = _make_request()
+        req = _make_request(json_body={"use_cloud": True})
         responder = MockResponder()
 
         with mock.patch("src.job_hunt_llm.ai_review_cv_with_llm") as mock_review:

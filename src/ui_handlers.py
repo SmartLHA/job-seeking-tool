@@ -1585,7 +1585,7 @@ def handle_add_gap_skills(req, config, responder, job_id):
 
 def handle_ai_review_cv(req, config, responder, job_id):
     """POST /job/{id}/ai-review-cv — Gemini lightly rewrites the master CV for this job."""
-    from src.job_hunt_llm import ai_review_cv_with_llm
+    from src.job_hunt_llm import _MAX_CV_REVIEW_CHARS, ai_review_cv_with_llm
 
     if not isinstance(job_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", job_id) or job_id in {".", ".."}:
         responder.send_json({"ok": False, "error": "Job not found"}, status=HTTPStatus.NOT_FOUND)
@@ -1634,6 +1634,19 @@ def handle_ai_review_cv(req, config, responder, job_id):
         else:
             responder.send_json({"ok": False, "error": "No master CV on profile. Upload your CV on the Profile page first."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
             return
+
+    # The writer only sees the first _MAX_CV_REVIEW_CHARS characters, so refuse a longer CV
+    # instead of rewriting a truncated copy.  Checked before consent and any cloud call.
+    if len(cv_text) > _MAX_CV_REVIEW_CHARS:
+        responder.send_json({"ok": False, "error": "cv_too_long_for_ai_review"}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
+        return
+
+    # Per-click cloud consent: only the exact boolean True passes (same rule as
+    # extract_skills_from_cv).  A missing, malformed or non-boolean body is no consent.
+    body = getattr(req, "json_body", None)
+    if not (isinstance(body, dict) and body.get("use_cloud") is True):
+        responder.send_json({"ok": False, "error": "consent_required"}, status=HTTPStatus.FORBIDDEN)
+        return
 
     # Call LLM
     result, error, model_used = ai_review_cv_with_llm(cv_text, profile, job, analysis)

@@ -487,7 +487,12 @@ verifier that re-runs the tests and pastes the summary line.
     --exclude-dir=backups` returns no hits.
 17. Full suite `venv/bin/python -m pytest tests -q -p no:cacheprovider` is green
     (owner criterion). The baseline is recorded before C0; if it is not green, C0
-    stops and reports the failing tests to Mike before any build. `git diff` of pre-existing test files shows only
+    stops and reports the failing tests to Mike before any build.
+    Amended 2026-10-26: the baseline had 46 failures, which also fail on a clean
+    checkout of 5ab6fc7. Mike: "Yes. Build C0 now. Test bar until the suite is fixed:
+    the same 46 known failures before and after, zero new failures, and all new
+    tests pass." The list is in archive/cv-review/baseline-failures-2026-10-26.txt.
+    The fix is in a separate session's branch. `git diff` of pre-existing test files shows only
     the allowed edits (Hard constraints) plus those Mike approved under Q-E.
 18. Fixtures are synthetic. The verifier greps the new fixtures and tests for the
     profile owner's name and for email and phone patterns.
