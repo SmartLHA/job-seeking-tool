@@ -118,6 +118,7 @@ def test_ai_review_rejects_symlink_save_but_keeps_result(tmp_path, monkeypatch, 
     ))
     provider = Mock(return_value=({"reviewed_cv": "Reviewed synthetic SQL CV", "changes": []}, None, "synthetic-model"))
     monkeypatch.setattr(job_hunt_llm, "ai_rewrite_cv", provider)
+    monkeypatch.setattr("src.job_hunt_cv_review.run_blind_review", lambda *a, **k: {"items": [], "reviewer_model": "synthetic-reviewer", "prompt_version": "cv-blind-review-v0"})
     responder = SimpleNamespace(send_json=Mock())
 
     ui_handlers.handle_ai_review_cv(SimpleNamespace(json_body={"use_cloud": True}), SimpleNamespace(profile_path=tmp_path / "profile.json", state_root=tmp_path), responder, "job-1")

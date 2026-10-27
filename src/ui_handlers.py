@@ -724,7 +724,7 @@ def handle_job_export(req, config, responder, job_id):
     except Exception:
         profile = None
     try:
-        data, _manifest = build_package(job_id, profile, state_root=config.state_root)
+        data, _manifest = build_package(job_id, profile, state_root=config.state_root, base_dir=config.profile_path.parent)
     except (FileNotFoundError, StorageError, ValueError, KeyError, TypeError) as exc:
         status, message = _job_load_failure(exc)
         responder.send_json({"ok": False, "error": message}, status=status)
@@ -1618,22 +1618,21 @@ def handle_ai_review_cv(req, config, responder, job_id):
         responder.send_json({"ok": False, "error": f"Could not load profile: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         return
 
-    cv_text: str | None = profile.master_cv_text
-    if not cv_text:
-        if profile.master_cv_ref:
-            try:
-                from src.job_hunt_profile import load_master_cv
-                cv_ref_path = Path(profile.master_cv_ref)
-                if not cv_ref_path.is_absolute():
-                    cv_ref_path = config.profile_path.parent / cv_ref_path
-                cv_text = load_master_cv(cv_ref_path)
-            except Exception as exc:
-                logger.warning("Could not read master CV %s: %s", profile.master_cv_ref, exc)
-                responder.send_json({"ok": False, "error": "CV file could not be read. Re-upload on the Profile page."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
-                return
-        else:
-            responder.send_json({"ok": False, "error": "No master CV on profile. Upload your CV on the Profile page first."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
-            return
+    from src.job_hunt_cv_review import (
+        AI_REVIEW_LOCK, MissingMasterCVError, UnreadableMasterCVError,
+        build_review_source, canonical_cv_body, compute_binding, delete_review_record,
+        item_statuses, link_and_clear, overall_verdict, resolve_master_cv_text,
+        run_blind_review, run_layer0, write_review_record,
+    )
+    try:
+        cv_text = resolve_master_cv_text(profile, config.profile_path.parent)
+    except MissingMasterCVError:
+        responder.send_json({"ok": False, "error": "No master CV on profile. Upload your CV on the Profile page first."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
+        return
+    except UnreadableMasterCVError as exc:
+        logger.warning("Could not read master CV %s: %s", getattr(profile, 'master_cv_ref', None), exc)
+        responder.send_json({"ok": False, "error": "CV file could not be read. Re-upload on the Profile page."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
+        return
 
     # The writer only sees the first _MAX_CV_REVIEW_CHARS characters, so refuse a longer CV
     # instead of rewriting a truncated copy.  Checked before consent and any cloud call.
@@ -1648,37 +1647,65 @@ def handle_ai_review_cv(req, config, responder, job_id):
         responder.send_json({"ok": False, "error": "consent_required"}, status=HTTPStatus.FORBIDDEN)
         return
 
-    # Call LLM
-    result, error, model_used = ai_rewrite_cv(cv_text, profile, job, analysis)
-    if result is None:
-        responder.send_json({"ok": False, "error": error or "AI CV review failed"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+    if not AI_REVIEW_LOCK.acquire(blocking=False):
+        responder.send_json({"ok": False, "error": "busy"}, status=HTTPStatus.CONFLICT)
         return
-
-    reviewed_cv = result["reviewed_cv"]
-    changes = result["changes"]
-
-    # Save to tailored_cvs/{job_id}_ai_reviewed.md.  Treat route data as untrusted
-    # here too: an AI review may be displayed without saving, but must never write
-    # outside the configured output directory.
     try:
-        if not re.fullmatch(r"[A-Za-z0-9._-]+", job_id) or job_id in {".", ".."}:
-            raise ValueError("invalid job_id")
-        save_path = write_cv_text(
-            DEFAULT_TAILORING_POLICY.output_dir, f"{job_id}_ai_reviewed.md",
-            f"<!-- ai_reviewed: true | model: {model_used} | profile_id: {profile.candidate_id} -->\n{reviewed_cv.strip()}\n",
-        )
-        logger.info("AI-reviewed CV saved to %s", save_path)
-    except Exception as exc:
-        logger.warning("Could not save AI-reviewed CV (non-fatal): %s", exc)
-        save_path = None
+        from datetime import datetime, timezone
+        from uuid import uuid4
+        from src.job_hunt_parsing import KNOWN_SKILLS
 
-    responder.send_json({
-        "ok": True,
-        "reviewed_cv": reviewed_cv,
-        "changes": changes,
-        "saved_path": save_path.name if save_path else None,
-        "model_used": model_used or "unknown",
-    })
+        evidence, context = build_review_source(profile, cv_text)
+        result, error, model_used = ai_rewrite_cv(cv_text, profile, job, analysis)
+        if (not isinstance(result, dict) or not isinstance(result.get("reviewed_cv"), str)
+                or not result["reviewed_cv"].strip()):
+            responder.send_json({"ok": False, "error": error or "AI CV review failed"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        reviewed_cv = result["reviewed_cv"].replace("\r\n", "\n").replace("\r", "\n")
+        writer_result = {**result, "reviewed_cv": reviewed_cv}
+        changes = result["changes"]
+        job_skills = list(getattr(job, 'required_skills', [])) + list(getattr(job, 'preferred_skills', []))
+        findings = run_layer0(cv_text, evidence, context, reviewed_cv, job_skills, KNOWN_SKILLS)
+        review = run_blind_review(cv_text, evidence, context, job_skills, writer_result, model_used)
+        findings = link_and_clear(findings, review['items'])
+        findings = [finding if isinstance(finding, dict) else vars(finding) for finding in findings]
+        verdict = overall_verdict(findings, item_statuses(review['items']))
+        generation_id = uuid4().hex
+        saved_text = (f"<!-- ai_reviewed: true | model: {model_used} | profile_id: {profile.candidate_id} -->\n"
+                      f"{reviewed_cv.strip()}\n")
+        binding = compute_binding(profile, cv_text, evidence, context, canonical_cv_body(saved_text), job_id)
+        record = {
+            'schema_version': 1, 'generation_id': generation_id, 'verdict': verdict,
+            'l0_findings': findings, 'items': review['items'],
+            'reviewer_model': review['reviewer_model'], 'prompt_version': review['prompt_version'],
+            'binding': binding, 'writer_model': model_used or 'unknown',
+            'created_at': datetime.now(timezone.utc).isoformat(), 'revise_round': 0,
+            'approval': None,
+        }
+        try:
+            delete_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id)
+            save_path = write_cv_text(DEFAULT_TAILORING_POLICY.output_dir,
+                                      f"{job_id}_ai_reviewed.md", saved_text)
+            write_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id, record)
+            logger.info("AI-reviewed CV saved to %s", save_path)
+        except Exception as exc:
+            logger.warning("Could not save AI-reviewed CV (non-fatal): %s", exc)
+            save_path = None
+
+        responder.send_json({
+            "ok": True,
+            "reviewed_cv": reviewed_cv,
+            "changes": changes,
+            "saved_path": save_path.name if save_path else None,
+            "model_used": model_used or "unknown",
+            "review": {"verdict": verdict, "l0_findings": findings,
+                       "items": review['items'], "reviewer_model": review['reviewer_model']},
+            "generation_id": generation_id,
+            "rewrite_sha256": binding['rewrite_sha256'],
+        })
+    finally:
+        AI_REVIEW_LOCK.release()
 
 
 # F1 v2 — serialize the load→replace→save of each job's analysis so a double-click
@@ -1702,7 +1729,8 @@ def handle_ats_recheck(req, config, responder, job_id):
 
         # Tailored CV path-safety / empty-file gates precede job-analysis reads.
         try:
-            tailored = load_latest_tailored_cv(job_id, expected_profile_id=profile.candidate_id)
+            tailored = load_latest_tailored_cv(job_id, expected_profile_id=profile.candidate_id,
+                                               profile=profile, base_dir=config.profile_path.parent)
         except EmptyTailoredCVError:
             responder.send_json(
                 {"ok": False, "error": "Tailored CV is empty — re-tailor your CV first."},

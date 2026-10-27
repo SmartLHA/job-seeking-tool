@@ -424,6 +424,18 @@ The function docstring says it rewrites. INDEX.md mentions are updated with the 
   - footer "Advisory check by a second AI model. PASS does not prove every line is
     true."
   The writer's `changes` list stays visible to Mike.
+- C3a build notes (2026-10-27, from the C3a verifier; tightenings, no change to what
+  Mike sees):
+  - The binding also carries `job_id`. A record and its .md copied under another
+    job's names are not used for that job.
+  - The handler turns `\r\n` and `\r` into `\n` in the writer text before Layer 0,
+    the review, the .md write and the hash. The loader reads with universal
+    newlines, so without this a rewrite with `\r` could never be picked.
+  - For a job id that ends in `_ai_reviewed`, the loader never returns another job's
+    AI file as the ordinary CV (a name clash that already existed before this work;
+    job ids are system-generated, so normal flows cannot reach it).
+  - The reviewer-reply fence parser drops any language tag after the opening fence,
+    as before C2, and also accepts the one-line forms.
 
 ### S4 Eval set and script
 - tests/fixtures/cv_review_eval/ (new folder): 15 synthetic cases, some with

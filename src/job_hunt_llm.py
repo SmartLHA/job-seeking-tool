@@ -488,7 +488,8 @@ def ai_rewrite_cv(
     """
     truncated_cv = cv_text[:_MAX_CV_REVIEW_CHARS]
     description_excerpt = (getattr(job, "description_raw", "") or "")[:2000]
-    skills_str = ", ".join(s.name for s in getattr(profile, "skills", [])[:30]) or "none listed"
+    from src.job_hunt_cv_review import writer_profile_facts
+    facts = writer_profile_facts(profile)
 
     prompt = _AI_CV_REVIEW_PROMPT.format(
         title=getattr(job, "job_title", "Unknown"),
@@ -496,10 +497,7 @@ def ai_rewrite_cv(
         required_skills=", ".join(getattr(job, "required_skills", [])) or "not specified",
         preferred_skills=", ".join(getattr(job, "preferred_skills", [])) or "not specified",
         description=description_excerpt,
-        years=getattr(profile, "years_experience", "unknown"),
-        target_roles=", ".join(getattr(profile, "target_roles", [])[:5]) or "not specified",
-        industries=", ".join(getattr(profile, "industries", [])[:5]) or "not specified",
-        skills=skills_str,
+        **facts,
         cv_text=truncated_cv,
     )
 

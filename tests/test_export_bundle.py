@@ -11,6 +11,8 @@ from unittest.mock import patch
 
 import pytest
 
+from test_cv_review_record import record_for
+from src.job_hunt_cv_review import write_review_record
 from src import job_hunt_export, ui_handlers
 from src.job_hunt_config import TailoringPolicy
 from src.job_hunt_cover_letter import cover_letter_dir, load_cover_letter, save_cover_letter
@@ -53,6 +55,12 @@ def _write_cv(cv_dir: Path, job_id: str, profile_id: str, body=CV_BODY, reviewed
 
 class _Profile:
     candidate_id = "cand-1"
+    master_cv_text = "Synthetic master CV"
+    master_cv_ref = None
+    years_experience = 5
+    skills = []
+    target_roles = []
+    industries = []
     # personal fields that must never leak
     name = "Jane Secret Person"
     email = "jane.secret@example.com"
@@ -117,6 +125,7 @@ def test_full_package_contents_and_analysis_text(env):
 
 def test_cv_only_lists_missing_parts(env):
     _write_cv(env["policy"].output_dir, "job-1", "cand-1", reviewed=True)
+    write_review_record(env["policy"].output_dir, "job-1", record_for(_Profile, CV_BODY))
     data, manifest = _build(env)
     zf = _open(data)
     assert zf.namelist() == ["README.txt", "cv.md", "job.json"]

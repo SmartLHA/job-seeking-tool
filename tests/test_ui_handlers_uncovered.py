@@ -743,7 +743,7 @@ class TestHandleAiReviewCv:
         req = _make_request(json_body={"use_cloud": True})
         responder = MockResponder()
 
-        with mock.patch("src.job_hunt_llm.ai_rewrite_cv") as mock_review:
+        with mock.patch("src.job_hunt_cv_review.run_blind_review", return_value={"items": [], "reviewer_model": "synthetic-reviewer", "prompt_version": "cv-blind-review-v0"}), mock.patch("src.job_hunt_llm.ai_rewrite_cv") as mock_review:
             mock_review.return_value = (
                 {
                     "reviewed_cv": "Updated CV text",

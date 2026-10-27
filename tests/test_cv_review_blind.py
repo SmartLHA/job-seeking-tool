@@ -403,3 +403,22 @@ def test_ac10_paraphrase_is_sent_and_every_occurrence_fenced():
     occurrences = list(re.finditer(re.escape(paraphrase), prompts[0]))
     assert len(occurrences) == 2
     assert all(any(start <= occurrence.start() < end for start, end in ranges) for occurrence in occurrences)
+
+
+def test_unavailable_reply_keeps_over_limit_item_clean():
+    rewrite = 'Summary\n' + '\n'.join(f'- Useful report {i}.' for i in range(81))
+    items = run_blind_review('Summary', 'Summary', '', [], {'reviewed_cv': rewrite}, 'writer',
+                            transport=lambda _: 'not json')['items']
+    assert items[0]['reason'] == 'reviewer_unavailable'
+    assert items[80]['reason'] == 'limit'
+    assert 'unchecked_detail' not in items[80]
+
+
+@pytest.mark.parametrize('opening,closing', [('```json ', ' ```'), ('```json', '```'),
+    ('```javascript\n', '\n```'), ('```json5\n', '```')])
+def test_one_line_json_fence(opening, closing):
+    raw = json.dumps({'results': [{'id': 's-0', 'verdict': 'SUPPORTED',
+        'evidence_quote': 'Existing source fact.', 'reason': 'test'}]})
+    result = run_blind_review('Summary', 'Existing source fact.', '', [],
+        {'reviewed_cv': 'Summary\n- New fact.'}, 'writer', transport=lambda _: opening + raw + closing)
+    assert result['items'][0]['verdict'] == 'SUPPORTED'

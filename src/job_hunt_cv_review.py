@@ -4,6 +4,10 @@ from __future__ import annotations
 from collections import Counter
 from copy import deepcopy
 import json
+import hashlib
+import os
+from pathlib import Path
+import threading
 from uuid import uuid4
 from dataclasses import dataclass
 from decimal import Decimal
@@ -12,6 +16,197 @@ import re
 from src.job_hunt_ats_scorer import score_cv
 from src import job_hunt_llm
 from src.text_grounding import normalize_grounding_text, quote_in_text
+
+
+AI_REVIEW_LOCK = threading.Lock()
+
+
+class MissingMasterCVError(ValueError):
+    """The profile has no master CV."""
+
+
+class UnreadableMasterCVError(ValueError):
+    """The referenced master CV could not be read."""
+
+
+def canonical_cv_body(text: str) -> str:
+    """Drop only a first-line metadata comment and outer whitespace."""
+    lines = text.splitlines(keepends=True)
+    first = lines[0].strip() if lines else ''
+    if first.startswith('<!--') and first.endswith('-->'):
+        lines = lines[1:]
+    return ''.join(lines).strip()
+
+
+def resolve_master_cv_text(profile, base_dir) -> str:
+    """Resolve inline CV text or a reference relative to the profile directory."""
+    text = getattr(profile, 'master_cv_text', None)
+    if text:
+        return text
+    reference = getattr(profile, 'master_cv_ref', None)
+    if not reference:
+        raise MissingMasterCVError('no master CV on profile')
+    try:
+        from src.job_hunt_profile import load_master_cv
+        path = Path(reference)
+        if not path.is_absolute():
+            if base_dir is None:
+                raise ValueError('relative master CV requires base_dir')
+            path = Path(base_dir) / path
+        return load_master_cv(path)
+    except Exception as exc:
+        raise UnreadableMasterCVError('master CV could not be read') from exc
+
+
+def writer_profile_facts(profile) -> dict:
+    """Format exactly the profile facts supplied to the writer."""
+    return {
+        'years': getattr(profile, 'years_experience', 'unknown'),
+        'target_roles': ', '.join(getattr(profile, 'target_roles', [])[:5]) or 'not specified',
+        'industries': ', '.join(getattr(profile, 'industries', [])[:5]) or 'not specified',
+        'skills': ', '.join(s.name for s in getattr(profile, 'skills', [])[:30]) or 'none listed',
+    }
+
+
+def build_review_source(profile, cv_text: str) -> tuple[str, str]:
+    """Separate factual evidence from profile preferences."""
+    facts = writer_profile_facts(profile)
+    evidence = (f"{cv_text}\nYears experience: {facts['years']}"
+                f"\nProfile skills: {facts['skills']}")
+    context = (f"Target roles (preference, not experience): {facts['target_roles']}"
+               f"\nIndustries (preference, not experience): {facts['industries']}")
+    return evidence, context
+
+
+def sha256_text(text: str) -> str:
+    """Hash UTF-8 text."""
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
+def compute_binding(profile, cv_text, evidence, context, rewrite_body, job_id) -> dict:
+    """Bind one rewrite to its source snapshot and profile identity."""
+    return {'profile_id': profile.candidate_id, 'job_id': job_id,
+            'original_cv_sha256': sha256_text(cv_text),
+            'evidence_sha256': sha256_text(evidence),
+            'context_sha256': sha256_text(context),
+            'rewrite_sha256': sha256_text(rewrite_body)}
+
+
+def review_record_path(output_dir, job_id) -> Path:
+    """Return the review sidecar path for a validated job id."""
+    if not isinstance(job_id, str) or not re.fullmatch(r'[A-Za-z0-9._-]+', job_id) or job_id in {'.', '..'}:
+        raise ValueError('invalid job_id')
+    return Path(output_dir) / f'{job_id}_ai_reviewed.review.json'
+
+
+def write_review_record(output_dir, job_id, record) -> Path:
+    """Write a review sidecar through the atomic contained CV writer."""
+    from src.job_hunt_cv_storage import write_cv_text
+    path = review_record_path(output_dir, job_id)
+    return write_cv_text(output_dir, path.name, json.dumps(record, ensure_ascii=False, indent=2) + '\n')
+
+
+def delete_review_record(output_dir, job_id) -> None:
+    """Unlink the sidecar itself without following a descendant symlink."""
+    path = review_record_path(output_dir, job_id)
+    root = Path(output_dir).resolve()
+    try:
+        directory_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return
+    try:
+        try:
+            os.unlink(path.name, dir_fd=directory_fd)
+        except FileNotFoundError:
+            pass
+    finally:
+        os.close(directory_fd)
+
+
+def _valid_review_record(record) -> bool:
+    if not isinstance(record, dict):
+        return False
+    fields = {'schema_version', 'generation_id', 'verdict', 'l0_findings', 'items',
+              'reviewer_model', 'prompt_version', 'binding', 'writer_model',
+              'created_at', 'revise_round', 'approval'}
+    if not fields <= record.keys():
+        return False
+    if type(record['schema_version']) is not int or record['schema_version'] != 1:
+        return False
+    if type(record['revise_round']) is not int or record['revise_round'] not in {0, 1}:
+        return False
+    if not isinstance(record['generation_id'], str) or not re.fullmatch(r'[0-9a-f]{32}', record['generation_id']):
+        return False
+    if not isinstance(record['verdict'], str) or record['verdict'] not in {'PASS', 'BLOCKED', 'NEEDS_EDIT', 'UNCHECKED'}:
+        return False
+    if any(not isinstance(record[key], str) for key in ('reviewer_model', 'prompt_version', 'writer_model', 'created_at')):
+        return False
+    def digest(value):
+        return isinstance(value, str) and bool(re.fullmatch(r'[0-9a-f]{64}', value))
+    binding = record['binding']
+    if not isinstance(binding, dict) or not isinstance(binding.get('profile_id'), str) or not isinstance(binding.get('job_id'), str):
+        return False
+    if any(not digest(binding.get(key)) for key in ('original_cv_sha256', 'evidence_sha256', 'context_sha256', 'rewrite_sha256')):
+        return False
+    approval = record['approval']
+    if approval is not None:
+        if (not isinstance(approval, dict) or not isinstance(approval.get('approved_at'), str)
+                or not isinstance(approval.get('generation_id'), str)
+                or not re.fullmatch(r'[0-9a-f]{32}', approval['generation_id'])
+                or not digest(approval.get('rewrite_sha256'))):
+            return False
+    items, findings = record['items'], record['l0_findings']
+    if not isinstance(items, list) or not isinstance(findings, list):
+        return False
+    by_id = {}
+    for item in items:
+        if not isinstance(item, dict) or not {'id', 'block_key', 'text', 'verdict', 'evidence_quote', 'reason', 'severity'} <= item.keys():
+            return False
+        if any(not isinstance(item[key], str) for key in ('id', 'block_key', 'text', 'verdict', 'reason')):
+            return False
+        if not item['id'] or item['id'] in by_id or item['verdict'] not in {'SUPPORTED', 'EXAGGERATED', 'UNSUPPORTED', 'UNCHECKED'}:
+            return False
+        if item['evidence_quote'] is not None and not isinstance(item['evidence_quote'], str):
+            return False
+        severity = {'SUPPORTED': None, 'EXAGGERATED': 'MAJOR', 'UNSUPPORTED': 'BLOCKER', 'UNCHECKED': None}[item['verdict']]
+        if item['severity'] != severity:
+            return False
+        for key in ('removed', 'original_block'):
+            if key in item and (not isinstance(item[key], list) or any(not isinstance(line, str) for line in item[key])):
+                return False
+        if 'limit' in item and type(item['limit']) is not bool:
+            return False
+        if 'unchecked_detail' in item and not isinstance(item['unchecked_detail'], str):
+            return False
+        by_id[item['id']] = item
+    for finding in findings:
+        if not isinstance(finding, dict) or not {'layer', 'rule', 'text', 'severity', 'detail', 'item_id', 'cleared_by'} <= finding.keys():
+            return False
+        if type(finding['layer']) is not int or finding['layer'] != 0:
+            return False
+        if any(not isinstance(finding[key], str) for key in ('rule', 'text', 'severity', 'detail')):
+            return False
+        if finding['rule'] not in {'L0-empty', 'L0-1', 'L0-2', 'L0-3', 'L0-4', 'L0-5', 'L0-6'} or finding['severity'] not in {'BLOCKER', 'MAJOR', 'MINOR'}:
+            return False
+        if any(finding[key] is not None and not isinstance(finding[key], str) for key in ('item_id', 'cleared_by')):
+            return False
+        cleared = finding['cleared_by']
+        if cleared is not None and (finding['rule'] != 'L0-4' or cleared != finding['item_id']
+                                    or cleared not in by_id or by_id[cleared]['verdict'] != 'SUPPORTED'):
+            return False
+    return record['verdict'] == overall_verdict(findings, item_statuses(items))
+
+
+def read_review_record(output_dir, job_id) -> dict | None:
+    """Fail closed on any unreadable or invalid review sidecar."""
+    try:
+        path = review_record_path(output_dir, job_id)
+        if path.is_symlink():
+            return None
+        record = json.loads(path.read_text(encoding='utf-8'))
+        return record if _valid_review_record(record) else None
+    except Exception:
+        return None
 
 
 @dataclass
@@ -200,7 +395,7 @@ def run_layer0(original_cv: str, evidence: str, context: str, rewrite: str,
         add('L0-empty', '', 'BLOCKER', 'empty rewrite')
         return findings
     for token in sorted(_numbers(rewrite) - _numbers(evidence + '\n' + context, source=True)):
-        add('L0-1', ' '.join(token), 'BLOCKER', 'number absent from source')
+        add('L0-1', ' '.join((token[0], format(Decimal(token[1]), 'f'), token[2])), 'BLOCKER', 'number absent from source')
     if listed_headings(original_cv) != listed_headings(rewrite):
         add('L0-2', '', 'BLOCKER', 'listed headings changed')
     if Counter(possible_headings(original_cv)) != Counter(possible_headings(rewrite)):
@@ -377,7 +572,12 @@ def run_blind_review(original_cv, evidence, context, job_skills, writer_result,
         if isinstance(raw, str):
             raw = raw.strip()
             if raw.startswith('```'):
-                raw = raw.partition('\n')[2]
+                raw = raw[3:]
+                tag_end = 0
+                while tag_end < len(raw) and (raw[tag_end].isascii() and (raw[tag_end].isalnum() or raw[tag_end] in '_+.-')):
+                    tag_end += 1
+                raw = raw[tag_end:]
+                raw = raw.strip()
                 if raw.endswith('```'):
                     raw = raw[:-3]
         try:

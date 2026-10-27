@@ -25,6 +25,10 @@ from unittest import mock
 
 import pytest
 
+from types import SimpleNamespace
+from test_cv_review_record import record_for
+from src.job_hunt_cv_review import write_review_record
+from src.job_hunt_profile import load_candidate_profile
 from src import ui_handlers
 from src.job_hunt_config import TailoringPolicy
 from src.job_hunt_models import JobAnalysis, JobPosting, ScoreBreakdown, ScoreComponent
@@ -53,6 +57,13 @@ def _write_cv(policy: TailoringPolicy, name: str, text: str) -> None:
     (policy.output_dir / name).write_text(text, encoding="utf-8")
 
 
+def _pass_review(policy, profile_id, body):
+    profile = SimpleNamespace(candidate_id=profile_id, master_cv_text="Synthetic master CV", master_cv_ref=None,
+                              years_experience=5, skills=[], target_roles=[], industries=[])
+    write_review_record(policy.output_dir, "reed-1", record_for(profile, body, job_id="reed-1"))
+    return profile
+
+
 def test_loader_returns_none_when_no_tailored_file(tmp_path: Path) -> None:
     assert load_latest_tailored_cv("reed-1", policy=_policy(tmp_path)) is None
 
@@ -61,7 +72,8 @@ def test_loader_prefers_ai_reviewed_over_tailor_output(tmp_path: Path) -> None:
     policy = _policy(tmp_path)
     _write_cv(policy, "reed-1.md", "<!-- profile_id: cand-001 -->\nplain tailor output\n")
     _write_cv(policy, "reed-1_ai_reviewed.md", "<!-- ai_reviewed: true | profile_id: cand-001 -->\nAI reviewed body\n")
-    assert load_latest_tailored_cv("reed-1", policy=policy) == "AI reviewed body"
+    profile = _pass_review(policy, "cand-001", "AI reviewed body")
+    assert load_latest_tailored_cv("reed-1", policy=policy, profile=profile, base_dir=tmp_path) == "AI reviewed body"
 
 
 def test_loader_strips_only_first_metadata_comment_line(tmp_path: Path) -> None:
@@ -125,7 +137,8 @@ def test_loader_matching_ai_remains_preferred(tmp_path: Path) -> None:
     _write_cv(policy, "reed-1_ai_reviewed.md", "<!-- profile_id: cand-B -->\nProfile B AI CV")
     _write_cv(policy, "reed-1.md", "<!-- profile_id: cand-B -->\nProfile B ordinary CV")
 
-    assert load_latest_tailored_cv("reed-1", expected_profile_id="cand-B", policy=policy) == "Profile B AI CV"
+    profile = _pass_review(policy, "cand-B", "Profile B AI CV")
+    assert load_latest_tailored_cv("reed-1", expected_profile_id="cand-B", policy=policy, profile=profile, base_dir=tmp_path) == "Profile B AI CV"
 
 
 @pytest.mark.parametrize("ordinary_text", [
@@ -140,13 +153,12 @@ def test_loader_no_matching_candidate_returns_none(tmp_path: Path, ordinary_text
     assert load_latest_tailored_cv("reed-1", expected_profile_id="cand-B", policy=policy) is None
 
 
-def test_loader_empty_matching_ai_still_raises(tmp_path: Path) -> None:
+def test_loader_empty_ai_without_record_falls_back(tmp_path: Path) -> None:
     policy = _policy(tmp_path)
     _write_cv(policy, "reed-1_ai_reviewed.md", "<!-- profile_id: cand-B -->\n   ")
     _write_cv(policy, "reed-1.md", "<!-- profile_id: cand-B -->\nProfile B ordinary CV")
 
-    with pytest.raises(EmptyTailoredCVError):
-        load_latest_tailored_cv("reed-1", expected_profile_id="cand-B", policy=policy)
+    assert load_latest_tailored_cv("reed-1", expected_profile_id="cand-B", policy=policy) == "Profile B ordinary CV"
 
 
 # ────────────────────────── storage roundtrip (H2) ──────────────────────────
@@ -275,13 +287,17 @@ def test_ats_handler_scores_only_active_profile_cv(tmp_path: Path, monkeypatch, 
     ordinary_text = "SQL and Python evidence for profile B"
     _write_cv(policy, "job-1_ai_reviewed.md", f"<!-- profile_id: cand-A -->\n{ai_text}")
     _write_cv(policy, "job-1.md", f"<!-- profile_id: cand-B -->\n{ordinary_text}")
+    active_profile = load_candidate_profile(config.profile_path)
+    ai_profile = dataclasses.replace(active_profile, candidate_id="cand-A")
+    from src.job_hunt_cv_review import resolve_master_cv_text
+    write_review_record(policy.output_dir, "job-1", record_for(ai_profile, ai_text, cv_text=resolve_master_cv_text(ai_profile, config.profile_path.parent)))
     responder = mock.Mock()
 
     with mock.patch.object(ui_handlers, "load_latest_tailored_cv", wraps=load_latest_tailored_cv) as loader:
         with mock.patch.object(ui_handlers, "compute_keyword_match", wraps=ui_handlers.compute_keyword_match) as score:
             ui_handlers.handle_ats_recheck(None, config, responder, "job-1")
 
-    loader.assert_called_once_with("job-1", expected_profile_id=profile_id)
+    loader.assert_called_once_with("job-1", expected_profile_id=profile_id, profile=active_profile, base_dir=config.profile_path.parent)
     assert score.call_args.args[0] == (ai_text if profile_id == "cand-A" else ordinary_text)
     response = responder.send_json.call_args.args[0]
     assert response["ok"] is True

@@ -9,6 +9,10 @@ from src.job_hunt_models import CandidateProfile, JobAnalysis, JobPosting, Tailo
 from src.job_hunt_cover_letter import generate_cover_letter
 from src.job_hunt_cv_storage import write_cv_text
 from src.text_grounding import quote_in_text
+from src.job_hunt_cv_review import (
+    build_review_source, canonical_cv_body, compute_binding, read_review_record,
+    resolve_master_cv_text,
+)
 
 
 class TailoringValidationError(ValueError):
@@ -42,11 +46,13 @@ def load_latest_tailored_cv(
     job_id: str,
     *,
     expected_profile_id: str | None = None,
+    profile=None,
+    base_dir=None,
     policy: TailoringPolicy = DEFAULT_TAILORING_POLICY,
 ) -> str | None:
     """Return the most-tailored saved CV text for a job, or None if none exists.
 
-    Prefers ``{job_id}_ai_reviewed.md`` over ``{job_id}.md``; strips only a single
+    Prefers a currently bound PASS or approved AI rewrite; strips only a single
     leading HTML-comment metadata line. Returns the CV body (stripped).
 
     Path safety: ``job_id`` must match a strict allow-list (no '/', no '.'/'..');
@@ -63,6 +69,9 @@ def load_latest_tailored_cv(
     if not isinstance(job_id, str) or not _SAFE_JOB_ID.match(job_id) or job_id in (".", ".."):
         raise ValueError("invalid job_id")
 
+    if job_id.endswith("_ai_reviewed"):
+        return None
+
     base = policy.output_dir.resolve()
     for name in (f"{job_id}_ai_reviewed.md", f"{job_id}.md"):
         path = (base / name).resolve()
@@ -71,17 +80,39 @@ def load_latest_tailored_cv(
             continue
         if not path.exists():
             continue
-        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-        first = lines[0].strip() if lines else ""
-        has_header = first.startswith("<!--") and first.endswith("-->")
-        if has_header:
-            body = "".join(lines[1:])           # drop ONLY the first metadata line
-        else:
-            body = "".join(lines)               # no header → keep full text
-        if expected_profile_id is not None:
-            if not has_header or _parse_profile_id(first) != expected_profile_id:  # fail-closed
+        is_ai = name == f"{job_id}_ai_reviewed.md"
+        if is_ai and profile is None:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            if is_ai:
                 continue
-        body = body.strip()
+            raise
+        first = text.splitlines()[0].strip() if text.splitlines() else ""
+        has_header = first.startswith("<!--") and first.endswith("-->")
+        if expected_profile_id is not None:
+            if not has_header or _parse_profile_id(first) != expected_profile_id:
+                continue
+        body = canonical_cv_body(text)
+        if is_ai:
+            record = read_review_record(base, job_id)
+            if record is None:
+                continue
+            try:
+                cv_text = resolve_master_cv_text(profile, base_dir)
+                evidence, context = build_review_source(profile, cv_text)
+                binding = compute_binding(profile, cv_text, evidence, context, body, job_id)
+            except Exception:
+                continue
+            if record['binding'] != binding:
+                continue
+            approval = record['approval']
+            approved = (approval is not None
+                        and approval['generation_id'] == record['generation_id']
+                        and approval['rewrite_sha256'] == binding['rewrite_sha256'])
+            if record['verdict'] != 'PASS' and not approved:
+                continue
         if not body:
             raise EmptyTailoredCVError("tailored CV is empty")
         return body

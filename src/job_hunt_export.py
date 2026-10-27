@@ -155,6 +155,7 @@ def build_package(
     profile: Any | None,
     *,
     state_root: str | Path,
+    base_dir: str | Path | None = None,
     policy: TailoringPolicy = DEFAULT_TAILORING_POLICY,
     cover_letter_base: str | Path | None = None,
     now: datetime | None = None,
@@ -175,7 +176,7 @@ def build_package(
         missing[ENTRY_CV] = "no profile available to match the CV against"
     else:
         try:
-            cv = load_latest_tailored_cv(job_id, expected_profile_id=profile_id, policy=policy)
+            cv = load_latest_tailored_cv(job_id, expected_profile_id=profile_id, profile=profile, base_dir=base_dir, policy=policy)
         except EmptyTailoredCVError:
             cv, why = None, "saved CV is empty"
         except ValueError:
