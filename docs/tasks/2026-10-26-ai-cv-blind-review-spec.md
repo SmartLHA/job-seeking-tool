@@ -306,7 +306,8 @@ The function docstring says it rewrites. INDEX.md mentions are updated with the 
 - Grounding downgrade, applied by code in this order:
   1. SUPPORTED or EXAGGERATED with an empty quote, a quote under 3 words (unless the
      item itself is under 6 words), or a quote that fails
-     `quote_in_text(quote, EVIDENCE + CONTEXT)` → UNSUPPORTED "quote_not_in_source".
+     `quote_in_text` against EVIDENCE and against CONTEXT, each tested separately
+     → UNSUPPORTED "quote_not_in_source".
   2. For an item in a role block: SUPPORTED or EXAGGERATED whose quote is not in the
      paired original role block, nor in the profile skills or years lines →
      UNSUPPORTED "quote_outside_role".
@@ -322,6 +323,24 @@ The function docstring says it rewrites. INDEX.md mentions are updated with the 
   "reviewer_unavailable".
 - Uses the existing helper `_call_gemini_model` (src/job_hunt_llm.py:58). No new
   client.
+- C2 build notes (2026-10-27, from the C2 verifier and a live smoke test on synthetic
+  data):
+  - Grounding tests EVIDENCE and CONTEXT separately. A quote that spans the boundary
+    between them is not found.
+  - Fences are `<<<DATA-{nonce}>>>` / `<<<END-{nonce}>>>`, and the prompt names them.
+    Items sent to the reviewer carry only id, block key, text and removed lines.
+  - Live call settings: thinking budget 1024, timeout 180 s, JSON response mode, and a
+    reply wrapped in a ```json fence is still parsed. Measured on 4 items (n=1 each):
+    thinking 1024 took 95 s and got all 4 verdicts right; thinking 0 took 13 s and
+    called an invented skill EXAGGERATED instead of UNSUPPORTED.
+  - An unavailable reviewer records why (timeout, rate limit, ...) next to
+    "reviewer_unavailable".
+  - Accepted residual: a reviewer that obeys an injected line and cites a real quote of
+    3+ words can still return SUPPORTED. Injection-proofing stays out of scope.
+  - Carried into C3 (C2 used its two fix rounds; both items fail closed): (1) add an
+    81-item test with an unavailable reply asserting the limit item has no
+    `unchecked_detail`; (2) the fence parser drops a one-line "```json {...} ```" reply
+    (it becomes UNCHECKED bad_json) — parse it, with a test.
 
 ### S3 Layer 2 gate, record, loader, approve, revise, UI
 - Overall verdict, one function `overall_verdict(l0_findings, item_statuses)`,
@@ -472,7 +491,8 @@ verifier that re-runs the tests and pastes the summary line.
    (test). A block whose bullets are only reordered sends no items (test). Over 80
    items → the extra items UNCHECKED, overall not PASS (test at 80 and 81).
 8. Grounding: an empty quote, a quote under 3 words for a long item, or a quote not in
-   EVIDENCE + CONTEXT → UNSUPPORTED → BLOCKER (test). A quote from a different role
+   EVIDENCE or CONTEXT (each tested separately; a quote spanning both is not
+   found) → UNSUPPORTED → BLOCKER (test). A quote from a different role
    block for a role item → UNSUPPORTED (test). For an item outside role blocks, a
    SUPPORTED quote found only in CONTEXT → EXAGGERATED → MAJOR (test).
 9. Metadata exclusion (tests on the exact string passed to `_call_gemini_model`):
@@ -539,6 +559,10 @@ on the reviewer.
 - Q-B Revise is a button Mike clicks, at most once, not an automatic loop. OK?
 - Q-C The reviewer's Gemini model id is picked at C2 from a live list. If it costs
   money per call, C2 stops and asks.
+  Answered 2026-10-27: live list read from the key in .env (names only). Mike chose
+  "gemini-3.5-flash (Recommended)" and said the key is "No, free tier", so reviews
+  cost nothing. Note: on the free tier Google may use submitted content (the CV) to
+  improve its products and may have humans review it; this applies to the writer too.
 - Q-D Uncommitted 13-file work: commit it, stash it, or build on a fresh branch?
 - Q-E Existing-test changes the new loader rules need:
   - tests/test_f1_recheck.py:60, :123 and tests/test_export_bundle.py:118 — add a

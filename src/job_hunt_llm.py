@@ -62,6 +62,7 @@ def _call_gemini_model(
     thinking_budget: int | None = None,
     timeout: int = _TIMEOUT_SECONDS,
     max_output_tokens: int | None = None,
+    response_mime_type: str | None = None,
 ) -> tuple[str | None, str | None, bool, str | None]:
     """Call one specific Gemini model.
 
@@ -80,6 +81,8 @@ def _call_gemini_model(
         gen_config["thinkingConfig"] = {"thinkingBudget": thinking_budget}
     if max_output_tokens is not None:
         gen_config["maxOutputTokens"] = max_output_tokens
+    if response_mime_type is not None:
+        gen_config["responseMimeType"] = response_mime_type
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": gen_config,
