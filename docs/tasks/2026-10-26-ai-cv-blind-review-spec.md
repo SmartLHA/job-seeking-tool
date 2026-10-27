@@ -234,6 +234,36 @@ the id of the item whose grounded SUPPORTED verdict cleared an L0-4 finding).
   instructions can avoid it.
 - Empty rewrite → BLOCKER "empty rewrite".
 
+Build refinements (r3.3, 2026-10-26, from the C1 verifier's probes). These cut false
+BLOCKERs on faithful rephrases; they do not loosen any check on invented content:
+- L0-1 token = number value + optional currency (£ $ €) + optional scale (k, m, bn,
+  thousand, million, billion, applied as a multiplier) + optional percent ("%",
+  "percent", "per cent"). Time words (years, yrs, months) and "+" are not part of
+  the token. So "£1.5m" = "£1.5 million" = "£1,500,000"; "50%" = "50 percent";
+  "10+ years" = "over 10 years". Currency and percent still must match.
+- Date line: also 15 words or fewer and not ending with a full stop, so summary
+  prose that mentions a year is not a date line.
+- Role-line comparison ignores dash style and the spaces around dashes, month
+  abbreviations (Jan = January, Sept = September), and markdown emphasis (`**`, `__`).
+  When collecting the lines above a date line, one blank line is skipped.
+- Possible heading: a line holding `,` `|` `;` `/` or a digit is never a possible
+  heading (a short skills line such as "SQL, Excel, Power BI" is content).
+- Markdown heading: one to six `#` followed by a space ("#1 ranked analyst" is not a
+  heading).
+- L0-4 vocabulary is de-duplicated and matched case-insensitively.
+
+Known residual false BLOCKERs, accepted at C1 (2026-10-27). They are rare in CVs; the
+C4 eval and live trial measure them, and Mike can still approve or revise:
+- number word with a unit or scale ("5%" -> "five percent", "2 million" -> "two
+  million"), and hyphenated number words ("25" -> "twenty-five");
+- shared-unit ranges ("50-60k" -> "50k-60k", "5-10%" -> "5%-10%");
+- a year-bearing sentence of 15 words or fewer whose full stop the rewrite drops;
+- an unpunctuated short prose line one blank line above a role block;
+- "Jan." with a full stop, single-asterisk emphasis, two blank lines inside a role
+  block, "£2B" vs "£2bn".
+To fix in C3 (display only): L0-1 finding text shows values in scientific notation
+(e.g. "5E+4"); render plain numbers.
+
 Rename (its own commit): `ai_review_cv_with_llm` -> `ai_rewrite_cv` in
 src/job_hunt_llm.py and src/ui_handlers.py (:1588, :1639), plus the import, mock-target,
 call-site and docstring lines in tests/test_llm_wrappers_uncovered.py,
