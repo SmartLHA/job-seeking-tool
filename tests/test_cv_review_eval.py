@@ -103,12 +103,21 @@ def fake_dotenv(monkeypatch):
     return calls
 
 
+class RunCalls(list):
+    """dry_run flag of each stubbed run() call; the pacing keywords are in .kwargs."""
+    def __init__(self):
+        super().__init__()
+        self.kwargs = []
+
+
 @pytest.fixture
 def stub_run(monkeypatch, tmp_path):
-    """Replace ev.run so main() never reaches the reviewer; records the dry_run flag."""
-    seen = []
-    def fake_run(cases, *, dry_run, out_dir, transport=None):
+    """Replace ev.run so main() never reaches the reviewer; records the dry_run flag and pacing keywords."""
+    seen = RunCalls()
+    def fake_run(cases, *, dry_run, out_dir, transport=None, pace=ev.DEFAULT_PACE,
+                 retry_wait=ev.DEFAULT_RETRY_WAIT, sleep=None):
         seen.append(dry_run)
+        seen.kwargs.append(dict(pace=pace, retry_wait=retry_wait, sleep=sleep))
         return [], tmp_path / 'stub-report.md'
     monkeypatch.setattr(ev, 'run', fake_run)
     return seen
@@ -158,3 +167,208 @@ def test_use_cloud_tolerates_missing_dotenv_package(monkeypatch, stub_run, tmp_p
     monkeypatch.setattr(job_hunt_llm, '_api_key', lambda: None)
     assert ev.main(['--use-cloud', '--cases', str(CASES), '--out-dir', str(tmp_path / 'out')]) != 0
     assert stub_run == [False]
+
+
+# --- C4 fix 2 P1-P5: pacing, one retry and a clean rate-limit stop (no network, no real sleep) ---
+
+def pick(*ids):
+    """Fixture cases in the given order."""
+    by_id = {c['id']: c for c in ev.load_cases(CASES)}
+    return [by_id[i] for i in ids]
+
+
+def script_gemini(monkeypatch, outcomes):
+    """Replace the Gemini helper with one scripted outcome per call; returns the prompts sent.
+
+    'ok' answers every sent item UNSUPPORTED (valid for any case); any other value is the
+    failure kind the helper reports, e.g. 'rate_limited'. A call beyond the script fails the test.
+    """
+    import re
+    monkeypatch.setattr(job_hunt_llm, '_api_key', lambda: FAKE_KEY)
+    prompts = []
+    def helper(prompt, *args, **kwargs):
+        if len(prompts) >= len(outcomes):
+            pytest.fail('More reviewer calls than scripted')
+        outcome = outcomes[len(prompts)]
+        prompts.append(prompt)
+        if outcome != 'ok':
+            return None, 'failure', False, outcome
+        nonce = re.search(r'<<<DATA-(\w+)>>>', prompt).group(1)
+        blocks = re.findall(r'<<<DATA-' + nonce + r'>>>\n(.*?)\n<<<END-' + nonce + r'>>>', prompt, re.S)
+        items = json.loads(next(b.split('\n', 1)[1] for b in blocks if b.startswith('REVIEW_ITEMS\n')))
+        reply = {'results': [{'id': i['id'], 'verdict': 'UNSUPPORTED', 'evidence_quote': None,
+                              'reason': 'scripted'} for i in items]}
+        return json.dumps(reply), None, False, None
+    monkeypatch.setattr(job_hunt_llm, '_call_gemini_model', helper)
+    return prompts
+
+
+def live(cases, tmp_path, sleeps, pace=3.0, retry_wait=9.0):
+    return ev.run(cases, dry_run=False, out_dir=tmp_path, pace=pace, retry_wait=retry_wait, sleep=sleeps.append)
+
+
+def test_pacing_between_consecutive_calls_not_before_first(monkeypatch, tmp_path):
+    prompts = script_gemini(monkeypatch, ['ok', 'ok', 'ok'])
+    sleeps = []
+    rows, report = live(pick('clean-rephrase', 'changed-date', 'new-title'), tmp_path, sleeps, pace=7.5)
+    assert len(prompts) == 3
+    assert sleeps == [7.5, 7.5]
+    assert not any(r['not_run'] for r in rows)
+
+
+def test_dry_run_never_waits(tmp_path):
+    sleeps = []
+    rows, report = ev.run(ev.load_cases(CASES), dry_run=True, out_dir=tmp_path, pace=7.5,
+                          retry_wait=9.0, sleep=sleeps.append)
+    assert sleeps == []
+    assert len(rows) == 19 and not any(r['not_run'] for r in rows)
+
+
+def test_zero_pace_and_retry_wait_never_call_sleep(monkeypatch, tmp_path):
+    script_gemini(monkeypatch, ['ok', 'rate_limited', 'ok'])
+    sleeps = []
+    live(pick('clean-rephrase', 'changed-date'), tmp_path, sleeps, pace=0, retry_wait=0)
+    assert sleeps == []
+
+
+@pytest.mark.parametrize('first', ['rate_limited', 'server_error'])
+def test_retry_once_then_second_result_is_recorded(first, monkeypatch, tmp_path):
+    prompts = script_gemini(monkeypatch, [first, 'ok'])
+    sleeps = []
+    rows, report = live(pick('deleted-qualifier'), tmp_path, sleeps)
+    assert len(prompts) == 2
+    assert sleeps == [9.0]
+    assert rows[0]['detail'] == '' and not rows[0]['not_run']
+    text = report.read_text()
+    assert 'UNCHECKED rate: 0.000' in text          # the retry's answer, not the failed first call
+    assert '| EXAGGERATED | 0 | 0 | 1 | 0 |' in text  # scripted 'ok' answers UNSUPPORTED
+
+
+@pytest.mark.parametrize('kind', ['timeout', 'bad_json'])
+def test_other_details_are_not_retried(kind, monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(job_hunt_llm, '_api_key', lambda: FAKE_KEY)
+    def helper(*args, **kwargs):
+        calls.append(kind)
+        return ('not json', None, False, None) if kind == 'bad_json' else (None, 'failure', False, kind)
+    monkeypatch.setattr(job_hunt_llm, '_call_gemini_model', helper)
+    sleeps = []
+    rows, report = live(pick('clean-rephrase'), tmp_path, sleeps)
+    assert len(calls) == 1
+    assert sleeps == []
+    assert rows[0]['detail'] == kind and not rows[0]['not_run']
+
+
+def test_repeated_rate_limit_stops_the_run(monkeypatch, tmp_path):
+    prompts = script_gemini(monkeypatch, ['ok', 'rate_limited', 'rate_limited'])
+    sleeps = []
+    cases = pick('deleted-qualifier', 'changed-date', 'new-title', 'clean-rephrase')
+    rows, report = live(cases, tmp_path, sleeps)
+    assert len(prompts) == 3                                  # case 1 once, case 2 twice, nothing after
+    assert sleeps == [3.0, 9.0]                               # pace before case 2, then the retry wait
+    assert [r['actual'] == 'NOT_RUN' for r in rows] == [False, True, True, True]
+    assert [r['not_run'] for r in rows] == [False, True, True, True]
+    assert [r['detail'] for r in rows] == ['', 'rate_limited', '', '']
+    text = report.read_text()
+    assert 'Run stopped: 1 of 4 cases ran; stopped on a repeated rate limit' in text
+    assert 'which limit is UNVERIFIED' in text
+    assert 'NOT_RUN: changed-date, new-title, clean-rephrase' in text
+    # The one run case mismatches its label (scripted UNSUPPORTED gives BLOCKED); NOT_RUN counts as neither.
+    assert 'Cases including variants: 4; matches: 0; mismatches: 1' in text
+    # Metrics come from case 1 alone: its one EXAGGERATED item came back UNSUPPORTED.
+    assert 'Item recall: 1.000; precision: 1.000; UNCHECKED rate: 0.000' in text
+    assert cases[0]['labels']['expected_items'][0]['statement'] in text
+    for skipped in cases[1:]:
+        assert skipped['labels']['expected_items'][0]['statement'] not in text
+    assert '| changed-date | BLOCKED | NOT_RUN | rate_limited |' in text
+    assert '| new-title | ' in text and 'NOT_RUN' in text.split('| new-title | ')[1].split('\n')[0]
+
+
+def test_stop_on_first_case_prints_na_metrics(monkeypatch, tmp_path):
+    prompts = script_gemini(monkeypatch, ['rate_limited', 'rate_limited'])
+    rows, report = live(pick('clean-rephrase', 'changed-date'), tmp_path, [])
+    assert len(prompts) == 2
+    assert all(r['not_run'] for r in rows)
+    text = report.read_text()
+    assert 'Run stopped: 0 of 2 cases ran' in text
+    assert 'Item recall: n/a; precision: n/a; UNCHECKED rate: n/a' in text
+    assert 'Cases including variants: 2; matches: 0; mismatches: 0' in text
+
+
+def test_server_error_twice_keeps_unchecked_and_continues(monkeypatch, tmp_path):
+    prompts = script_gemini(monkeypatch, ['server_error', 'server_error', 'ok', 'ok'])
+    sleeps = []
+    rows, report = live(pick('clean-rephrase', 'changed-date', 'new-title'), tmp_path, sleeps)
+    assert len(prompts) == 4
+    assert sleeps == [9.0, 3.0, 3.0]                          # retry wait, then pace before cases 2 and 3
+    assert not any(r['not_run'] for r in rows)
+    assert (rows[0]['actual'], rows[0]['detail']) == ('UNCHECKED', 'server_error')
+    assert [r['detail'] for r in rows[1:]] == ['', '']
+    text = report.read_text()
+    assert '| clean-rephrase | PASS | UNCHECKED | server_error |' in text
+    assert 'Run stopped' not in text
+
+
+@pytest.mark.parametrize('first, second', [('rate_limited', 'server_error'), ('server_error', 'rate_limited')])
+def test_mixed_failures_do_not_stop_the_run(first, second, monkeypatch, tmp_path):
+    # Only two rate limits in a row stop the run; a 503 on either attempt does not.
+    prompts = script_gemini(monkeypatch, [first, second, 'ok'])
+    rows, report = live(pick('clean-rephrase', 'changed-date'), tmp_path, [])
+    assert len(prompts) == 3
+    assert [r['not_run'] for r in rows] == [False, False]
+    assert rows[0]['detail'] == second
+
+
+def test_main_exits_3_on_rate_limit_stop_and_still_writes_report(monkeypatch, fake_dotenv, tmp_path, capsys):
+    cases_dir = tmp_path / 'cases'
+    cases_dir.mkdir()
+    for file in sorted(CASES.glob('*.json'))[:4]:
+        (cases_dir / file.name).write_text(file.read_text())
+    total = len(ev.load_cases(cases_dir))
+    prompts = script_gemini(monkeypatch, ['ok', 'rate_limited', 'rate_limited'])
+    out_dir = tmp_path / 'out'
+    rc = ev.main(['--use-cloud', '--cases', str(cases_dir), '--out-dir', str(out_dir),
+                  '--pace', '0', '--retry-wait', '0'])
+    assert rc == 3
+    assert len(prompts) == 3
+    reports = list(out_dir.glob('report-*.md'))
+    assert len(reports) == 1
+    assert f'Run stopped: 1 of {total} cases ran' in reports[0].read_text()
+    out = capsys.readouterr().out
+    assert f'Run stopped: 1 of {total} cases ran' in out and f'report: {reports[0]}' in out
+
+
+def test_main_exits_0_when_every_case_runs(monkeypatch, fake_dotenv, tmp_path):
+    cases_dir = tmp_path / 'cases'
+    cases_dir.mkdir()
+    (cases_dir / 'one.json').write_text(next(CASES.glob('*clean-rephrase*.json')).read_text())
+    prompts = script_gemini(monkeypatch, ['rate_limited', 'ok'])
+    rc = ev.main(['--use-cloud', '--cases', str(cases_dir), '--out-dir', str(tmp_path / 'out'),
+                  '--pace', '0', '--retry-wait', '0'])
+    assert rc == 0 and len(prompts) == 2
+
+
+def test_pace_and_retry_wait_flags_reach_run(stub_run, tmp_path):
+    ev.main(['--dry-run', '--cases', str(CASES), '--out-dir', str(tmp_path / 'out')])
+    assert stub_run.kwargs[-1] == dict(pace=15.0, retry_wait=65.0, sleep=None)
+    ev.main(['--dry-run', '--cases', str(CASES), '--out-dir', str(tmp_path / 'out'),
+             '--pace', '2.5', '--retry-wait', '0'])
+    assert stub_run.kwargs[-1] == dict(pace=2.5, retry_wait=0.0, sleep=None)
+
+
+@pytest.mark.parametrize('flag', ['--pace', '--retry-wait'])
+@pytest.mark.parametrize('value', ['-1', '-0.5', 'nan', 'inf', 'abc'])
+def test_bad_pace_values_rejected(flag, value, stub_run, tmp_path, capsys):
+    with pytest.raises(SystemExit) as exc:
+        ev.main(['--dry-run', '--cases', str(CASES), '--out-dir', str(tmp_path / 'out'), flag, value])
+    assert exc.value.code == 2
+    assert stub_run == []
+    assert flag in capsys.readouterr().err
+
+
+def test_help_lists_pace_flags(capsys):
+    with pytest.raises(SystemExit) as exc:
+        ev.main(['--help'])
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert '--pace' in out and '--retry-wait' in out

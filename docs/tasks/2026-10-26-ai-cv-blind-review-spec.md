@@ -668,6 +668,49 @@ on the reviewer.
   same per-model daily quota; whether other app features also call gemini-3.5-flash is
   UNVERIFIED.
 
+## C4 fix 2: pacing and rate-limit stop (2026-10-28, Mike: "加間隔，明天跑")
+Why: the first live attempt lost most cases to 429 and 503. The eval calls the reviewer
+back to back with no pause, retry or stop (scripts/cv_review_eval.py:58, :69, line
+numbers as at commit 7f7ae56). The
+failure kind does reach the eval as `unchecked_detail` on each review item
+(src/job_hunt_cv_review.py:579-583, :604-605), but the eval ignores it (eval:73). The
+429 body is dropped in src (src/job_hunt_llm.py:102), so the eval cannot tell a per-day
+429 from a per-minute one. Scope: the eval script and its tests only; src/ is unchanged.
+Facts (from code, 2026-10-28): one reviewer call per case; 19 cases (15 files + 4
+variants). In code, only the page's AI CV review (src/ui_handlers.py:1770) uses the
+reviewer model (`REVIEWER_MODEL`, src/job_hunt_cv_review.py:453), so reviews from the
+page on the same day use the same daily quota. A `GEMINI_MODEL` value in `.env`
+(src/job_hunt_llm.py:49) was not checked (UNVERIFIED).
+Acceptance:
+- P1. Pacing: in a live run the script waits `--pace` seconds (float >= 0, default 15)
+  between consecutive reviewer calls, not before the first. Dry-run never waits.
+  `run()` takes `pace`, `retry_wait` and an injectable `sleep` (default `time.sleep`).
+- P2. One retry: when a case's review items carry `unchecked_detail` `rate_limited` or
+  `server_error`, the script waits `--retry-wait` seconds (float >= 0, default 65) and
+  reviews that case once more; the second result is recorded. Other details are not
+  retried.
+- P3. Stop: when the retry is `rate_limited` again (both attempts of the case; a 503
+  then a 429 does not stop the run), the run makes no further reviewer calls. That case and every case not yet run are marked NOT_RUN, listed in the report,
+  and left out of every metric (metrics with no run cases print n/a, no crash). The
+  summary says how many cases ran out of how many and that the run stopped on a repeated
+  rate limit (likely the daily quota; which limit is UNVERIFIED). `main()` still writes
+  the report and exits 3. A `server_error` retry that fails again keeps that case's
+  UNCHECKED result and the run continues.
+- P4. Each report row shows the case's failure detail (`unchecked_detail`, or blank).
+- P5. Tests, with no network, no real sleep and no real `.env`: pacing (3 live cases give
+  2 sleeps of `pace`; dry-run gives 0); retry then success; stop (rate-limited twice on
+  case 2 of 4 gives 3 reviewer calls in total, cases 2-4 NOT_RUN, metrics from case 1,
+  exit 3); `server_error` twice keeps UNCHECKED and continues; `--pace`/`--retry-wait`
+  reach `run()` and negative values are rejected. Update the `fake_run` stub for the new
+  keywords.
+- P6. Existing eval tests pass; full-suite bar unchanged (the 46 known failures, zero
+  new), run with `venv/bin/python`.
+Not in scope: changing src/ (keeping the 429 body, app-side retries), a resume flag, a
+paid key.
+Run note: one full run uses 19 of the 20 daily requests seen on 2026-10-28 (more if
+retries happen). Run it before any AI CV review from the page that day. At the defaults
+it takes about 5 minutes plus the calls' own time.
+
 ## Open questions for approval
 - Q-A EVIDENCE/CONTEXT split of the profile facts (deviation above). Approve?
 - Q-B Revise is a button Mike clicks, at most once, not an automatic loop. OK?
