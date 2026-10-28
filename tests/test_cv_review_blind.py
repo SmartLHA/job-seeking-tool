@@ -441,6 +441,15 @@ def test_changed_role_adjacent_heading_is_reviewed_and_blocked(verdict, quote):
     assert not select_review_items(original, original)
 
 
+def test_next_role_line_under_an_emptied_role_is_not_a_title_item():
+    original = ('Experience\nAnalyst | Cedar Works\n2019 - 2022\n- Delivered migration.\n'
+                'Coordinator | Birch Works\n2022 - 2024\n- Scheduled meetings.')
+    rewrite = ('Experience\nAnalyst | Cedar Works\n2019 - 2022\n'
+               'Coordinator | Birch Works\n2022 - 2024\n- Scheduled meetings.\n- Delivered migration.')
+    texts = [item['text'] for item in select_review_items(original, rewrite)]
+    assert texts == ['- Scheduled meetings.', '- Delivered migration.']
+
+
 def test_changed_role_adjacent_heading_counts_toward_cap_in_document_order():
     original = 'Summary\nExperience\nCedar Works\n2019 - 2022\nAnalyst\n- Documented business needs.'
     rewrite = original.replace('Summary\n', 'Summary\n' + '\n'.join(

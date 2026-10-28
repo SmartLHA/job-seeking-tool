@@ -22,6 +22,251 @@ from src.ui_utils import (
 from src.ui_state import _HOME_TABS, _PAGE_UPDATED
 
 
+# AI Review CV page script (C3c). Plain string, not an f-string, so its braces are single.
+# Every server value reaches the page through textContent on created elements; no markup
+# is ever built from response text.
+_AI_CV_SCRIPT = r"""
+;(function(){
+var aiBtn=document.getElementById('ai-cv-btn');
+var aiConsent=document.getElementById('ai-cv-consent');
+var aiResult=document.getElementById('tailor-result');
+if(!aiBtn||!aiResult)return;
+
+var AI_BADGES={
+  PASS:['PASS — this rewrite will be used for ATS recheck and export','apply'],
+  NEEDS_EDIT:['NEEDS EDIT — not used until you approve it','review'],
+  BLOCKED:['BLOCKED — not used until you approve it','skip'],
+  UNCHECKED:['Not checked — not approved','review']
+};
+var AI_APPROVED_TEXT='Approved — this rewrite will be used';
+var AI_CONFIRM_TEXT='This rewrite was BLOCKED by the check. Use it anyway?';
+var AI_FOOTER_TEXT='Advisory check by a second AI model. PASS does not prove every line is true.';
+var AI_BTN_STYLE='padding:8px 14px;margin:0 8px 0 0;border-radius:var(--r-md);font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink);';
+
+function aiEl(parent,tag,text,cls){
+  var n=document.createElement(tag);
+  if(text!==undefined&&text!==null)n.textContent=String(text);
+  if(cls)n.className=cls;
+  parent.appendChild(n);
+  return n;
+}
+function aiTone(name){
+  return 'color:var(--'+name+');background:var(--'+name+'-bg);border:1px solid var(--'+name+'-line);';
+}
+function aiMessage(text,isError){
+  aiResult.textContent='';
+  var p=aiEl(aiResult,'p',text);
+  p.style.cssText='font-size:13px;padding:8px 0;color:'+(isError?'var(--skip)':'var(--ink-faint)')+';';
+  return p;
+}
+function aiErrorText(code,action,network){
+  if(code==='consent_required')return 'Tick the box to send your CV to Google Gemini, then click '+(action==='Revise'?'Revise once with findings':'AI Review CV')+' again.';
+  if(code==='cv_too_long_for_ai_review')return 'Your CV is longer than 15,000 characters, so AI review cannot run on it.';
+  if(code==='stale')return 'This review is out of date. Run AI Review CV again.';
+  if(code==='busy')return 'Another AI review is running. Try again in a moment.';
+  if(code==='inputs_changed')return 'Your CV or profile changed since this review. Run AI Review CV again.';
+  if(code==='not_revisable')return 'This rewrite cannot be revised again.';
+  var detail=String(code||'Error');
+  if(action)return action+' failed: '+detail;
+  return network?'Request failed: '+detail:detail;
+}
+function aiIsApproved(d){
+  return !!(d.approval&&d.approval.generation_id===d.generation_id&&d.approval.rewrite_sha256===d.rewrite_sha256);
+}
+
+function aiRenderHeader(panel,d){
+  var header=aiEl(panel,'div');
+  header.style.cssText='display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;';
+  var title=aiEl(header,'span','AI-Reviewed CV');
+  title.style.cssText='font-weight:700;font-size:13.5px;color:var(--ink);flex:1;';
+  var via=aiEl(header,'span','· via Gemini ('+(d.model_used||'unknown')+')');
+  via.style.cssText='font-size:11px;color:var(--ink-faint);';
+  var copy=aiEl(header,'button','Copy');
+  copy.id='ai-cv-copy-btn';
+  copy.style.cssText='padding:4px 12px;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);color:var(--ink-soft);';
+  copy.addEventListener('click',function(){
+    var text=window._aiReviewedCvText;
+    if(!text)return;
+    navigator.clipboard.writeText(text).then(function(){
+      copy.textContent='Copied ✓';
+      copy.style.color='var(--apply)';
+      setTimeout(function(){copy.textContent='Copy';copy.style.color='';},1800);
+    }).catch(function(){
+      var msg=document.getElementById('ai-cv-copy-msg');
+      if(!msg){
+        msg=aiEl(header,'span');
+        msg.id='ai-cv-copy-msg';
+        msg.setAttribute('role','status');
+        msg.style.cssText='font-size:12px;color:var(--skip);margin-left:8px;';
+      }
+      msg.textContent='Copy failed — please select the text manually.';
+    });
+  });
+}
+
+function aiRenderBadge(panel,verdict,approved){
+  var info=approved?[AI_APPROVED_TEXT,'apply']:AI_BADGES[verdict];
+  var badge=aiEl(panel,'div',info[0],'ai-cv-badge');
+  badge.style.cssText='display:inline-block;margin:0 0 10px;padding:6px 12px;border-radius:var(--r-md);font-size:13px;font-weight:700;'+aiTone(info[1]);
+}
+
+function aiFindingRow(box,severity){
+  var row=aiEl(box,'div',undefined,'ai-cv-finding');
+  var tone=severity==='BLOCKER'?'skip':(severity==='MAJOR'?'review':'line');
+  row.style.cssText='margin-top:6px;padding:8px 10px;font-size:13px;line-height:1.5;background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--'+tone+');';
+  return row;
+}
+/* Lists unsupported review items and uncleared Layer 0 findings; returns the trimmed
+   statements so the rewrite view can flag the matching lines. */
+function aiRenderFindings(panel,review){
+  var flagged=[];
+  var items=(review.items||[]).filter(function(item){return item.verdict!=='SUPPORTED';});
+  var l0=(review.l0_findings||[]).filter(function(f){return !f.cleared_by;});
+  if(!items.length&&!l0.length)return flagged;
+  var box=aiEl(panel,'div',undefined,'ai-cv-findings');
+  box.style.cssText='margin:0 0 12px;';
+  var heading=aiEl(box,'strong','Findings');
+  heading.style.cssText='font-size:12px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-soft);';
+  items.forEach(function(item){
+    var row=aiFindingRow(box,item.severity);
+    flagged.push(String(item.text||'').trim());
+    aiEl(row,'div',item.text||'').style.fontWeight='600';
+    aiEl(row,'div','Verdict: '+(item.verdict||'UNCHECKED')+' · Severity: '+(item.severity||'—'));
+    aiEl(row,'div','Reason: '+(item.reason||'—'));
+    var removed=item.removed||[];
+    if(removed.length){
+      aiEl(row,'div','Original lines in this block:').style.color='var(--ink-soft)';
+      removed.forEach(function(line){aiEl(row,'div',line).style.paddingLeft='12px';});
+    }
+  });
+  l0.forEach(function(f){
+    var row=aiFindingRow(box,f.severity);
+    flagged.push(String(f.text||'').trim());
+    aiEl(row,'div','Rule: '+(f.rule||'—')+' · Severity: '+(f.severity||'—')).style.fontWeight='600';
+    aiEl(row,'div',f.text||'');
+    aiEl(row,'div',f.detail||'');
+  });
+  return flagged;
+}
+
+function aiRenderChanges(panel,changes){
+  if(!changes||!changes.length)return;
+  var box=aiEl(panel,'div');
+  box.style.cssText='margin-bottom:12px;padding:10px 12px;border-radius:var(--r-md);'+aiTone('apply');
+  var title=aiEl(box,'div','Changes made');
+  title.style.cssText='font-size:11.5px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--apply);margin-bottom:6px;';
+  var list=aiEl(box,'ul');
+  list.style.cssText='margin:0;padding-left:18px;font-size:13px;line-height:1.6;color:var(--ink-soft);';
+  changes.forEach(function(change){aiEl(list,'li',change);});
+}
+
+function aiRenderRewrite(panel,d,flagged){
+  var box=aiEl(panel,'div',undefined,'ai-cv-rewrite');
+  box.style.cssText='white-space:pre-wrap;word-break:break-word;font-size:13.5px;line-height:1.7;color:var(--ink);max-height:560px;overflow-y:auto;background:var(--surface-sunk,#f5f5f5);border:1px solid var(--line);border-radius:var(--r-md);padding:16px 18px;';
+  String(d.reviewed_cv||'').split('\n').forEach(function(line){
+    var row=aiEl(box,'div',undefined,'ai-cv-line');
+    row.style.minHeight='1.7em';
+    var trimmed=line.trim();
+    if(trimmed&&flagged.indexOf(trimmed)!==-1){
+      row.className='ai-cv-line ai-cv-flagged';
+      row.style.background='var(--review-bg)';
+      aiEl(row,'span','⚑ ','ai-cv-flag');
+    }
+    aiEl(row,'span',line);
+  });
+}
+
+/* Draws one result. `notice` is an optional error line shown under the buttons. */
+function aiRender(d,notice){
+  aiResult.textContent='';
+  window._aiReviewedCvText=d.reviewed_cv||'';
+  var review=d.review||{};
+  var verdict=Object.prototype.hasOwnProperty.call(AI_BADGES,review.verdict)?review.verdict:'UNCHECKED';
+  var approved=aiIsApproved(d);
+  var panel=aiEl(aiResult,'div',undefined,'ai-cv-panel');
+  panel.style.cssText='background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:16px;';
+  aiRenderHeader(panel,d);
+  aiRenderBadge(panel,verdict,approved);
+  var flagged=aiRenderFindings(panel,review);
+  aiRenderChanges(panel,d.changes);
+  aiRenderRewrite(panel,d,flagged);
+  if(d.saved_path){
+    var saved=aiEl(panel,'p','Saved: '+d.saved_path);
+    saved.style.cssText='font-size:11.5px;color:var(--ink-faint);margin:10px 0 0;word-break:break-all;';
+  }
+  var actions=aiEl(panel,'div');
+  actions.style.cssText='margin-top:12px;';
+  var note=aiEl(panel,'p',notice||'','ai-cv-notice');
+  note.style.cssText='margin:8px 0 0;font-size:13px;color:var(--skip);';
+  if(verdict!=='PASS'&&!approved){
+    var approve=aiEl(actions,'button','Approve this rewrite');
+    approve.style.cssText=AI_BTN_STYLE;
+    approve.addEventListener('click',function(){
+      if(verdict==='BLOCKED'&&!window.confirm(AI_CONFIRM_TEXT))return;
+      approve.disabled=true;
+      note.textContent='';
+      aiSend('approve',{generation_id:d.generation_id,rewrite_sha256:d.rewrite_sha256}).then(function(res){
+        if(res.ok){
+          d.approval=(res.data&&res.data.approval)||{generation_id:d.generation_id,rewrite_sha256:d.rewrite_sha256};
+          aiRender(d);
+          return;
+        }
+        approve.disabled=false;
+        note.textContent=aiErrorText(res.data&&res.data.error,'Approve',false);
+      }).catch(function(err){
+        approve.disabled=false;
+        note.textContent=aiErrorText(err&&err.message,'Approve',true);
+      });
+    });
+  }
+  if((verdict==='BLOCKED'||verdict==='NEEDS_EDIT')&&d.revise_round===0){
+    var revise=aiEl(actions,'button','Revise once with findings');
+    revise.style.cssText=AI_BTN_STYLE;
+    revise.addEventListener('click',function(){
+      aiRun('revise',{use_cloud:!!(aiConsent&&aiConsent.checked),generation_id:d.generation_id},'Revise',d);
+    });
+  }
+  var footer=aiEl(panel,'p',AI_FOOTER_TEXT);
+  footer.style.cssText='margin:10px 0 0;font-size:11.5px;color:var(--ink-faint);';
+}
+
+function aiSend(path,body){
+  return fetch('/job/'+aiBtn.dataset.jobId+'/ai-review-cv'+(path?'/'+path:''),{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)
+  }).then(function(r){return r.json().then(function(data){return {ok:r.ok,data:data};});});
+}
+/* A failed revise puts the previous result back (so the buttons stay usable) unless the
+   result itself is out of date. */
+function aiFail(code,action,previous,network){
+  var text=aiErrorText(code,action,network);
+  var outdated=['stale','inputs_changed','not_revisable'].indexOf(code)!==-1;
+  if(previous&&!outdated)aiRender(previous,text);
+  else aiMessage(text,true);
+}
+function aiRun(path,body,action,previous){
+  aiBtn.disabled=true;
+  aiBtn.textContent='Reviewing… (30–60 s)';
+  aiMessage('Gemini is reviewing your CV against this job — please wait…',false);
+  var request;
+  try{request=aiSend(path,body);}catch(err){request=Promise.reject(err);}
+  if(aiConsent)aiConsent.checked=false;
+  request.then(function(res){
+    if(res.ok){aiRender(res.data);return;}
+    aiFail(res.data&&res.data.error,action,previous,false);
+  }).catch(function(err){
+    if(aiConsent)aiConsent.checked=false;
+    aiFail(err&&err.message,action,previous,true);
+  }).finally(function(){
+    aiBtn.disabled=false;
+    aiBtn.textContent='AI Review CV';
+  });
+}
+aiBtn.addEventListener('click',function(){
+  aiRun('',{use_cloud:!!(aiConsent&&aiConsent.checked)},'',null);
+});
+})();
+"""
+
 def _normalize_home_tab(tab: str | None) -> str:
     """Return a safe home tab, defaulting to the Reed-first search shell."""
     if tab in _HOME_TABS:
@@ -2098,66 +2343,8 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'tailorBtn.disabled=false;tailorBtn.textContent="Tailor CV";'
             f'resultDiv.innerHTML=\'<p style="color:var(--skip);font-size:13px;">Request failed: \'+err.message+\'</p>\';'
             f'}});}});}}'
-            # AI Review CV
-            f'var aiCvBtn=document.getElementById("ai-cv-btn");'
-            f'if(aiCvBtn){{aiCvBtn.addEventListener("click",function(){{'
-            f'var jobId=aiCvBtn.dataset.jobId;'
-            f'var resultDiv=document.getElementById("tailor-result");'
-            f'var aiCvConsent=document.getElementById("ai-cv-consent");'
-            f'var useCloud=!!(aiCvConsent&&aiCvConsent.checked);'
-            f'aiCvBtn.disabled=true;aiCvBtn.textContent="Reviewing… (30–60 s)";'
-            f'if(resultDiv)resultDiv.innerHTML=\'<p style="color:var(--ink-faint);font-size:13px;padding:8px 0;">Gemini is reviewing your CV against this job — please wait…</p>\';'
-            f'var aiReq=fetch("/job/"+jobId+"/ai-review-cv",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify({{use_cloud:useCloud}})}});'
-            f'if(aiCvConsent)aiCvConsent.checked=false;'
-            f'aiReq'
-            f'.then(function(r){{return r.json().then(function(d){{return{{ok:r.ok,data:d}};}})}})'
-            f'.then(function(res){{'
-            f'aiCvBtn.disabled=false;aiCvBtn.textContent="AI Review CV";'
-            f'var aiErrCode=res.data&&res.data.error;var aiErrMsg="";'
-            f'if(aiErrCode==="consent_required")aiErrMsg="Tick the box to send your CV to Google Gemini, then click AI Review CV again.";'
-            f'else if(aiErrCode==="cv_too_long_for_ai_review")aiErrMsg="Your CV is longer than 15,000 characters, so AI review cannot run on it.";'
-            f'if(!res.ok&&aiErrMsg){{'
-            f'var aiErrP=document.createElement("p");aiErrP.style.cssText="color:var(--skip);font-size:13px;";aiErrP.textContent=aiErrMsg;'
-            f'resultDiv.textContent="";resultDiv.appendChild(aiErrP);return;}}'
-            f'if(!res.ok){{resultDiv.innerHTML=\'<p style="color:var(--skip);font-size:13px;">\'+( res.data.error||"Error")+\'</p>\';return;}}'
-            f'var d=res.data;'
-            f'window._aiReviewedCvText=d.reviewed_cv||"";'
-            f'var html=\'<div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:16px;">\';'
-            f'html+=\'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">\';'
-            f'html+=\'<span style="font-weight:700;font-size:13.5px;color:var(--ink);flex:1;">AI-Reviewed CV</span>\';'
-            f'html+=\'<span style="font-size:11px;color:var(--ink-faint);">\xb7 via Gemini (\'+( d.model_used||"unknown")+\')</span>\';'
-            f'html+=\'<button id="ai-cv-copy-btn" style="padding:4px 12px;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);color:var(--ink-soft);">Copy</button>\';'
-            f'html+=\'</div>\';'
-            f'if(d.saved_path)html+=\'<p style="font-size:11.5px;color:var(--ink-faint);margin-bottom:10px;word-break:break-all;">Saved: <code>\'+d.saved_path+\'</code></p>\';'
-            f'if(d.changes&&d.changes.length){{'
-            f'html+=\'<div style="margin-bottom:12px;padding:10px 12px;background:var(--apply-bg);border:1px solid var(--apply-line);border-radius:var(--r-md);">\';'
-            f'html+=\'<div style="font-size:11.5px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--apply);margin-bottom:6px;">Changes made</div>\';'
-            f'html+=\'<ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.6;color:var(--ink-soft);">\';'
-            f'd.changes.forEach(function(c){{html+=\'<li>\'+c.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")+\'</li>\';}});'
-            f'html+=\'</ul></div>\';'
-            f'}}'
-            f'var safeText=d.reviewed_cv.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");'
-            f'html+=\'<pre style="white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:13.5px;line-height:1.7;color:var(--ink);max-height:560px;overflow-y:auto;background:var(--surface-sunk,#f5f5f5);border:1px solid var(--line);border-radius:var(--r-md);padding:16px 18px;margin:0;">\'+safeText+\'</pre>\';'
-            f'html+=\'</div>\';'
-            f'resultDiv.innerHTML=html;'
-            f'var copyBtn=document.getElementById("ai-cv-copy-btn");'
-            f'if(copyBtn){{copyBtn.addEventListener("click",function(){{'
-            f'var t=window._aiReviewedCvText;'
-            f'if(!t)return;'
-            f'navigator.clipboard.writeText(t).then(function(){{'
-            f'copyBtn.textContent="Copied ✓";copyBtn.style.color="var(--apply)";'
-            f'setTimeout(function(){{copyBtn.textContent="Copy";copyBtn.style.color="";}},1800);'
-            f'}}).catch(function(){{'
-            f'var m=document.getElementById("ai-cv-copy-msg");'
-            f'if(!m){{m=document.createElement("span");m.id="ai-cv-copy-msg";m.setAttribute("role","status");'
-            f'm.style.cssText="font-size:12px;color:var(--skip);margin-left:8px;";copyBtn.parentNode.insertBefore(m,copyBtn.nextSibling);}}'
-            f'm.textContent="Copy failed — please select the text manually.";'
-            f'}});'
-            f'}});}}'
-            f'}}).catch(function(err){{'
-            f'aiCvBtn.disabled=false;aiCvBtn.textContent="AI Review CV";'
-            f'resultDiv.innerHTML=\'<p style="color:var(--skip);font-size:13px;">Request failed: \'+err.message+\'</p>\';'
-            f'}});}});}}'
+            # AI Review CV: all response content is rendered through DOM text nodes.
+            + _AI_CV_SCRIPT +
             # cover toggle
             f'var coverBtn=document.getElementById("cover-btn");'
             f'var coverPanel=document.getElementById("cover-panel");'

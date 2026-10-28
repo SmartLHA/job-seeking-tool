@@ -203,18 +203,29 @@ let click = null;
 const calls = [];
 const consent = {checked: false};
 const innerHtmlWrites = [];
-const resultDiv = {
-  children: [], textContent: '',
-  set innerHTML(v) { innerHtmlWrites.push(v); }, get innerHTML() { return innerHtmlWrites[innerHtmlWrites.length - 1] || ''; },
-  appendChild(c) { this.children.push(c); },
-};
+// Fake DOM node. textContent is the node's own text (setting it drops the children, as
+// in a browser); domText() joins the text of a whole subtree. Every innerHTML write on
+// any node is recorded, so a test can prove the AI review flow never writes one.
+function element(tag) {
+  return {tag, children: [], style: {}, className: '', id: '', attrs: {}, _text: '', listeners: {},
+    get textContent() { return this._text; },
+    set textContent(v) { this._text = String(v); this.children = []; },
+    set innerHTML(v) { innerHtmlWrites.push(v); },
+    get innerHTML() { return innerHtmlWrites[innerHtmlWrites.length - 1] || ''; },
+    appendChild(c) { c.parentNode = this; this.children.push(c); return c; },
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    addEventListener(t, fn) { this.listeners[t] = fn; }
+  };
+}
+const resultDiv = element('div');
+const domText = n => n._text + n.children.map(domText).join('');
 const btn = {dataset: {jobId: 'job-1'}, disabled: false, textContent: 'AI Review CV',
   addEventListener: (t, fn) => { if (t === 'click') click = fn; }};
 const ids = {'ai-cv-btn': btn, 'ai-cv-consent': consent, 'tailor-result': resultDiv};
 let nextResponse = null;
 global.document = {getElementById: id => ids[id] || null,
-  createElement: tag => ({tag, style: {}, textContent: ''})};
-global.window = {};
+  createElement: element};
+global.window = {confirm: () => true};
 global.fetch = (url, opts) => {
   calls.push({url, method: opts.method, body: JSON.parse(opts.body), checkedWhenSent: consent.checked});
   return Promise.resolve(nextResponse);
@@ -252,7 +263,7 @@ _JS_SUFFIX = r"""
   assert.strictEqual(consent.checked, false, 'checkbox must be unchecked right after the request is sent');
   await flush();
   assert.strictEqual(consent.checked, false);
-  assert(resultDiv.innerHTML.includes('Synthetic rewrite'));
+  assert(domText(resultDiv).includes('Synthetic rewrite'));
 
   // 3. the box does not stay ticked after a failed request either.
   consent.checked = true;
@@ -273,8 +284,8 @@ _JS_SUFFIX = r"""
   assert.strictEqual(resultDiv.children.length, 1);
   assert(resultDiv.children[0].textContent.includes('15,000'));
   assert.strictEqual(resultDiv.children[0].tag, 'p');
-  // only the "please wait" line was written through innerHTML; the error text was not.
-  assert.strictEqual(innerHtmlWrites.length, writesBefore + 1);
+  // Loading and error messages both use textContent; neither writes innerHTML.
+  assert.strictEqual(innerHtmlWrites.length, writesBefore);
   assert(!innerHtmlWrites.slice(writesBefore).some(w => w.includes('15,000')));
 
   console.log('AI review consent runtime assertions passed');
@@ -293,3 +304,319 @@ def test_executed_page_script_sends_use_cloud_from_checkbox_and_resets_it(tmp_pa
     result = subprocess.run([node, str(path)], capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "AI review consent runtime assertions passed"
+
+
+# ---- C3c: verdict panel, approve and revise, rendered with textContent only -------
+
+_JS_HELPERS = r"""
+const RECORDING_FETCH = global.fetch;
+const all = n => [n, ...n.children.flatMap(all)];
+const findButton = label => all(resultDiv).find(n => n.tag === 'button' && n.textContent === label);
+const pageText = () => domText(resultDiv);
+const BAD = '<img src=x onerror=alert(1)>';
+const ITEM = {id: 's-0', block_key: 'Experience', text: 'Ran the weekly planning meeting',
+  verdict: 'UNSUPPORTED', evidence_quote: '', reason: 'No such meeting in the CV.', severity: 'BLOCKER',
+  removed: ['Led the weekly planning meeting']};
+const SUPPORTED_ITEM = {id: 's-1', block_key: 'Experience', text: 'Only listed as supported',
+  verdict: 'SUPPORTED', evidence_quote: 'q', reason: 'fine', severity: 'MINOR', removed: []};
+const L0_OPEN = {layer: 0, rule: 'L0-1', text: 'Prepared reports', severity: 'MAJOR',
+  detail: 'A number is new.', item_id: null, cleared_by: null};
+const L0_CLEARED = {layer: 0, rule: 'L0-4', text: 'Cleared finding text', severity: 'MAJOR',
+  detail: 'skill', item_id: 's-1', cleared_by: 's-1'};
+function result(verdict, extra) {
+  return Object.assign({ok: true, reviewed_cv: 'Summary\nRan the weekly planning meeting\nPrepared reports',
+    changes: ['Reworded the summary'], model_used: 'writer-model', saved_path: 'job-1_ai_reviewed.md',
+    generation_id: 'gen-1', rewrite_sha256: 'hash-1', revise_round: 0, approval: null,
+    review: {verdict, reviewer_model: 'checker-model', items: [], l0_findings: []}}, extra || {});
+}
+const withFindings = (verdict, extra) => result(verdict, Object.assign({review: {verdict,
+  reviewer_model: 'checker-model', items: [ITEM, SUPPORTED_ITEM], l0_findings: [L0_OPEN, L0_CLEARED]}}, extra || {}));
+async function load(data) { nextResponse = respond(true, data); click(); await flush(); }
+const APPROVAL = {approved_at: 't', generation_id: 'gen-1', rewrite_sha256: 'hash-1'};
+const STALE = 'This review is out of date. Run AI Review CV again.';
+const BUSY = 'Another AI review is running. Try again in a moment.';
+"""
+
+
+def _run_page_js(tmp_path, body):
+    """Run the real page script in node against the fake DOM, then ``body`` (async)."""
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not available")
+    scripts = re.findall(r"<script>(.*?)</script>", _job_html(), re.S)
+    script = next(s for s in scripts if s.startswith("/* tailor + cover */"))
+    checks = ("(async () => {\n" + body + "\nconsole.log('ok');\n})()"
+              ".catch(e => { console.error(e); process.exitCode = 1; });\n")
+    path = tmp_path / "ai-cv-panel.js"
+    path.write_text(_JS_PREFIX + script + _JS_HELPERS + checks)
+    result = subprocess.run([node, str(path)], capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ok"
+
+
+def test_ai_review_script_never_assigns_inner_html():
+    assert "innerHTML" not in ui_render._AI_CV_SCRIPT
+    assert "insertAdjacentHTML" not in ui_render._AI_CV_SCRIPT
+
+
+def test_pass_panel_shows_badge_changes_footer_and_no_actions(tmp_path):
+    _run_page_js(tmp_path, r"""
+  await load(result('PASS'));
+  const t = pageText();
+  assert(t.includes('AI-Reviewed CV') && t.includes('writer-model'));
+  assert(findButton('Copy'));
+  assert(t.includes('PASS — this rewrite will be used for ATS recheck and export'));
+  assert(t.includes('Changes made') && t.includes('Reworded the summary'));
+  assert(t.includes('Summary') && t.includes('Prepared reports'));
+  assert(t.includes('Saved: job-1_ai_reviewed.md'));
+  assert(t.includes('Advisory check by a second AI model. PASS does not prove every line is true.'));
+  assert(!findButton('Approve this rewrite'));
+  assert(!findButton('Revise once with findings'));
+  assert(!t.includes('Findings'));
+  assert.strictEqual(all(resultDiv).filter(n => n.className.includes('ai-cv-flagged')).length, 0);
+  assert.strictEqual(innerHtmlWrites.length, 0);
+""")
+
+
+def test_blocked_panel_lists_findings_flags_lines_and_confirms_before_approve(tmp_path):
+    _run_page_js(tmp_path, r"""
+  await load(withFindings('BLOCKED'));
+  const t = pageText();
+  assert(t.includes('BLOCKED — not used until you approve it'));
+  // findings: statement, verdict, reason, severity, removed lines; SUPPORTED and cleared ones are not listed
+  assert(t.includes('Findings') && t.includes('UNSUPPORTED') && t.includes('No such meeting in the CV.'));
+  assert(t.includes('BLOCKER'));
+  assert(t.includes('Original lines in this block:') && t.includes('Led the weekly planning meeting'));
+  assert(t.includes('L0-1') && t.includes('MAJOR') && t.includes('A number is new.'));
+  assert(!t.includes('Only listed as supported') && !t.includes('Cleared finding text'));
+  // panel order
+  const order = ['AI-Reviewed CV', 'BLOCKED —', 'Findings', 'Changes made', 'Saved:',
+                 'Advisory check by a second AI model.'].map(s => t.indexOf(s));
+  assert(order.every((p, i) => p >= 0 && (i === 0 || p > order[i - 1])), String(order));
+  // flagged rewrite lines carry a marker span and a class; the clean line does not
+  const flagged = all(resultDiv).filter(n => n.className.includes('ai-cv-flagged'));
+  assert.deepStrictEqual(flagged.map(n => domText(n)),
+    ['⚑ Ran the weekly planning meeting', '⚑ Prepared reports']);
+  assert(flagged.every(n => n.children[0].className === 'ai-cv-flag' && n.children[0].textContent === '⚑ '));
+  const summary = all(resultDiv).find(n => n.className === 'ai-cv-line' && domText(n) === 'Summary');
+  assert(summary, 'the unflagged line is a plain ai-cv-line');
+  assert(findButton('Approve this rewrite') && findButton('Revise once with findings'));
+
+  // confirm refused: nothing is sent
+  const asked = [];
+  window.confirm = m => { asked.push(m); return false; };
+  const before = calls.length;
+  const approve = findButton('Approve this rewrite');
+  approve.listeners.click();
+  assert.strictEqual(calls.length, before);
+  assert.deepStrictEqual(asked, ['This rewrite was BLOCKED by the check. Use it anyway?']);
+  assert(!approve.disabled, 'a cancelled confirm leaves the button usable');
+
+  // confirm accepted: POST with generation id and hash, button disabled meanwhile, badge turns approved
+  window.confirm = () => true;
+  nextResponse = respond(true, {ok: true, verdict: 'BLOCKED', approval: APPROVAL});
+  approve.listeners.click();
+  assert.strictEqual(approve.disabled, true);
+  const sent = calls.at(-1);
+  assert.strictEqual(sent.url, '/job/job-1/ai-review-cv/approve');
+  assert.strictEqual(sent.method, 'POST');
+  assert.deepStrictEqual(sent.body, {generation_id: 'gen-1', rewrite_sha256: 'hash-1'});
+  await flush();
+  assert(pageText().includes('Approved — this rewrite will be used'));
+  assert(!pageText().includes('not used until you approve it'));
+  assert(!findButton('Approve this rewrite'));
+  assert(findButton('Revise once with findings'), 'revise stays available for an unrevised rewrite');
+  assert.strictEqual(innerHtmlWrites.length, 0);
+""")
+
+
+def test_needs_edit_approve_sends_without_confirm(tmp_path):
+    _run_page_js(tmp_path, r"""
+  await load(withFindings('NEEDS_EDIT'));
+  assert(pageText().includes('NEEDS EDIT — not used until you approve it'));
+  window.confirm = () => { throw new Error('confirm must only be asked for BLOCKED'); };
+  nextResponse = respond(true, {ok: true, verdict: 'NEEDS_EDIT', approval: APPROVAL});
+  findButton('Approve this rewrite').listeners.click();
+  assert.deepStrictEqual(calls.at(-1).body, {generation_id: 'gen-1', rewrite_sha256: 'hash-1'});
+  await flush();
+  assert(pageText().includes('Approved — this rewrite will be used'));
+  assert.strictEqual(innerHtmlWrites.length, 0);
+""")
+
+
+def test_unchecked_panel_is_not_approved_and_has_no_revise(tmp_path):
+    _run_page_js(tmp_path, r"""
+  await load(result('UNCHECKED'));
+  assert(pageText().includes('Not checked — not approved'));
+  assert(findButton('Approve this rewrite'));
+  assert(!findButton('Revise once with findings'));
+  // a response with no review, or an unknown verdict, is never shown as PASS
+  const noReview = result('PASS'); delete noReview.review;
+  await load(noReview);
+  assert(pageText().includes('Not checked — not approved') && !pageText().includes('PASS —'));
+  await load(result('SURPRISE'));
+  assert(pageText().includes('Not checked — not approved') && !pageText().includes('PASS —'));
+  assert.strictEqual(innerHtmlWrites.length, 0);
+""")
+
+
+def test_revise_sends_consent_unchecks_box_and_renders_round_one(tmp_path):
+    _run_page_js(tmp_path, r"""
+  await load(withFindings('NEEDS_EDIT'));
+  consent.checked = true;
+  nextResponse = respond(true, withFindings('BLOCKED', {generation_id: 'gen-2', rewrite_sha256: 'hash-2',
+    revise_round: 1, reviewed_cv: 'Second draft line'}));
+  findButton('Revise once with findings').listeners.click();
+  const sent = calls.at(-1);
+  assert.strictEqual(sent.url, '/job/job-1/ai-review-cv/revise');
+  assert.strictEqual(sent.method, 'POST');
+  assert.deepStrictEqual(sent.body, {use_cloud: true, generation_id: 'gen-1'});
+  assert.strictEqual(sent.checkedWhenSent, true);
+  assert.strictEqual(consent.checked, false, 'unchecked right after the request is sent');
+  assert.strictEqual(btn.disabled, true);
+  assert(pageText().includes('please wait'), 'same wait state as a rewrite');
+  await flush();
+  assert.strictEqual(consent.checked, false);
+  assert.strictEqual(btn.disabled, false);
+  assert(pageText().includes('Second draft line') && pageText().includes('BLOCKED —'));
+  assert(findButton('Approve this rewrite'));
+  assert(!findButton('Revise once with findings'), 'round 1 cannot be revised again');
+
+  // unticked box: use_cloud false is sent as it is
+  await load(withFindings('BLOCKED'));
+  nextResponse = respond(false, {ok: false, error: 'consent_required'});
+  findButton('Revise once with findings').listeners.click();
+  assert.deepStrictEqual(calls.at(-1).body, {use_cloud: false, generation_id: 'gen-1'});
+  await flush();
+
+  // a failed request unchecks the box too, and the previous result is back with its buttons
+  await load(withFindings('NEEDS_EDIT'));
+  consent.checked = true;
+  global.fetch = () => Promise.reject(new Error('offline'));
+  findButton('Revise once with findings').listeners.click();
+  assert.strictEqual(consent.checked, false);
+  await flush();
+  assert.strictEqual(consent.checked, false);
+  assert(pageText().includes('Revise failed: offline'));
+  assert(findButton('Revise once with findings') && findButton('Approve this rewrite'));
+
+  // a box ticked again while the request is pending is cleared when the request fails
+  global.fetch = RECORDING_FETCH;
+  await load(withFindings('NEEDS_EDIT'));
+  consent.checked = true;
+  let failRequest;
+  global.fetch = () => new Promise((resolve, reject) => { failRequest = reject; });
+  findButton('Revise once with findings').listeners.click();
+  assert.strictEqual(consent.checked, false);
+  consent.checked = true;
+  failRequest(new Error('offline'));
+  await flush();
+  assert.strictEqual(consent.checked, false, 'unchecked after the failed request');
+  assert.strictEqual(innerHtmlWrites.length, 0);
+""")
+
+
+def test_every_error_code_is_shown_as_its_message(tmp_path):
+    _run_page_js(tmp_path, r"""
+  const TICK = 'Tick the box to send your CV to Google Gemini, then click ';
+  // rewrite (AI Review CV button)
+  const rewriteCases = [
+    ['consent_required', TICK + 'AI Review CV again.'],
+    ['cv_too_long_for_ai_review', 'Your CV is longer than 15,000 characters, so AI review cannot run on it.'],
+    ['stale', STALE], ['busy', BUSY],
+    ['No master CV on profile. Upload your CV on the Profile page first.',
+     'No master CV on profile. Upload your CV on the Profile page first.'],
+  ];
+  for (const [code, message] of rewriteCases) {
+    nextResponse = respond(false, {ok: false, error: code});
+    click(); await flush();
+    assert.strictEqual(resultDiv.children.length, 1);
+    assert.strictEqual(resultDiv.children[0].textContent, message);
+  }
+
+  // revise (button inside the result)
+  const reviseCases = [
+    ['consent_required', TICK + 'Revise once with findings again.'],
+    ['inputs_changed', 'Your CV or profile changed since this review. Run AI Review CV again.'],
+    ['not_revisable', 'This rewrite cannot be revised again.'],
+    ['stale', STALE], ['busy', BUSY],
+    ['writer_failed', 'Revise failed: writer_failed'],
+  ];
+  for (const [code, message] of reviseCases) {
+    await load(withFindings('BLOCKED'));
+    nextResponse = respond(false, {ok: false, error: code});
+    findButton('Revise once with findings').listeners.click();
+    await flush();
+    assert(pageText().includes(message), code + ': ' + pageText());
+  }
+  // a retryable error keeps the result and its revise button; an out-of-date one replaces it
+  await load(withFindings('BLOCKED'));
+  nextResponse = respond(false, {ok: false, error: 'consent_required'});
+  findButton('Revise once with findings').listeners.click(); await flush();
+  assert(findButton('Revise once with findings') && pageText().includes('Summary'));
+  nextResponse = respond(false, {ok: false, error: 'stale'});
+  findButton('Revise once with findings').listeners.click(); await flush();
+  assert(!findButton('Revise once with findings') && !pageText().includes('Summary'));
+
+  // approve
+  const approveCases = [
+    ['stale', STALE], ['busy', BUSY],
+    ['bad_request', 'Approve failed: bad_request'],
+    ['', 'Approve failed: Error'],
+  ];
+  for (const [code, message] of approveCases) {
+    await load(withFindings('NEEDS_EDIT'));
+    nextResponse = respond(false, {ok: false, error: code});
+    const approve = findButton('Approve this rewrite');
+    approve.listeners.click();
+    assert.strictEqual(approve.disabled, true);
+    await flush();
+    assert(pageText().includes(message), code + ': ' + pageText());
+    assert.strictEqual(approve.disabled, false, 'the button works again after a failure');
+  }
+  await load(withFindings('NEEDS_EDIT'));
+  global.fetch = () => Promise.reject(new Error('offline'));
+  findButton('Approve this rewrite').listeners.click(); await flush();
+  assert(pageText().includes('Approve failed: offline'));
+  assert(findButton('Approve this rewrite'));
+
+  // network error on a rewrite
+  click(); await flush();
+  assert.strictEqual(resultDiv.children[0].textContent, 'Request failed: offline');
+  assert.strictEqual(innerHtmlWrites.length, 0);
+""")
+
+
+def test_server_text_appears_only_as_text_and_never_writes_inner_html(tmp_path):
+    _run_page_js(tmp_path, r"""
+  const evil = withFindings('BLOCKED', {
+    reviewed_cv: BAD + '\nPrepared reports', changes: [BAD], saved_path: BAD, model_used: BAD,
+    review: {verdict: 'BLOCKED', reviewer_model: BAD,
+      items: [Object.assign({}, ITEM, {text: BAD, reason: BAD, removed: [BAD]})],
+      l0_findings: [Object.assign({}, L0_OPEN, {detail: BAD})]}});
+  await load(evil);
+  const holders = all(resultDiv).filter(n => n._text.includes(BAD));
+  // statement, reason, removed line, change entry, rewrite line, saved path, L0 detail, model
+  assert(holders.length >= 8, 'found ' + holders.length);
+  assert(all(resultDiv).every(n => !['img', 'script', 'iframe'].includes(n.tag)));
+  assert(holders.every(n => !n.tag.startsWith('<')));
+  const flagged = all(resultDiv).filter(n => n.className.includes('ai-cv-flagged'));
+  assert(flagged.some(n => domText(n) === '⚑ ' + BAD), 'a rewrite line equal to a statement is flagged');
+
+  // error text, from the server and from the network, on every path
+  nextResponse = respond(false, {ok: false, error: BAD});
+  click(); await flush();
+  assert.strictEqual(resultDiv.children[0].textContent, BAD);
+  await load(evil);
+  nextResponse = respond(false, {ok: false, error: BAD});
+  findButton('Revise once with findings').listeners.click(); await flush();
+  assert(pageText().includes('Revise failed: ' + BAD));
+  nextResponse = respond(false, {ok: false, error: BAD});
+  findButton('Approve this rewrite').listeners.click(); await flush();
+  assert(pageText().includes('Approve failed: ' + BAD));
+  global.fetch = () => Promise.reject(new Error(BAD));
+  click(); await flush();
+  assert.strictEqual(resultDiv.children[0].textContent, 'Request failed: ' + BAD);
+  assert(all(resultDiv).every(n => n.tag !== 'img'));
+  assert.strictEqual(innerHtmlWrites.length, 0, 'the AI review flow never writes innerHTML');
+""")

@@ -468,9 +468,17 @@ def _review_blocks(text: str):
                 not lines[i - 1].strip() and i >= 2 and i - 2 in roles))):
             current = next(role_blocks)
         if (current is not None and is_date_line(line) and i + 1 < len(lines)
-                and _role_candidate(lines[i + 1]) and not is_date_line(lines[i + 1])):
+                and _role_candidate(lines[i + 1]) and not is_date_line(lines[i + 1])
+                and (i + 1) not in roles):
+            # A line that is itself a role line is checked exactly by L0-3.
             adjacent[current] = lines[i + 1]
     return blocks, adjacent
+
+
+def _has_line(lines, line: str) -> bool:
+    """True when ``line`` equals one of ``lines`` once both are stripped and normalised."""
+    target = normalize(line.strip())
+    return any(normalize(other.strip()) == target for other in lines)
 
 
 def select_review_items(original_cv: str, rewrite: str) -> list[dict]:
@@ -481,7 +489,7 @@ def select_review_items(original_cv: str, rewrite: str) -> list[dict]:
     for index, (key, statements) in enumerate(original_blocks):
         source = list(statements)
         title = original_adjacent.get(index)
-        if title and title not in source:
+        if title and not _has_line(source, title):
             source.insert(0, title)
         originals.setdefault(key, []).append((statements, source))
     items = []
@@ -491,7 +499,7 @@ def select_review_items(original_cv: str, rewrite: str) -> list[dict]:
         before, source = pairs.pop(0) if pairs else ([], [])
         statements = list(statements)
         title = adjacent.get(index)
-        if title and _canonical_role(title) not in original_titles and title not in statements:
+        if title and _canonical_role(title) not in original_titles and not _has_line(statements, title):
             statements.insert(0, title)
         if Counter(map(normalize, before)) == Counter(map(normalize, statements)):
             continue
@@ -601,13 +609,15 @@ def run_blind_review(original_cv, evidence, context, job_skills, writer_result,
             raw = raw.strip()
             if raw.startswith('```'):
                 raw = raw[3:]
-                if '\n' in raw:
-                    raw = raw.split('\n', 1)[1]
-                else:
-                    tag_end = 0
-                    while tag_end < len(raw) and (raw[tag_end].isascii() and (raw[tag_end].isalnum() or raw[tag_end] in '_+.-')):
-                        tag_end += 1
+                tag_end = 0
+                while tag_end < len(raw) and raw[tag_end].isascii() and (
+                        raw[tag_end].isalnum() or raw[tag_end] in '_+.- '):
+                    tag_end += 1
+                if tag_end < len(raw) and raw[tag_end] in '{[':
                     raw = raw[tag_end:]
+                else:
+                    newline = raw.find('\n')
+                    raw = raw[newline + 1:] if newline >= 0 else raw[tag_end:]
                 raw = raw.strip()
                 if raw.endswith('```'):
                     raw = raw[:-3]

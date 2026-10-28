@@ -436,6 +436,26 @@ The function docstring says it rewrites. INDEX.md mentions are updated with the 
     job ids are system-generated, so normal flows cannot reach it).
   - The reviewer-reply fence parser drops any language tag after the opening fence,
     as before C2, and also accepts the one-line forms.
+- C3b build notes (2026-10-28):
+  - Found by the C4 eval: in the "Company / Dates / Title" layout the title line is
+    also a possible heading, so it was a block key and never reached Layer 1. An
+    invented title there ("Analyst" -> "Director") ended NEEDS_EDIT, not BLOCKED.
+    Now a rewrite line that is role-adjacent and is not among the original's
+    role-adjacent lines is also sent as one review item, a role item of the role
+    block above it. This meets AC3's "plus a Layer 1 item" and Mike's rule "new
+    employer or title → BLOCKED". A line that is itself a role line (for example the
+    next role's "Title | Company" line, once the role above lost all its bullets) is
+    not sent this way: L0-3 checks role lines exactly.
+  - Approve response: `{"ok": true, "verdict", "approval"}`. A malformed body → 400
+    `bad_request`.
+  - Revise: the writer gets the findings in one `<<<FLAGGED>>>` block, one
+    `- {statement} | reason: {reason}` line each.
+  - The fence parser keeps JSON that starts on the fence line; otherwise it drops
+    the whole first line (any tag).
+- C4 label note: case 04 (bullet moved to another employer) was relabelled after
+  its first run, with the reason recorded in the case file. Removing the only
+  bullet under a role makes the next role line role-adjacent, which is L0-3 MAJOR
+  by the rules above.
 
 ### S4 Eval set and script
 - tests/fixtures/cv_review_eval/ (new folder): 15 synthetic cases, some with

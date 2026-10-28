@@ -15,6 +15,9 @@ from src.job_hunt_config import TailoringPolicy
 from src.job_hunt_tailoring import load_latest_tailored_cv
 
 
+_REAL_REWRITE = llm.ai_rewrite_cv
+_REAL_REASONING = llm._call_gemini_reasoning
+
 @pytest.fixture(autouse=True)
 def no_gemini(monkeypatch):
     def forbidden(*a, **kw):
@@ -75,7 +78,11 @@ def test_approve_any_verdict_changes_only_approval(env, verdict):
     rec = record_for(env.profile, env.md.read_text(), verdict)
     env.record = rec; review.write_review_record(env.out, 'job-1', rec)
     before = env.md.read_bytes()
-    assert call(env, 'approve', approve_body(env)) == ({'ok': True}, HTTPStatus.OK)
+    payload, status = call(env, 'approve', approve_body(env))
+    assert (payload, status) == ({'ok': True, 'verdict': verdict, 'approval': {
+        'approved_at': payload['approval']['approved_at'],
+        'generation_id': rec['generation_id'],
+        'rewrite_sha256': rec['binding']['rewrite_sha256']}}, HTTPStatus.OK)
     updated = review.read_review_record(env.out, 'job-1')
     approval = updated.pop('approval'); expected = deepcopy(rec); expected.pop('approval')
     assert updated == expected and env.md.read_bytes() == before
@@ -348,3 +355,151 @@ def test_revise_includes_blockers_and_excludes_cleared_major(env):
     assert env.writer.call_args.kwargs['revision_findings'] == [
         {'statement':'999','reason':'L0-1: new number'},
         {'statement':'Old flagged sentence.','reason':'ROUND_ZERO_SENTINEL'}]
+
+
+@pytest.mark.parametrize('opening', ['```{\n', '```json {\n'])
+def test_multiline_json_on_fence_opening_preserved(opening):
+    raw = opening + '"results":[{"id":"s-0","verdict":"UNSUPPORTED","reason":"test"}]}\n```'
+    result = review.run_blind_review('Summary', 'Summary', '', [],
+        {'reviewed_cv': 'Summary\n- New fact.'}, 'writer', transport=lambda _: raw)
+    assert result['items'][0]['verdict'] == 'UNSUPPORTED'
+
+
+def test_indented_rephrased_role_adjacent_responsibility_selected_once():
+    original = 'Experience\nAnalyst\nExample Ltd\n2020 - 2024\n  Led the weekly planning meeting\n- Prepared reports.'
+    rewrite = original.replace('Led the weekly planning meeting', 'Ran the weekly planning meeting')
+    items = review.select_review_items(original, rewrite)
+    assert sum(item['text'].strip() == 'Ran the weekly planning meeting' for item in items) == 1
+    matching = next(item for item in items if item['text'].strip() == 'Ran the weekly planning meeting')
+    assert sum(line.strip() == 'Led the weekly planning meeting' for line in matching['original_block']) == 1
+
+
+@pytest.mark.parametrize('status,expected', [('SUPPORTED', 'PASS'), ('EXAGGERATED', 'NEEDS_EDIT')])
+def test_rewrite_handler_links_and_clears_real_skill_gate(env, monkeypatch, status, expected):
+    original = 'Summary\n- Gathered needs from business users.'
+    env.profile.master_cv_text = original
+    job = NS(required_skills=['Requirements gathering'], preferred_skills=[])
+    monkeypatch.setattr(handlers, 'load_reviewed_job', lambda *a: job)
+    env.writer.return_value = ({'reviewed_cv': 'Summary\n- Requirements gathering from business users.', 'changes': []}, None, 'writer')
+    monkeypatch.setattr(llm, '_api_key', lambda: 'synthetic-key')
+    monkeypatch.setattr(llm, '_call_gemini_model', lambda *a, **kw: (json.dumps({'results': [dict(
+        id='s-0', verdict=status, reason='grounded', evidence_quote='Gathered needs from business users.')]}), None, None, None))
+    responder = NS(send_json=Mock())
+    handlers.handle_ai_review_cv(NS(json_body={'use_cloud': True}), env.config, responder, 'job-1')
+    payload = responder.send_json.call_args.args[0]
+    assert payload['ok'] and payload['review']['verdict'] == expected
+    skill = next(f for f in payload['review']['l0_findings'] if f['rule'] == 'L0-4')
+    assert skill['cleared_by'] == ('s-0' if status == 'SUPPORTED' else None)
+    assert payload['revise_round'] == 0 and payload['approval'] is None
+    assert payload['generation_id'] and len(payload['rewrite_sha256']) == 64
+    assert 'removed' in payload['review']['items'][0]
+    assert not review.AI_REVIEW_LOCK.locked()
+
+
+def test_revise_real_writer_keeps_round_zero_metadata_out_of_reviewer(env, monkeypatch):
+    sentinels = ['ROUND0_STATEMENT_SENTINEL', 'ROUND0_REASON_SENTINEL', 'ROUND0_L0_DETAIL_SENTINEL']
+    rec = env.record
+    rec['items'][0]['text'], rec['items'][0]['reason'] = sentinels[:2]
+    rec['l0_findings'] = [dict(layer=0, rule='L0-3', text='Old title', severity='MAJOR',
+        detail=sentinels[2], item_id=None, cleared_by=None)]
+    rec['approval'] = dict(approved_at='2026-10-27T13:00:00+00:00', generation_id=rec['generation_id'],
+                           rewrite_sha256=rec['binding']['rewrite_sha256'])
+    review.write_review_record(env.out, 'job-1', rec)
+    job = NS(required_skills=['Reporting'], preferred_skills=['Analysis'])
+    skills_before = deepcopy(vars(job))
+    monkeypatch.setattr(handlers, 'load_reviewed_job', lambda *a: job)
+    monkeypatch.setattr(llm, 'ai_rewrite_cv', _REAL_REWRITE)
+    monkeypatch.setattr(llm, '_call_gemini_reasoning', _REAL_REASONING)
+    monkeypatch.setattr(llm, '_api_key', lambda: 'synthetic-key')
+    prompts = {}
+    def transport(prompt, model, key, **kw):
+        prompts[model] = prompt
+        if model == review.REVIEWER_MODEL:
+            body = {'results': [dict(id='s-0', verdict='SUPPORTED', reason='grounded',
+                                     evidence_quote='Prepared useful reports.')]}
+        else:
+            body = {'reviewed_cv': 'Summary\n- Clearly prepared useful reports.', 'changes': ['WRITER_CHANGE_SENTINEL']}
+        return json.dumps(body), None, None, None
+    monkeypatch.setattr(llm, '_call_gemini_model', transport)
+    payload, status = call(env, 'revise', dict(use_cloud=True, generation_id=rec['generation_id']))
+    assert status == 200 and payload['ok']
+    assert set(prompts) == {llm._ANALYSIS_MODEL, review.REVIEWER_MODEL}
+    assert all(s in prompts[llm._ANALYSIS_MODEL] and s not in prompts[review.REVIEWER_MODEL] for s in sentinels)
+    assert 'WRITER_CHANGE_SENTINEL' not in prompts[review.REVIEWER_MODEL]
+    assert vars(job) == skills_before
+    assert 'JOB_SKILLS context only\n["Reporting", "Analysis"]\n' in prompts[review.REVIEWER_MODEL]
+    assert payload['revise_round'] == 1 and payload['approval'] is None
+    assert payload['review'] and payload['generation_id'] != rec['generation_id']
+    assert len(payload['rewrite_sha256']) == 64 and not review.AI_REVIEW_LOCK.locked()
+    updated = review.read_review_record(env.out, 'job-1')
+    assert updated['approval'] is None and updated['generation_id'] == payload['generation_id']
+
+
+@pytest.mark.parametrize('verdict', ['BLOCKED', 'NEEDS_EDIT', 'UNCHECKED'])
+def test_approve_enables_real_loader_with_relative_profile_source(env, monkeypatch, tmp_path, verdict):
+    original = env.profile.master_cv_text
+    body = env.md.read_text()
+    rec = record_for(env.profile, body, verdict)
+    env.record = rec
+    review.write_review_record(env.out, 'job-1', rec)
+    env.md.write_text('<!-- profile_id: synthetic -->\n' + body)
+    master = env.config.profile_path.parent / 'master.txt'; master.write_text(original)
+    env.profile.master_cv_text = None; env.profile.master_cv_ref = 'master.txt'
+    elsewhere = tmp_path / 'different-cwd'; elsewhere.mkdir(); monkeypatch.chdir(elsewhere)
+    ordinary = env.out / 'job-1.md'; ordinary.write_text('<!-- profile_id: synthetic -->\nOrdinary CV')
+    kwargs = dict(expected_profile_id='synthetic', profile=env.profile,
+                  base_dir=env.config.profile_path.parent, policy=TailoringPolicy(output_dir=env.out))
+    assert load_latest_tailored_cv('job-1', **kwargs) == 'Ordinary CV'
+    before = env.md.read_bytes()
+    payload, status = call(env, 'approve', approve_body(env))
+    assert status == 200 and payload['verdict'] == verdict
+    assert load_latest_tailored_cv('job-1', **kwargs) == body
+    updated = review.read_review_record(env.out, 'job-1')
+    assert {k: v for k, v in updated.items() if k != 'approval'} == {k: v for k, v in rec.items() if k != 'approval'}
+    assert env.md.read_bytes() == before
+
+
+def test_export_handler_real_pass_bundle_uses_relative_master_from_other_cwd(env, monkeypatch, tmp_path):
+    import zipfile
+    from src import job_hunt_export as export
+    from src.job_hunt_models import JobPosting
+    body = env.md.read_text()
+    review.write_review_record(env.out, 'job-1', record_for(env.profile, body, 'PASS'))
+    env.md.write_text('<!-- profile_id: synthetic -->\n' + body)
+    (env.config.profile_path.parent / 'master.txt').write_text(env.profile.master_cv_text)
+    env.profile.master_cv_text = None; env.profile.master_cv_ref = 'master.txt'
+    elsewhere = tmp_path / 'export-cwd'; elsewhere.mkdir(); monkeypatch.chdir(elsewhere)
+    job = JobPosting(job_id='job-1', job_title='Analyst', company='Synthetic', description_raw='Synthetic',
+        source_type='copied_text', source_ref='synthetic', location='London', work_mode=None,
+        employment_type=None, required_skills=[])
+    monkeypatch.setattr(export, 'load_reviewed_job', lambda *a: job)
+    monkeypatch.setattr(export, 'load_cover_letter', lambda *a, **kw: None)
+    def missing(*a): raise FileNotFoundError('synthetic')
+    monkeypatch.setattr(export, 'load_job_analysis', missing)
+    real_package = export.build_package
+    seen = {}
+    def package(*args, **kwargs):
+        seen.update(kwargs)
+        return real_package(*args, **kwargs, policy=TailoringPolicy(output_dir=env.out))
+    monkeypatch.setattr(export, 'build_package', package)
+    responder = NS(send_json=Mock(), send_bytes=Mock())
+    handlers.handle_job_export(NS(), env.config, responder, 'job-1')
+    responder.send_json.assert_not_called()
+    status, data, mime, headers = responder.send_bytes.call_args.args
+    assert status == 200 and mime == 'application/zip'
+    assert seen['base_dir'] == env.config.profile_path.parent
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        assert archive.read(export.ENTRY_CV).decode().strip() == body
+
+
+def test_original_rewrite_route_still_dispatches(env, monkeypatch):
+    from email.message import Message
+    target = Mock(); monkeypatch.setattr(ui_routes, 'handle_ai_review_cv', target)
+    request = object.__new__(ui_routes._build_handler(env.config))
+    request.path = '/job/job-1/ai-review-cv'; request.command = 'POST'
+    request.server = NS(server_address=('127.0.0.1', 9000)); request.headers = Message()
+    for key, value in {'Host': 'localhost:9000', 'Origin': 'http://localhost:9000',
+                       'Content-Type': 'application/json', 'Content-Length': '2'}.items():
+        request.headers[key] = value
+    request.rfile = io.BytesIO(b'{}'); request._do_POST_inner()
+    assert target.call_args.args[-1] == 'job-1'

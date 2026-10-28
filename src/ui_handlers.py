@@ -1732,7 +1732,8 @@ def handle_ai_review_cv_approve(req, config, responder, job_id):
                               "generation_id": record["generation_id"],
                               "rewrite_sha256": record["binding"]["rewrite_sha256"]}
         write_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id, record)
-        responder.send_json({"ok": True})
+        responder.send_json({"ok": True, "verdict": record["verdict"],
+                             "approval": record["approval"]})
     finally:
         AI_REVIEW_LOCK.release()
 
@@ -1802,6 +1803,8 @@ def _run_ai_cv_generation(config, responder, job_id, profile, cv_text, job, anal
                    "items": review['items'], "reviewer_model": review['reviewer_model']},
         "generation_id": generation_id,
         "rewrite_sha256": binding['rewrite_sha256'],
+        "revise_round": revise_round,
+        "approval": None,
     })
 
 
