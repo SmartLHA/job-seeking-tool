@@ -1,5 +1,14 @@
 # Job Seeking Tool — Project TODO
 
+## AI CV blind review — 2026-10-28
+
+**Status:** ✅ Built 2026-10-28 (C0-C4, commits `231a329` (spec), `10325b2` (C0 consent), `110acba` (rename), `9467fc4` (Layer 0), `762961d` (blind reviewer), `e9812fc` (C3a record and loader gate), `ab3fabc` (C3b approve/revise), `98629a1` (C4 eval set), `a2fdc59` (C3c page UI)) — spec `docs/tasks/2026-10-26-ai-cv-blind-review-spec.md`. Not fully done: the live trial below has not run.
+
+**Test bar:** on the WORKING TREE (which also holds other people's uncommitted edits and untracked tests) the full suite gave 46 failed, 2715 passed, 20 skipped, and the failure ids are identical to the known baseline (`archive/cv-review/baseline-failures-2026-10-26.txt`, local file, not in git). A clean `git archive HEAD` (`a2fdc59`) gave 50 failed, 2409 passed, 16 skipped: the 46 baseline ids plus 4 `tests/test_market_position_route.py` route tests that already fail on clean HEAD and are fixed only by other people's uncommitted edits (not related to this feature). Zero new failures from this feature in either run.
+
+- ⬜ Pending: Live trial of the AI CV blind reviewer: run `scripts/cv_review_eval.py --use-cloud` on the 15 synthetic case files (19 cases with variants), then one real job from the page (Mike's consent on each run; stop conditions in the spec "Live trial").
+- ⬜ Pending: Merge the fix for the 46 baseline test failures: branch `claude/recursing-keller-c507e3`, tip `03ab716`, which holds two commits, `957b700` (message: "fix 49 pre-existing full-suite failures (test-only, no src change)") and `03ab716` (triage contract test). `957b700` alone leaves `test_multiselect_triage_contract` failing, so merge the tip, not `957b700`. Whether the branch fixes exactly the 46 baseline ids is UNVERIFIED.
+
 ## P2 remediation — 2026-10-25
 
 - **Status:** ✅ Implementation completed for P2-01–P2-13; synthetic checks are recorded separately below. Qualification remains PARTIAL.
@@ -15,7 +24,7 @@
 
 ---
 
-**Last updated:** 2026-10-25 — P2 documentation reconciliation; implementation and qualification limits above. Prior: 2026-10-13 — test isolation: the test suite no longer writes real files in `data/raw/` and `output/` (see PROJECT_LOG 2026-10-13). Prior: 2026-10-04 — audit fixes F1-F4 (see "Audit fixes 2026-09-20" below).
+**Last updated:** 2026-10-28 — AI CV blind review built, live trial pending (see PROJECT_LOG 2026-10-28 and "AI CV blind review" above). Prior: 2026-10-25 — P2 documentation reconciliation; implementation and qualification limits above. Prior: 2026-10-13 — test isolation: the test suite no longer writes real files in `data/raw/` and `output/` (see PROJECT_LOG 2026-10-13). Prior: 2026-10-04 — audit fixes F1-F4 (see "Audit fixes 2026-09-20" below).
 
 ## Audit repairs — implementation and remaining verification
 

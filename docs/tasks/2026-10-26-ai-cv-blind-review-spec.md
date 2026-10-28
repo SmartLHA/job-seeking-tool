@@ -5,7 +5,42 @@ Design review: Gemini pre-check + Codex rounds 1-2 (both NOT READY; HIGH finding
 addressed in r2/r3); Codex round 3 not run (Codex usage limit); Gemini final comment
 NONE on all 8 categories; verifier pass on r3 (0 BLOCKER, 6 MAJOR) fixed in r3.1;
 verifier re-check of r3.1 (all 18 resolved, 9 MINOR) fixed in r3.2 — the r3.2
-wording edits have not had a further verifier pass. -->
+wording edits have not had a further verifier pass.
+
+Implementation status: ⚠️ built C0-C4; each chunk independently verified; live trial
+pending (Mike's consent per run). Date 2026-10-28, branch feat/cv-blind-review-2026-10-26.
+Commits: 231a329 (spec), 10325b2 (C0 consent), 110acba (rename), 9467fc4 (Layer 0), 762961d (C2 blind reviewer), e9812fc (C3a record and
+loader gate), ab3fabc (C3b approve/revise), 98629a1 (C4 eval set), a2fdc59 (C3c page UI).
+Test bar (AC17 as amended), two full-suite runs. On the WORKING TREE, which also holds
+other people's uncommitted edits and untracked tests: 46 failed, 2715 passed, 20 skipped;
+the sorted failure ids are identical to archive/cv-review/baseline-failures-2026-10-26.txt
+(local file, not in git). On a clean git archive of HEAD (a2fdc59): 50 failed, 2409 passed,
+16 skipped; those 50 are the 46 baseline ids plus 4 tests/test_market_position_route.py
+route tests that already fail on clean HEAD and are fixed only by other people's
+uncommitted edits (not related to this feature). Zero new failures from this feature in
+either run.
+Live trial pending (Mike's consent per run): not run yet; see "Live trial" below.
+Key functions: ui_handlers.handle_ai_review_cv, handle_ai_review_cv_approve,
+handle_ai_review_cv_revise; job_hunt_llm.ai_rewrite_cv (renamed from
+ai_review_cv_with_llm); job_hunt_cv_review.run_layer0, select_review_items,
+build_review_prompt, run_blind_review, overall_verdict, link_and_clear, read_review_record,
+write_review_record, compute_binding; job_hunt_tailoring.load_latest_tailored_cv
+(profile=, base_dir=); job_hunt_export.build_package (base_dir=);
+scripts/cv_review_eval.py with tests/fixtures/cv_review_eval/ (15 case files, 4 variants).
+Routes: POST /job/{id}/ai-review-cv (needs {"use_cloud": true}), POST
+/job/{id}/ai-review-cv/approve, POST /job/{id}/ai-review-cv/revise.
+Divergences from the approved text (all recorded in the build notes below): C1 refinements
+r3.3 and the accepted residual false BLOCKERs (S1); C2 build notes (S2); C3a: the binding
+also carries job_id, writer line endings are normalised, a job id ending in _ai_reviewed
+never loads another job's AI file; C3b: a role-adjacent line that is new in the rewrite is
+sent as a review item, so an invented title in the "Company / Dates / Title" layout can
+reach BLOCKED; the approve response shape and the <<<FLAGGED>>> block for revise; C4: case
+04 was relabelled after its first run (see "C4 label note" in S3); S4: the script writes
+ONE report file per run (case-level section, plus the item-level section only with
+--use-cloud), not two separate reports. The existing-test edits
+listed in Q-E were applied, including its two assertion changes in tests/test_f1_recheck.py
+(empty AI file without a record now falls back; the loader call gains profile= and
+base_dir=). -->
 # AI CV rewrite — consent gate and blind second reviewer (spec, 2026-10-26)
 
 ## Goal
@@ -573,7 +608,8 @@ verifier that re-runs the tests and pastes the summary line.
     Amended 2026-10-26: the baseline had 46 failures, which also fail on a clean
     checkout of 5ab6fc7. Mike: "Yes. Build C0 now. Test bar until the suite is fixed:
     the same 46 known failures before and after, zero new failures, and all new
-    tests pass." The list is in archive/cv-review/baseline-failures-2026-10-26.txt.
+    tests pass." The list is in archive/cv-review/baseline-failures-2026-10-26.txt
+    (local file, not in git).
     The fix is in a separate session's branch. `git diff` of pre-existing test files shows only
     the allowed edits (Hard constraints) plus those Mike approved under Q-E.
 18. Fixtures are synthetic. The verifier greps the new fixtures and tests for the
@@ -630,6 +666,9 @@ on the reviewer.
 - Making the reviewer injection-proof. The design reduces the risk; it cannot remove
   it while the reviewer must read the rewrite.
 - Fencing all Gemini calls in tests/conftest.py (recommended as a separate change).
-- Doc errors found while scouting, to fix at the docs update: INDEX.md:174 says the
-  cover-letter tests patch Gemini (they do not); explain-check has no Feature Map row;
-  tests/test_llm_wrappers_uncovered.py:4 says "L442" (now :470).
+- Doc errors found while scouting, to fix at the docs update:
+  - INDEX.md:174 says the cover-letter tests patch Gemini (they do not) — FIXED
+    2026-10-28 (the INDEX row now says they patch `generate_cover_letter`).
+  - explain-check has no Feature Map row — STILL OPEN, outside this feature.
+  - tests/test_llm_wrappers_uncovered.py:4 says "L442" (now :470) — FIXED in the
+    rename commit 110acba (the docstring now says L470).
