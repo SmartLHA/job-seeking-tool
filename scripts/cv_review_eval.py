@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT))
 from src.job_hunt_cv_review import (run_layer0, run_blind_review, select_review_items,
                                     link_and_clear, overall_verdict, item_statuses, build_review_source)
 from src.job_hunt_models import CandidateProfile, Skill
+from src import job_hunt_llm
 
 WARNING = 'Fifteen cases are a smoke check, not proof of reliability.'
 CLASSES = ('SUPPORTED', 'EXAGGERATED', 'UNSUPPORTED', 'UNCHECKED')
@@ -112,6 +113,17 @@ def main(argv=None):
     parser.add_argument('--cases', type=Path, default=ROOT / 'tests/fixtures/cv_review_eval')
     parser.add_argument('--out-dir', type=Path, default=ROOT / 'archive/cv-review-eval')
     args = parser.parse_args(argv)
+    if args.use_cloud:
+        # Same form as src/ui_routes.py main(), with the explicit project path.
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(ROOT / '.env')
+        except ImportError:
+            pass  # python-dotenv not installed; env vars must be set externally
+        if not job_hunt_llm._api_key():
+            print('error: no Gemini API key found (set GOOGLE_API_KEY or GEMINI_API_KEY '
+                  'in the project .env or the environment); no report written', file=sys.stderr)
+            return 2
     rows, report = run(load_cases(args.cases), dry_run=args.dry_run, out_dir=args.out_dir)
     print(WARNING)
     for row in rows:

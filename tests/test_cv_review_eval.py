@@ -84,3 +84,77 @@ def test_no_contact_patterns():
         text = file.read_text()
         assert not email.search(text), file.name
         assert not phone.search(text), file.name
+
+
+# --- C4 fix F1-F3: --use-cloud loads the project .env and fails fast without a key ---
+
+FAKE_KEY = 'fake-key-for-tests'
+
+
+@pytest.fixture
+def fake_dotenv(monkeypatch):
+    """Stand-in dotenv module: records calls, never reads a real .env file."""
+    import sys
+    import types
+    calls = []
+    module = types.ModuleType('dotenv')
+    module.load_dotenv = lambda *args, **kwargs: calls.append((args, kwargs))
+    monkeypatch.setitem(sys.modules, 'dotenv', module)
+    return calls
+
+
+@pytest.fixture
+def stub_run(monkeypatch, tmp_path):
+    """Replace ev.run so main() never reaches the reviewer; records the dry_run flag."""
+    seen = []
+    def fake_run(cases, *, dry_run, out_dir, transport=None):
+        seen.append(dry_run)
+        return [], tmp_path / 'stub-report.md'
+    monkeypatch.setattr(ev, 'run', fake_run)
+    return seen
+
+
+def test_use_cloud_loads_project_env(monkeypatch, fake_dotenv, stub_run, tmp_path, capsys):
+    monkeypatch.setattr(job_hunt_llm, '_api_key', lambda: FAKE_KEY)
+    rc = ev.main(['--use-cloud', '--cases', str(CASES), '--out-dir', str(tmp_path / 'out')])
+    assert rc == 0
+    assert fake_dotenv == [((ev.ROOT / '.env',), {})]
+    assert stub_run == [False]
+    captured = capsys.readouterr()
+    assert FAKE_KEY not in captured.out + captured.err
+
+
+def test_dry_run_does_not_load_env(monkeypatch, fake_dotenv, stub_run, tmp_path):
+    def forbidden():
+        pytest.fail('Dry run looked up the API key')
+    monkeypatch.setattr(job_hunt_llm, '_api_key', forbidden)
+    rc = ev.main(['--dry-run', '--cases', str(CASES), '--out-dir', str(tmp_path / 'out')])
+    assert rc == 0
+    assert fake_dotenv == []
+    assert stub_run == [True]
+
+
+def test_use_cloud_without_key_fails_fast(monkeypatch, fake_dotenv, stub_run, tmp_path, capsys):
+    monkeypatch.setattr(job_hunt_llm, '_api_key', lambda: None)
+    out_dir = tmp_path / 'out'
+    rc = ev.main(['--use-cloud', '--cases', str(CASES), '--out-dir', str(out_dir)])
+    assert rc != 0
+    assert fake_dotenv == [((ev.ROOT / '.env',), {})]
+    assert stub_run == []
+    assert not out_dir.exists()
+    captured = capsys.readouterr()
+    assert captured.out == ''
+    lines = captured.err.strip().splitlines()
+    assert len(lines) == 1
+    assert 'GOOGLE_API_KEY' in lines[0] and 'GEMINI_API_KEY' in lines[0]
+
+
+def test_use_cloud_tolerates_missing_dotenv_package(monkeypatch, stub_run, tmp_path, capsys):
+    import sys
+    monkeypatch.setitem(sys.modules, 'dotenv', None)  # makes `from dotenv import ...` raise ImportError
+    monkeypatch.setattr(job_hunt_llm, '_api_key', lambda: FAKE_KEY)
+    assert ev.main(['--use-cloud', '--cases', str(CASES), '--out-dir', str(tmp_path / 'out')]) == 0
+    assert stub_run == [False]
+    monkeypatch.setattr(job_hunt_llm, '_api_key', lambda: None)
+    assert ev.main(['--use-cloud', '--cases', str(CASES), '--out-dir', str(tmp_path / 'out')]) != 0
+    assert stub_run == [False]

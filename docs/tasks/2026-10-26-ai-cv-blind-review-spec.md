@@ -615,12 +615,58 @@ verifier that re-runs the tests and pastes the summary line.
 18. Fixtures are synthetic. The verifier greps the new fixtures and tests for the
     profile owner's name and for email and phone patterns.
 
+## C4 fix: eval script loads the API key (2026-10-28)
+The first live run (archive/cv-review-eval/report-2026-10-28-132636.md) came back
+UNCHECKED on every Layer 1 item. `scripts/cv_review_eval.py` never loads `.env`, so
+`job_hunt_llm._api_key()` returned nothing and the reviewer failed closed (`no_key`).
+The UI server loads it with `load_dotenv()` (src/ui_routes.py:169-172).
+Acceptance:
+- F1. With `--use-cloud`, the script loads the project's `.env` with python-dotenv's
+  `load_dotenv(ROOT / '.env')`, in the same try/except ImportError form as the UI.
+  `--dry-run` does not load it.
+- F2. With `--use-cloud` and still no key after loading, the script prints one clear
+  error line that names the missing key (never a key value), writes no report and
+  exits non-zero, instead of writing an all-UNCHECKED report.
+- F3. Tests cover F1 and F2 with fakes (no network, no real `.env` read).
+- F4. Existing eval tests still pass; full-suite bar unchanged (46 known failures).
+
 ## Live trial (after C4; Mike's consent on each run)
 Run the eval script live on the 15 synthetic cases, then Mike runs one real job from
 the page. Report both reports. Stop condition: if item recall is under 0.8, the
 UNCHECKED rate is over 20%, more than half of the clean statements are flagged, or
 any case-level BLOCKED/NEEDS_EDIT case comes out PASS, report to Mike before relying
 on the reviewer.
+
+### First live attempt (2026-10-28, Mike: "跑 live Gemini trial") — incomplete
+- Reports (local files, not in git): archive/cv-review-eval/report-2026-10-28-132636.md
+  (run 1), -133444.md (run 2), -134747.md (run 3: a scratch wrapper, not the script,
+  waited 10 s before each call and retried once after 40 s on a 429). A logged
+  diagnostic run between runs 2 and 3 wrote its report to the session scratchpad only.
+- Run 1: no key loaded, so every Layer 1 item was UNCHECKED. Fixed by "C4 fix" above.
+- Runs 2-3 and the diagnostic run: every failed call failed closed as UNCHECKED; no
+  case came out PASS wrongly. Error codes seen (per-call logs exist for the diagnostic
+  run and run 3 only):
+  - Diagnostic run (no pacing): calls 1-7 answered; calls 8-19 got 429.
+  - Run 3: 4 calls answered (one after its retry), 4 got 503 "high demand", 11 still
+    got 429 after the retry.
+  - Run 2: not logged per call; reviewer answers came back for 4 of its 19 cases.
+- After run 3, one direct request to gemini-3.5-flash got a 429 whose body named quota
+  `GenerateRequestsPerDayPerProjectPerModel-FreeTier`, value 20, retry delay 61914 s
+  (seen in this session's tool output; the body was not saved to a file; n=1, not
+  re-checked). On that one reply, this key's free-tier cap is 20 requests per day for
+  gemini-3.5-flash. Whether the earlier
+  429s came from that daily cap or from a per-minute limit, and whether failed attempts
+  count toward the cap, is UNVERIFIED. Answered calls today: at least 7 + 4 + 4 = 15.
+- Stop condition met (UNCHECKED rate 0.78 and 0.74; item recall 0.13 and 0.20). Do not
+  rely on the reviewer until a full run completes.
+- Item verdicts that did come back (n=11 across runs 2-3, clean-rephrase counted in
+  both): 8 matched the label; 2 clean lines were flagged UNSUPPORTED (changed-date
+  "Documented business needs.", employer-bullet-move "Scheduled meetings."); 1 invented
+  number came back EXAGGERATED instead of UNSUPPORTED (its case is BLOCKED by L0-1
+  anyway). Both injected instructions were marked UNSUPPORTED.
+- One eval run needs 19 calls, almost a full day's quota. Every real review uses the
+  same per-model daily quota; whether other app features also call gemini-3.5-flash is
+  UNVERIFIED.
 
 ## Open questions for approval
 - Q-A EVIDENCE/CONTEXT split of the profile facts (deviation above). Approve?
