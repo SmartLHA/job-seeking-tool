@@ -422,3 +422,30 @@ def test_one_line_json_fence(opening, closing):
     result = run_blind_review('Summary', 'Existing source fact.', '', [],
         {'reviewed_cv': 'Summary\n- New fact.'}, 'writer', transport=lambda _: opening + raw + closing)
     assert result['items'][0]['verdict'] == 'SUPPORTED'
+
+
+@pytest.mark.parametrize('verdict,quote', [('UNSUPPORTED', None), ('SUPPORTED', 'External evidence')])
+def test_changed_role_adjacent_heading_is_reviewed_and_blocked(verdict, quote):
+    original = 'Experience\nCedar Works\n2019 - 2022\nAnalyst\n- Documented business needs.'
+    rewrite = original.replace('Analyst', 'Director')
+    selected = select_review_items(original, rewrite)
+    assert sum(item['text'] == 'Director' for item in selected) == 1
+    assert selected[0]['text'] == 'Director'
+    assert selected[0]['block_key'].startswith('role:')
+    items = review(original, rewrite, verdict=verdict, quote=quote,
+                   evidence=original + '\nExternal evidence')
+    assert items[0]['verdict'] == 'UNSUPPORTED'
+    if verdict == 'SUPPORTED':
+        assert items[0]['reason'] == 'quote_outside_role'
+    assert overall_verdict([], item_statuses(items)) == 'BLOCKED'
+    assert not select_review_items(original, original)
+
+
+def test_changed_role_adjacent_heading_counts_toward_cap_in_document_order():
+    original = 'Summary\nExperience\nCedar Works\n2019 - 2022\nAnalyst\n- Documented business needs.'
+    rewrite = original.replace('Summary\n', 'Summary\n' + '\n'.join(
+        f'- New statement {i}.' for i in range(80)) + '\n').replace('Analyst', 'Director')
+    items = select_review_items(original, rewrite)
+    title = next(item for item in items if item['text'] == 'Director')
+    assert title['id'] == 's-80'
+    assert title['limit'] is True

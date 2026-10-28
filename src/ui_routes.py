@@ -63,6 +63,8 @@ from src.ui_handlers import (
     handle_decision_override,
     handle_add_gap_skills,
     handle_ai_review_cv,
+    handle_ai_review_cv_approve,
+    handle_ai_review_cv_revise,
     handle_ats_recheck,
     handle_get_jobs,
     handle_get_board,
@@ -385,6 +387,14 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             add_gap_match = re.match(r"^/job/([^/]+)/add-gap-skills$", parsed.path)
             if add_gap_match:
                 handle_add_gap_skills(req, config, responder, add_gap_match.group(1))
+                return
+            ai_cv_approve_match = re.match(r"^/job/([^/]+)/ai-review-cv/approve$", parsed.path)
+            if ai_cv_approve_match:
+                handle_ai_review_cv_approve(req, config, responder, ai_cv_approve_match.group(1))
+                return
+            ai_cv_revise_match = re.match(r"^/job/([^/]+)/ai-review-cv/revise$", parsed.path)
+            if ai_cv_revise_match:
+                handle_ai_review_cv_revise(req, config, responder, ai_cv_revise_match.group(1))
                 return
             ai_cv_match = re.match(r"^/job/([^/]+)/ai-review-cv$", parsed.path)
             if ai_cv_match:

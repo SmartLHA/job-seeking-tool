@@ -456,15 +456,43 @@ MAX_REVIEW_ITEMS = 80
 _REVIEW_OUTPUT_TOKENS = 32768
 
 
+def _review_blocks(text: str):
+    """Locate role-adjacent titles without changing shared segmentation or keys."""
+    blocks = segment_blocks(text)
+    lines, roles = text.splitlines(), _role_indices(text)
+    adjacent = {}
+    role_blocks = iter(i for i, (key, _) in enumerate(blocks) if key.startswith('role:'))
+    current = None
+    for i, line in enumerate(lines):
+        if i in roles and (i == 0 or (i - 1 not in roles and not (
+                not lines[i - 1].strip() and i >= 2 and i - 2 in roles))):
+            current = next(role_blocks)
+        if (current is not None and is_date_line(line) and i + 1 < len(lines)
+                and _role_candidate(lines[i + 1]) and not is_date_line(lines[i + 1])):
+            adjacent[current] = lines[i + 1]
+    return blocks, adjacent
+
+
 def select_review_items(original_cv: str, rewrite: str) -> list[dict]:
     """Select every statement of changed blocks with removed original context."""
+    original_blocks, original_adjacent = _review_blocks(original_cv)
+    original_titles = role_adjacent_lines(original_cv)
     originals = {}
-    for key, statements in segment_blocks(original_cv):
-        originals.setdefault(key, []).append(statements)
+    for index, (key, statements) in enumerate(original_blocks):
+        source = list(statements)
+        title = original_adjacent.get(index)
+        if title and title not in source:
+            source.insert(0, title)
+        originals.setdefault(key, []).append((statements, source))
     items = []
-    for key, statements in segment_blocks(rewrite):
+    blocks, adjacent = _review_blocks(rewrite)
+    for index, (key, statements) in enumerate(blocks):
         pairs = originals.get(key, [])
-        before = pairs.pop(0) if pairs else []
+        before, source = pairs.pop(0) if pairs else ([], [])
+        statements = list(statements)
+        title = adjacent.get(index)
+        if title and _canonical_role(title) not in original_titles and title not in statements:
+            statements.insert(0, title)
         if Counter(map(normalize, before)) == Counter(map(normalize, statements)):
             continue
         remaining = Counter(map(normalize, statements))
@@ -477,7 +505,7 @@ def select_review_items(original_cv: str, rewrite: str) -> list[dict]:
                 removed.append(statement)
         for statement in statements:
             items.append({'id': f's-{len(items)}', 'block_key': key, 'text': statement,
-                          'removed': list(removed), 'original_block': list(before),
+                          'removed': list(removed), 'original_block': list(source),
                           'limit': len(items) >= MAX_REVIEW_ITEMS})
     return items
 
@@ -573,10 +601,13 @@ def run_blind_review(original_cv, evidence, context, job_skills, writer_result,
             raw = raw.strip()
             if raw.startswith('```'):
                 raw = raw[3:]
-                tag_end = 0
-                while tag_end < len(raw) and (raw[tag_end].isascii() and (raw[tag_end].isalnum() or raw[tag_end] in '_+.-')):
-                    tag_end += 1
-                raw = raw[tag_end:]
+                if '\n' in raw:
+                    raw = raw.split('\n', 1)[1]
+                else:
+                    tag_end = 0
+                    while tag_end < len(raw) and (raw[tag_end].isascii() and (raw[tag_end].isalnum() or raw[tag_end] in '_+.-')):
+                        tag_end += 1
+                    raw = raw[tag_end:]
                 raw = raw.strip()
                 if raw.endswith('```'):
                     raw = raw[:-3]

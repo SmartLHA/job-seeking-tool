@@ -1583,7 +1583,7 @@ def handle_add_gap_skills(req, config, responder, job_id):
     responder.send_json({"ok": True, "added": added, "skipped": skipped})
 
 
-def handle_ai_review_cv(req, config, responder, job_id):
+def handle_ai_review_cv(req, config, responder, job_id, *, _revise=False):
     """POST /job/{id}/ai-review-cv — Gemini lightly rewrites the master CV for this job."""
     from src.job_hunt_llm import _MAX_CV_REVIEW_CHARS, ai_rewrite_cv
 
@@ -1651,61 +1651,158 @@ def handle_ai_review_cv(req, config, responder, job_id):
         responder.send_json({"ok": False, "error": "busy"}, status=HTTPStatus.CONFLICT)
         return
     try:
-        from datetime import datetime, timezone
-        from uuid import uuid4
-        from src.job_hunt_parsing import KNOWN_SKILLS
-
-        evidence, context = build_review_source(profile, cv_text)
-        result, error, model_used = ai_rewrite_cv(cv_text, profile, job, analysis)
-        if (not isinstance(result, dict) or not isinstance(result.get("reviewed_cv"), str)
-                or not result["reviewed_cv"].strip()):
-            responder.send_json({"ok": False, "error": error or "AI CV review failed"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
-            return
-
-        reviewed_cv = result["reviewed_cv"].replace("\r\n", "\n").replace("\r", "\n")
-        writer_result = {**result, "reviewed_cv": reviewed_cv}
-        changes = result["changes"]
-        job_skills = list(getattr(job, 'required_skills', [])) + list(getattr(job, 'preferred_skills', []))
-        findings = run_layer0(cv_text, evidence, context, reviewed_cv, job_skills, KNOWN_SKILLS)
-        review = run_blind_review(cv_text, evidence, context, job_skills, writer_result, model_used)
-        findings = link_and_clear(findings, review['items'])
-        findings = [finding if isinstance(finding, dict) else vars(finding) for finding in findings]
-        verdict = overall_verdict(findings, item_statuses(review['items']))
-        generation_id = uuid4().hex
-        saved_text = (f"<!-- ai_reviewed: true | model: {model_used} | profile_id: {profile.candidate_id} -->\n"
-                      f"{reviewed_cv.strip()}\n")
-        binding = compute_binding(profile, cv_text, evidence, context, canonical_cv_body(saved_text), job_id)
-        record = {
-            'schema_version': 1, 'generation_id': generation_id, 'verdict': verdict,
-            'l0_findings': findings, 'items': review['items'],
-            'reviewer_model': review['reviewer_model'], 'prompt_version': review['prompt_version'],
-            'binding': binding, 'writer_model': model_used or 'unknown',
-            'created_at': datetime.now(timezone.utc).isoformat(), 'revise_round': 0,
-            'approval': None,
-        }
-        try:
-            delete_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id)
-            save_path = write_cv_text(DEFAULT_TAILORING_POLICY.output_dir,
-                                      f"{job_id}_ai_reviewed.md", saved_text)
-            write_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id, record)
-            logger.info("AI-reviewed CV saved to %s", save_path)
-        except Exception as exc:
-            logger.warning("Could not save AI-reviewed CV (non-fatal): %s", exc)
-            save_path = None
-
-        responder.send_json({
-            "ok": True,
-            "reviewed_cv": reviewed_cv,
-            "changes": changes,
-            "saved_path": save_path.name if save_path else None,
-            "model_used": model_used or "unknown",
-            "review": {"verdict": verdict, "l0_findings": findings,
-                       "items": review['items'], "reviewer_model": review['reviewer_model']},
-            "generation_id": generation_id,
-            "rewrite_sha256": binding['rewrite_sha256'],
-        })
+        if _revise:
+            from src.job_hunt_cv_review import read_review_record
+            record = read_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id)
+            if (record is None or not isinstance(body.get("generation_id"), str)
+                    or body["generation_id"] != record["generation_id"]):
+                responder.send_json({"ok": False, "error": "stale"}, status=HTTPStatus.CONFLICT)
+                return
+            if not _ai_cv_binding_current(record, profile, cv_text, job_id):
+                responder.send_json({"ok": False, "error": "inputs_changed"}, status=HTTPStatus.CONFLICT)
+                return
+            if record["revise_round"] != 0 or record["verdict"] not in {"BLOCKED", "NEEDS_EDIT"}:
+                responder.send_json({"ok": False, "error": "not_revisable"}, status=HTTPStatus.CONFLICT)
+                return
+            findings = [
+                {"statement": finding["text"], "reason": finding["rule"] + ": " + finding["detail"]}
+                for finding in record["l0_findings"]
+                if finding["severity"] == "BLOCKER" or (
+                    finding["severity"] == "MAJOR" and finding["cleared_by"] is None)
+            ]
+            findings.extend({"statement": item["text"], "reason": item["reason"]}
+                            for item in record["items"] if item["severity"] in {"BLOCKER", "MAJOR"})
+            _run_ai_cv_generation(config, responder, job_id, profile, cv_text, job, analysis,
+                                  revise_round=1, revision_findings=findings)
+        else:
+            _run_ai_cv_generation(config, responder, job_id, profile, cv_text, job, analysis)
     finally:
         AI_REVIEW_LOCK.release()
+
+
+def handle_ai_review_cv_revise(req, config, responder, job_id):
+    """Explicitly consent to the one permitted revision of a current generation."""
+    handle_ai_review_cv(req, config, responder, job_id, _revise=True)
+
+
+def _ai_cv_binding_current(record, profile, cv_text, job_id):
+    """Compare the entire binding against the current canonical on-disk body."""
+    from src.job_hunt_cv_review import build_review_source, canonical_cv_body, compute_binding
+    try:
+        path = Path(DEFAULT_TAILORING_POLICY.output_dir) / f"{job_id}_ai_reviewed.md"
+        body = canonical_cv_body(path.read_text(encoding="utf-8"))
+        evidence, context = build_review_source(profile, cv_text)
+        return record["binding"] == compute_binding(profile, cv_text, evidence, context, body, job_id)
+    except (OSError, ValueError, UnicodeError):
+        return False
+
+
+def handle_ai_review_cv_approve(req, config, responder, job_id):
+    """Approve only the exact current generation and current source snapshot."""
+    from datetime import datetime, timezone
+    from src.job_hunt_cv_review import (
+        AI_REVIEW_LOCK, read_review_record, resolve_master_cv_text, write_review_record,
+    )
+    if not isinstance(job_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", job_id) or job_id in {".", ".."}:
+        responder.send_json({"ok": False, "error": "Job not found"}, status=HTTPStatus.NOT_FOUND)
+        return
+    body = getattr(req, "json_body", None)
+    if (not isinstance(body, dict) or not isinstance(body.get("generation_id"), str)
+            or not isinstance(body.get("rewrite_sha256"), str)):
+        responder.send_json({"ok": False, "error": "bad_request"}, status=HTTPStatus.BAD_REQUEST)
+        return
+    if not AI_REVIEW_LOCK.acquire(blocking=False):
+        responder.send_json({"ok": False, "error": "busy"}, status=HTTPStatus.CONFLICT)
+        return
+    try:
+        record = read_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id)
+        current = False
+        if (record is not None and body["generation_id"] == record["generation_id"]
+                and body["rewrite_sha256"] == record["binding"]["rewrite_sha256"]):
+            try:
+                profile = load_candidate_profile(config.profile_path)
+                cv_text = resolve_master_cv_text(profile, config.profile_path.parent)
+                current = _ai_cv_binding_current(record, profile, cv_text, job_id)
+            except Exception:
+                current = False
+        if not current:
+            responder.send_json({"ok": False, "error": "stale"}, status=HTTPStatus.CONFLICT)
+            return
+        record["approval"] = {"approved_at": datetime.now(timezone.utc).isoformat(),
+                              "generation_id": record["generation_id"],
+                              "rewrite_sha256": record["binding"]["rewrite_sha256"]}
+        write_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id, record)
+        responder.send_json({"ok": True})
+    finally:
+        AI_REVIEW_LOCK.release()
+
+
+def _run_ai_cv_generation(config, responder, job_id, profile, cv_text, job, analysis,
+                          *, revise_round=0, revision_findings=None):
+    """Generate, check and commit one snapshot while the caller owns the lock."""
+    from src.job_hunt_llm import ai_rewrite_cv
+    from src.job_hunt_cv_review import (
+        build_review_source, canonical_cv_body, compute_binding, delete_review_record,
+        item_statuses, link_and_clear, overall_verdict, run_blind_review, run_layer0,
+        write_review_record,
+    )
+    from datetime import datetime, timezone
+    from uuid import uuid4
+    from src.job_hunt_parsing import KNOWN_SKILLS
+
+    evidence, context = build_review_source(profile, cv_text)
+    if revision_findings is None:
+        result, error, model_used = ai_rewrite_cv(cv_text, profile, job, analysis)
+    else:
+        result, error, model_used = ai_rewrite_cv(
+            cv_text, profile, job, analysis, revision_findings=revision_findings)
+    if (not isinstance(result, dict) or not isinstance(result.get("reviewed_cv"), str)
+            or not result["reviewed_cv"].strip()):
+        responder.send_json({"ok": False, "error": error or "AI CV review failed"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+        return
+
+    reviewed_cv = result["reviewed_cv"].replace("\r\n", "\n").replace("\r", "\n")
+    writer_result = {**result, "reviewed_cv": reviewed_cv}
+    changes = result["changes"]
+    job_skills = list(getattr(job, 'required_skills', [])) + list(getattr(job, 'preferred_skills', []))
+    findings = run_layer0(cv_text, evidence, context, reviewed_cv, job_skills, KNOWN_SKILLS)
+    review = run_blind_review(cv_text, evidence, context, job_skills, writer_result, model_used)
+    findings = link_and_clear(findings, review['items'])
+    findings = [finding if isinstance(finding, dict) else vars(finding) for finding in findings]
+    verdict = overall_verdict(findings, item_statuses(review['items']))
+    generation_id = uuid4().hex
+    saved_text = (f"<!-- ai_reviewed: true | model: {model_used} | profile_id: {profile.candidate_id} -->\n"
+                  f"{reviewed_cv.strip()}\n")
+    binding = compute_binding(profile, cv_text, evidence, context, canonical_cv_body(saved_text), job_id)
+    record = {
+        'schema_version': 1, 'generation_id': generation_id, 'verdict': verdict,
+        'l0_findings': findings, 'items': review['items'],
+        'reviewer_model': review['reviewer_model'], 'prompt_version': review['prompt_version'],
+        'binding': binding, 'writer_model': model_used or 'unknown',
+        'created_at': datetime.now(timezone.utc).isoformat(), 'revise_round': revise_round,
+        'approval': None,
+    }
+    try:
+        delete_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id)
+        save_path = write_cv_text(DEFAULT_TAILORING_POLICY.output_dir,
+                                  f"{job_id}_ai_reviewed.md", saved_text)
+        write_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id, record)
+        logger.info("AI-reviewed CV saved to %s", save_path)
+    except Exception as exc:
+        logger.warning("Could not save AI-reviewed CV (non-fatal): %s", exc)
+        save_path = None
+
+    responder.send_json({
+        "ok": True,
+        "reviewed_cv": reviewed_cv,
+        "changes": changes,
+        "saved_path": save_path.name if save_path else None,
+        "model_used": model_used or "unknown",
+        "review": {"verdict": verdict, "l0_findings": findings,
+                   "items": review['items'], "reviewer_model": review['reviewer_model']},
+        "generation_id": generation_id,
+        "rewrite_sha256": binding['rewrite_sha256'],
+    })
 
 
 # F1 v2 — serialize the load→replace→save of each job's analysis so a double-click

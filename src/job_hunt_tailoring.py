@@ -69,7 +69,7 @@ def load_latest_tailored_cv(
     if not isinstance(job_id, str) or not _SAFE_JOB_ID.match(job_id) or job_id in (".", ".."):
         raise ValueError("invalid job_id")
 
-    if job_id.endswith("_ai_reviewed"):
+    if job_id.lower().endswith("_ai_reviewed"):
         return None
 
     base = policy.output_dir.resolve()
