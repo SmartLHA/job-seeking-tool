@@ -1,0 +1,27 @@
+{
+  "id": "swapped-numbers",
+  "description": "swapped numbers",
+  "original_cv": "Summary\n- Supported 5 analysts across 20 sites.",
+  "rewrite": "Summary\n- Supported 20 analysts across 5 sites.",
+  "profile": {
+    "years_experience": 5,
+    "skills": [],
+    "target_roles": [
+      "Programme Director"
+    ],
+    "industries": [
+      "Technology"
+    ]
+  },
+  "job_skills": [],
+  "labels": {
+    "expected_overall": "BLOCKED",
+    "expected_l0": [],
+    "expected_items": [
+      {
+        "statement": "- Supported 20 analysts across 5 sites.",
+        "expected": "UNSUPPORTED"
+      }
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "id": "employer-bullet-move",
+  "description": "employer bullet move",
+  "original_cv": "Experience\nAnalyst | Cedar Works\n2019 - 2022\n- Delivered migration.\nCoordinator | Birch Works\n2022 - 2024\n- Scheduled meetings.",
+  "rewrite": "Experience\nAnalyst | Cedar Works\n2019 - 2022\nCoordinator | Birch Works\n2022 - 2024\n- Scheduled meetings.\n- Delivered migration.",
+  "profile": {
+    "years_experience": 5,
+    "skills": [],
+    "target_roles": [
+      "Programme Director"
+    ],
+    "industries": [
+      "Technology"
+    ]
+  },
+  "job_skills": [],
+  "labels": {
+    "expected_overall": "BLOCKED",
+    "expected_l0": [
+      {
+        "rule": "L0-3",
+        "severity": "MAJOR"
+      }
+    ],
+    "expected_items": [
+      {
+        "statement": "- Scheduled meetings.",
+        "expected": "SUPPORTED"
+      },
+      {
+        "statement": "- Delivered migration.",
+        "expected": "UNSUPPORTED"
+      }
+    ]
+  },
+  "label_note": "2026-10-27 orchestrator correction after the first run: removing the only bullet under Cedar Works puts \"Coordinator | Birch Works\" directly below the 2019 - 2022 date line, so it becomes a role-adjacent line (spec \"Shared text rules\", Role lines); a role-adjacent change is L0-3 MAJOR (spec S1 L0-3). The original label missed this."
+}

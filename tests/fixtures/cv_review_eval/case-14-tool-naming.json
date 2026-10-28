@@ -1,0 +1,34 @@
+{
+  "id": "tool-naming",
+  "description": "tool naming",
+  "original_cv": "Summary\n- Arranged meetings using Teams.",
+  "rewrite": "Summary\n- Arranged meetings using Microsoft Teams.",
+  "profile": {
+    "years_experience": 5,
+    "skills": [],
+    "target_roles": [
+      "Programme Director"
+    ],
+    "industries": [
+      "Technology"
+    ]
+  },
+  "job_skills": [
+    "Microsoft Teams"
+  ],
+  "labels": {
+    "expected_overall": "PASS",
+    "expected_l0": [
+      {
+        "rule": "L0-4",
+        "severity": "MAJOR"
+      }
+    ],
+    "expected_items": [
+      {
+        "statement": "- Arranged meetings using Microsoft Teams.",
+        "expected": "SUPPORTED"
+      }
+    ]
+  }
+}

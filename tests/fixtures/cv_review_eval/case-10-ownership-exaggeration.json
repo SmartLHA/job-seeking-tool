@@ -1,0 +1,27 @@
+{
+  "id": "ownership-exaggeration",
+  "description": "ownership exaggeration",
+  "original_cv": "Summary\n- Led a programme workstream.",
+  "rewrite": "Summary\n- Owned the programme.",
+  "profile": {
+    "years_experience": 5,
+    "skills": [],
+    "target_roles": [
+      "Programme Director"
+    ],
+    "industries": [
+      "Technology"
+    ]
+  },
+  "job_skills": [],
+  "labels": {
+    "expected_overall": "NEEDS_EDIT",
+    "expected_l0": [],
+    "expected_items": [
+      {
+        "statement": "- Owned the programme.",
+        "expected": "EXAGGERATED"
+      }
+    ]
+  }
+}
