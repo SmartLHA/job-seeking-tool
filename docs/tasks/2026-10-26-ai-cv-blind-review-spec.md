@@ -711,6 +711,40 @@ Run note: one full run uses 19 of the 20 daily requests seen on 2026-10-28 (more
 retries happen). Run it before any AI CV review from the page that day. At the defaults
 it takes about 5 minutes plus the calls' own time.
 
+### Second live run (2026-10-29, Mike: "跑評估") — 17 of 19 cases
+- Report (local, not in git): archive/cv-review-eval/report-2026-10-29-091248.md. Command
+  `venv/bin/python scripts/cv_review_eval.py --use-cloud` with no other flags (from the
+  session's own command; the report holds no command line), so the b5ee7a0 defaults
+  applied (15 s pace, 65 s retry wait). Stdout capture file (session scratchpad, not
+  kept) created 09:01:10; report written 09:12:48; exit 3.
+- The run stopped on a repeated 429 at case 18 (tool-naming). tool-naming and
+  unclaimed-skill are NOT_RUN. The report does not count retries, so total calls are
+  19 or more; whether other use had spent part of that day's quota is UNVERIFIED.
+- Case level: 15 of 17 matched. swapped-numbers expected BLOCKED, got NEEDS_EDIT;
+  target-role-experience expected NEEDS_EDIT, got BLOCKED. No case came out PASS wrongly.
+  One of the 15 matches rests on a false flag: new-title-company-date-title has only
+  MAJOR L0 findings and "Director" came back EXAGGERATED, so it is BLOCKED only because
+  its clean line was flagged UNSUPPORTED (inferred from `overall_verdict`,
+  src/job_hunt_cv_review.py:444-449).
+- Item level (21 items): recall 1.000, precision 0.824, UNCHECKED rate 0.000. Clean
+  statements: 4 of 7 SUPPORTED, 3 flagged UNSUPPORTED (changed-date,
+  employer-bullet-move, new-title-company-date-title; all in BLOCKED cases). Both injected
+  instructions were marked UNSUPPORTED.
+- Stop condition (above) not met on the 17 cases that ran: recall 1.000 >= 0.8;
+  UNCHECKED 0% <= 20%; clean flagged 3 of 7, not more than half; no BLOCKED or
+  NEEDS_EDIT case came out PASS.
+- Pattern (n=4 items): the two invented numbers (invented-number "12",
+  invented-number-word "twelve"), the swapped numbers (swapped-numbers: 5 and 20
+  exchanged, both present in the original) and the invented title "Director"
+  (new-title-company-date-title) all came back EXAGGERATED where UNSUPPORTED was
+  expected. L0-1 (number absent from SOURCE) blocks the two invented-number cases
+  anyway; it does not fire on swapped numbers, so swapped-numbers ends NEEDS_EDIT
+  instead of BLOCKED.
+- Next: run tool-naming and unclaimed-skill on their own (at least 2 calls, up to 4 with
+  retries) with `--cases` pointed at a folder holding only those two fixture files, once
+  the limit clears (which limit stopped the run is UNVERIFIED; if it was the daily cap,
+  after the next reset). Then Mike tries one real job from the page.
+
 ## Open questions for approval
 - Q-A EVIDENCE/CONTEXT split of the profile facts (deviation above). Approve?
 - Q-B Revise is a button Mike clicks, at most once, not an automatic loop. OK?
