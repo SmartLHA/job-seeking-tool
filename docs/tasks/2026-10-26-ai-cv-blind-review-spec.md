@@ -745,6 +745,120 @@ it takes about 5 minutes plus the calls' own time.
   the limit clears (which limit stopped the run is UNVERIFIED; if it was the daily cap,
   after the next reset). Then Mike tries one real job from the page.
 
+## Fix 3: swapped numbers (2026-10-29, Mike: "A + B（建議）")
+Why: in the second live run, swapped-numbers came back NEEDS_EDIT. L0-1 sees both
+numbers in SOURCE, and the reviewer labelled the swap EXAGGERATED (the prompt never
+mentions numbers). Mike approved option A (narrowed) plus option B for numbers only.
+This moves the narrow swap case defined in F-A2 out of "Not in scope". Titles
+("Director" came back EXAGGERATED) are NOT changed here; that is a separate decision.
+Builder: implementer, two chunks (F-A, then F-B), commit after each passing chunk.
+Spec reviewed by Codex 2026-10-29 (BUILD WITH FIXES); its fixes are folded in below.
+
+### F-A: Layer 0 rule L0-7 "numbers swapped" (chunk 1)
+- F-A1 Pairs. Work on ONE physical line at a time; pairs never cross a line break.
+  - Numbers are found with the same matching L0-1 uses (digit regex with its currency
+    sign, scale and %/percent suffix; number words two..twenty), and get the same
+    identity (currency, value, %). On both sides a number word counts as its value, so
+    "five" on one side matches "5" on the other.
+  - The pair word is read from the character right after the whole number match (after
+    any scale or % suffix the match consumed), skipping spaces only. If that character
+    is a letter, the word is the run of letters [A-Za-z]+ there, lowercased, with one
+    trailing "s" removed. Otherwise (punctuation, digit, dash, hyphen, end of line)
+    the number has no pair.
+  - Examples: "5 analysts," → (5, analyst); "£2m budget" → (£2m, budget); "15% and" →
+    (15%, and); "twenty sites" → (20, site); "12-person team" → no pair; "2019 - 2022"
+    → no pairs; "40." → no pair.
+- F-A2 Rule. For each rewrite line that is not in the original CV (`original_cv`, after
+  the existing normalisation), build its pair set P. Skip the line if P equals the pair
+  set of ANY original-CV line (the claim exists as written). Otherwise flag L0-7 BLOCKER
+  when some original-CV line with pair set Q satisfies: P and Q each have at least 2
+  pairs; the numbers in P and Q are the same multiset; the words in P and Q are the same
+  set; and P differs from Q. At most one finding per rewrite line.
+- F-A3 Finding: rule `L0-7`, severity BLOCKER. Text: split the rewrite line with the
+  existing `split_statements` and use the first statement that contains a number from
+  a pair in P but not in Q (the same statement form L0-6 uses, so the UI marks it).
+  Detail: `numbers swapped; original line: <original line>`.
+- F-A4 Add `L0-7` to the record rule-id whitelist (src/job_hunt_cv_review.py:189).
+- F-A5 L0-1 is unchanged: `_numbers` keeps its signature and set result. Any helper
+  that needs token positions is new and separate.
+- F-A6 Eval fixture case-12 swapped-numbers: expected L0 becomes L0-7 BLOCKER (same
+  format as the file). Its item expectation stays UNSUPPORTED (that measures F-B). No
+  other fixture's expected L0 changes; if a dry run shows L0-7 on any other case, stop
+  and report.
+- F-A7 If the UI or JS maps rule ids to labels, add L0-7; otherwise no UI change.
+- Tests (tests/test_cv_review_layer0.py unless stated):
+  - T1 "- Supported 5 analysts across 20 sites." → "- Supported 20 analysts across 5
+    sites." gives exactly one L0-7 BLOCKER, and `overall_verdict` is BLOCKED with no
+    reviewer items.
+  - T2 the same swap in words ("five analysts across twenty sites" → "twenty analysts
+    across five sites"), mixed ("5 … 20" → "twenty … five"), and with money ("£2m
+    budget and £5m pipeline" → "£5m budget and £2m pipeline") give L0-7.
+  - T3 no L0-7 where both sides keep two or more pairs: clause reorder ("Across 20
+    sites, supported 5 analysts."); repeated number ("Hired 5 analysts and 5 testers."
+    → "Hired 5 testers and 5 analysts."); repeated noun ("Led 3 teams, then 8 teams."
+    → "Led 8 teams, then 3 teams."); a different noun set ("across 20 sites" → "in 20
+    locations"); and the collision case: the original CV holds both "Supported 5
+    analysts across 20 sites." and "Supported 20 analysts across 5 sites.", and the
+    rewrite restates the second one.
+  - T4 no L0-7 where a pair is lost: "Hired 3 graduate analysts." → "Hired 3 analysts."
+    (CV also has "Supported 5 analysts."); "Trained 12 of the 40 staff." → "Trained 12
+    staff out of 40."; "Grew the team from 3 to 10 analysts." → "Grew a team of 3
+    analysts to 10."; "Advised 3 FTSE 100 companies." → "Advised 3 companies in the
+    FTSE 100."; an unchanged line; dated role lines "2019 - 2022" → "2019 - 2023"
+    (findings exactly as before); a number ending one line and a word starting the next.
+  - T5 known limit, asserted so a change is noticed: "Delivered 5 in London and 20 in
+    Paris." → "Delivered 20 in London and 5 in Paris." gives no L0-7 (both pairs use
+    "in").
+  - T6 (tests/test_cv_review_record.py) a review record holding an L0-7 finding passes
+    validation and loads.
+  - Existing L0-1 tests and the eval dry-run test pass with case-12 updated.
+
+### F-B: reviewer prompt rule for numbers (chunk 2)
+- F-B1 Insert right after the UNSUPPORTED sentence in `build_review_prompt`:
+  "A number that differs from EVIDENCE, or that EVIDENCE attaches to a different thing
+  (for example two numbers swapped), is UNSUPPORTED, not EXAGGERATED. The same number
+  written another way (five and 5, £1.5m and £1,500,000), or a smaller lower bound that
+  EVIDENCE still supports (over a dozen for 20), is not a difference."
+  Note: a weakened bound or unit change that writes a NEW number ("at least 10" for 20,
+  "2 years" for 24 months) is already blocked by L0-1 (accepted limit Q-F); F-B1 does
+  not change that.
+- F-B2 `REVIEW_PROMPT_VERSION` 'cv-blind-review-v0' → 'cv-blind-review-v1'. A stored
+  record with 'cv-blind-review-v0' must still load and be approvable (add a test if
+  none covers it). Update tests that pin the old literal
+  (tests/test_cv_review_blind.py:127).
+- F-B3 Three fixtures in a NEW folder tests/fixtures/cv_review_eval_numbers/, so the
+  main set stays 15 files / 19 calls (the observed free-tier cap is 20 a day, n=1,
+  UNVERIFIED). Same JSON shape as the main fixtures:
+  - percent-swap: "Summary\n- Cut costs by 15% and errors by 40%." → "Summary\n- Cut
+    costs by 40% and errors by 15%."; expected BLOCKED, L0 none, item UNSUPPORTED.
+  - number-reformat: "Summary\n- Supported five analysts." → "Summary\n- Supported 5
+    analysts."; expected PASS, L0 none, item SUPPORTED.
+  - lower-bound: "Summary\n- Supported 20 analysts." → "Summary\n- Supported over a
+    dozen analysts."; expected PASS, L0 none, item SUPPORTED.
+- F-B4 Tests: the prompt contains the F-B1 text; a dry run (no network) over the new
+  folder loads all three cases and L0 actual equals L0 expected. The dry run checks
+  Layer 0 only; the reviewer outcomes stay UNVERIFIED until the live check.
+
+### Acceptance (both chunks)
+- Full suite: the same 46 known failures as
+  archive/cv-review/baseline-failures-2026-10-26.txt, zero new; all new tests pass.
+- Dry-run eval of the main folder: L0 actual equals L0 expected on all 19 rows.
+- No live Gemini call during build or verification.
+- None of the 13 pre-existing uncommitted files is touched.
+
+### Live check (after the build; Mike's consent on the run)
+One `--use-cloud --cases` run on a scratch folder holding case-12 swapped-numbers,
+case-06 invented-number (with its variant), the two cases not run on 2026-10-29
+(tool-naming, unclaimed-skill) and the three F-B3 fixtures: about 8 calls. Pass when
+swapped-numbers and percent-swap are BLOCKED, number-reformat and lower-bound are PASS,
+and no other case changes verdict.
+
+### Limits kept
+- L0-7 misses: a noun before the number ("costs by 15%"); a function word after both
+  numbers ("5 in London"); a swap that also changes the noun; a number moved between
+  roles. F-B asks the reviewer to catch these; that is not deterministic.
+- Rewrites approved before this fix are not re-checked.
+
 ## Open questions for approval
 - Q-A EVIDENCE/CONTEXT split of the profile facts (deviation above). Approve?
 - Q-B Revise is a button Mike clicks, at most once, not an automatic loop. OK?
@@ -783,7 +897,8 @@ it takes about 5 minutes plus the calls' own time.
   does not affect it today.
 
 ## Not in scope (later list)
-- Number placement (swapped values) in Layer 0, unit conversions, and whole dropped
+- Number placement (swapped values) in Layer 0 (except the narrow case in Fix 3,
+  moved into scope 2026-10-29), unit conversions, and whole dropped
   blocks beyond headings and role lines. Layer 1 covers placement within changed
   blocks.
 - Making the reviewer injection-proof. The design reduces the risk; it cannot remove
