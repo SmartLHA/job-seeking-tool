@@ -155,7 +155,7 @@ Handlers and changed signatures (`src/`):
 | `UnreadableMasterCVError(ValueError)` | Raised by `resolve_master_cv_text` when the referenced master CV cannot be read (including a relative reference with no `base_dir`). The rewrite handler turns it into 422 "CV file could not be read". |
 | Text helpers: `normalize`, `is_bullet`, `split_statements`, `listed_headings`, `possible_headings`, `is_date_line`, `role_lines`, `role_adjacent_lines`, `segment_blocks` | Shared text rules used by all layers. |
 
-Eval: `scripts/cv_review_eval.py` (`--dry-run` or `--use-cloud`, `--cases`, `--out-dir`) with `tests/fixtures/cv_review_eval/`. Each run writes ONE report file (case-level section, plus the item-level section only with `--use-cloud`). Live trial not run yet.
+Eval: `scripts/cv_review_eval.py` (`--dry-run` or `--use-cloud`, `--cases`, `--out-dir`, `--pace` default 15 s, `--retry-wait` default 65 s) with `tests/fixtures/cv_review_eval/`. Each run writes ONE report file (case-level section with a failure-detail column, plus the item-level section only with `--use-cloud`). `--use-cloud` loads the project `.env` (no key: exit 2). One retry when the reviewer reports `rate_limited` or `server_error`; a case rate limited twice stops the run, marks it and later cases NOT_RUN (left out of the metrics) and exits 3. Live trial 2026-10-28 incomplete (429/503 errors); rerun pending.
 
 ## Important contracts
 
