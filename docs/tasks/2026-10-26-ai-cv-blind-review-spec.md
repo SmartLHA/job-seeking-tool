@@ -7,8 +7,8 @@ NONE on all 8 categories; verifier pass on r3 (0 BLOCKER, 6 MAJOR) fixed in r3.1
 verifier re-check of r3.1 (all 18 resolved, 9 MINOR) fixed in r3.2 — the r3.2
 wording edits have not had a further verifier pass.
 
-Implementation status: ⚠️ built C0-C4; each chunk independently verified; live trial
-pending (Mike's consent per run). Date 2026-10-28, branch feat/cv-blind-review-2026-10-26.
+Implementation status: ⚠️ built C0-C4 (2026-10-28) and Fix 3 (2026-10-30); each chunk
+independently verified; live trial status below. Branch feat/cv-blind-review-2026-10-26.
 Commits: 231a329 (spec), 10325b2 (C0 consent), 110acba (rename), 9467fc4 (Layer 0), 762961d (C2 blind reviewer), e9812fc (C3a record and
 loader gate), ab3fabc (C3b approve/revise), 98629a1 (C4 eval set), a2fdc59 (C3c page UI).
 Test bar (AC17 as amended), two full-suite runs. On the WORKING TREE, which also holds
@@ -19,7 +19,11 @@ the sorted failure ids are identical to archive/cv-review/baseline-failures-2026
 route tests that already fail on clean HEAD and are fixed only by other people's
 uncommitted edits (not related to this feature). Zero new failures from this feature in
 either run.
-Live trial pending (Mike's consent per run): not run yet; see "Live trial" below.
+Live trial: first live attempt 2026-10-28 (runs 1-3) incomplete; second run 2026-10-29
+ran 17 of 19 cases (see "Second live run"). Fix 3 (swapped numbers) specified 2026-10-29,
+built 2026-10-30: commits b907901
+(spec), 11f3098 (L0-7), ce152e6 (prompt rule v1), 9f764fc (docs); see "## Fix 3". Its
+live check passed 2026-10-30 (8 of 8; see "Live check result" under Fix 3).
 Key functions: ui_handlers.handle_ai_review_cv, handle_ai_review_cv_approve,
 handle_ai_review_cv_revise; job_hunt_llm.ai_rewrite_cv (renamed from
 ai_review_cv_with_llm); job_hunt_cv_review.run_layer0, select_review_items,
@@ -886,7 +890,8 @@ and no other case changes verdict.
 - L0-7 false flags (verification 2026-10-29: 0 of 38 realistic honest rewordings, 2 of
   3 contrived ones): the function-word list is closed, so a number followed by an
   unlisted connector ("15% whilst", "5% then") or a noun in a space-separated list
-  ("Revenue 15% Cost 3% Margin 8%") forms a pair, and reordering such clauses is
+  ("Revenue 15% Cost 3% Tax 2% Margin 8%"; a list of 3 does not trigger, because its
+  last number has no word after it) forms a pair, and reordering such clauses is
   BLOCKED. The user sees the original line and can approve.
 - Rewrites approved before this fix are not re-checked.
 
@@ -895,7 +900,12 @@ Chunk 1 (F-A) committed `11f3098`, chunk 2 (F-B, T10) committed `ce152e6`; each 
 a fresh-context verifier: 0 BLOCKER, 0 MAJOR. Chunk 1's minor notes are folded into F-A1,
 F-A3, T10 and "Limits kept" above. Full suite on the working tree after chunk 2: 46 failed,
 2852 passed, 20 skipped, failing ids identical to the baseline. Evidence (local, not in
-git): `archive/cv-review/fix3-2026-10-30/`. Live check not run yet.
+git): `archive/cv-review/fix3-2026-10-30/`.
+
+### Live check result (2026-10-30)
+Live check 2026-10-30 (Mike: "Yes, run it now"; 8 cases, report `archive/cv-review-eval/report-2026-10-30-103803.md`, local): all 8 cases as expected. swapped-numbers and percent-swap BLOCKED (the reviewer labelled both UNSUPPORTED); number-reformat and lower-bound PASS; invented-number (both forms), tool-naming and unclaimed-skill as expected. Item recall 1.000, precision 1.000, UNCHECKED 0 (n=1 run). The reviewer still labelled the invented "12 analysts" / "twelve analysts" EXAGGERATED, not UNSUPPORTED; L0-1 blocks those, so the verdicts are right.
+Pass rule met: swapped-numbers and percent-swap BLOCKED, number-reformat and lower-bound PASS,
+no other case changed verdict.
 
 ## Open questions for approval
 - Q-A EVIDENCE/CONTEXT split of the profile facts (deviation above). Approve?

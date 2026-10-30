@@ -109,7 +109,7 @@ All routes below are dispatched in `src/ui_routes.py` (`_do_GET_inner` / `_do_PO
 
 ## AI CV rewrite and blind review — 2026-10-28
 
-Spec: `docs/tasks/2026-10-26-ai-cv-blind-review-spec.md`. Commits: `231a329` (spec), `10325b2` (C0 consent), `110acba` (rename), `9467fc4` (Layer 0), `762961d` (blind reviewer), `e9812fc` (C3a record and loader gate), `ab3fabc` (C3b approve/revise), `98629a1` (C4 eval set), `a2fdc59` (C3c page UI). Signatures below were read from the source on 2026-10-28.
+Spec: `docs/tasks/2026-10-26-ai-cv-blind-review-spec.md`. Commits: `231a329` (spec), `10325b2` (C0 consent), `110acba` (rename), `9467fc4` (Layer 0), `762961d` (blind reviewer), `e9812fc` (C3a record and loader gate), `ab3fabc` (C3b approve/revise), `98629a1` (C4 eval set), `a2fdc59` (C3c page UI). Signatures below were read from the source on 2026-10-28; the `run_layer0` and `build_review_prompt` rows were updated on 2026-10-30 (Fix 3, commits `11f3098`, `ce152e6`).
 
 Routes (all `POST`, dispatched in `src/ui_routes.py`; same loopback Host and same-origin checks as other POST routes):
 
@@ -155,7 +155,7 @@ Handlers and changed signatures (`src/`):
 | `UnreadableMasterCVError(ValueError)` | Raised by `resolve_master_cv_text` when the referenced master CV cannot be read (including a relative reference with no `base_dir`). The rewrite handler turns it into 422 "CV file could not be read". |
 | Text helpers: `normalize`, `is_bullet`, `split_statements`, `listed_headings`, `possible_headings`, `is_date_line`, `role_lines`, `role_adjacent_lines`, `segment_blocks` | Shared text rules used by all layers. |
 
-Eval: `scripts/cv_review_eval.py` (`--dry-run` or `--use-cloud`, `--cases`, `--out-dir`, `--pace` default 15 s, `--retry-wait` default 65 s) with `tests/fixtures/cv_review_eval/`. Each run writes ONE report file (case-level section with a failure-detail column, plus the item-level section only with `--use-cloud`). `--use-cloud` loads the project `.env` (no key: exit 2). One retry when the reviewer reports `rate_limited` or `server_error`; a case rate limited twice stops the run, marks it and later cases NOT_RUN (left out of the metrics) and exits 3. Number fixtures: `tests/fixtures/cv_review_eval_numbers/` (3 cases; dry run with `--dry-run --cases tests/fixtures/cv_review_eval_numbers`). Live trial 2026-10-28 incomplete (429/503 errors); second run 2026-10-29 ran 17 of 19 cases; Fix 3 live check pending.
+Eval: `scripts/cv_review_eval.py` (`--dry-run` or `--use-cloud`, `--cases`, `--out-dir`, `--pace` default 15 s, `--retry-wait` default 65 s) with `tests/fixtures/cv_review_eval/`. Each run writes ONE report file (case-level section with a failure-detail column, plus the item-level section only with `--use-cloud`). `--use-cloud` loads the project `.env` (no key: exit 2). One retry when the reviewer reports `rate_limited` or `server_error`; a case rate limited twice stops the run, marks it and later cases NOT_RUN (left out of the metrics) and exits 3. Number fixtures: `tests/fixtures/cv_review_eval_numbers/` (3 cases; dry run with `--dry-run --cases tests/fixtures/cv_review_eval_numbers`). Live trial 2026-10-28 incomplete (429/503 errors); second run 2026-10-29 ran 17 of 19 cases; Fix 3 live check 2026-10-30: 8 of 8 cases as expected.
 
 ## Important contracts
 
