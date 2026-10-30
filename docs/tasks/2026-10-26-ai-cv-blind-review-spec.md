@@ -761,13 +761,23 @@ Spec reviewed by Codex 2026-10-29 (BUILD WITH FIXES); its fixes are folded in be
     identity (currency, value, %). On both sides a number word counts as its value, so
     "five" on one side matches "5" on the other.
   - The pair word is read from the character right after the whole number match (after
-    any scale or % suffix the match consumed), skipping spaces only. If that character
+    any scale or % suffix the match consumed), skipping zero or more spaces. The line is
+    first passed through the existing `normalize` (so a tab or NBSP counts as a space,
+    and "5analysts" gives (5, analyst)). "one" is not a number word here. If that character
     is a letter, the word is the run of letters [A-Za-z]+ there, lowercased, with one
     trailing "s" removed. Otherwise (punctuation, digit, dash, hyphen, end of line)
     the number has no pair.
+  - Function words never make a pair (added 2026-10-29 after verification: with them,
+    "sales by 15% and margin by 3% in 2021" → "margin by 3% and sales by 15% in 2021"
+    was BLOCKED). If the word, after lowercasing and before the "s" strip, is one of:
+    a, an, the, and, or, but, nor, as, at, by, for, from, in, into, of, off, on, onto,
+    over, per, than, to, under, up, via, vs, versus, with, within, without, across,
+    after, around, before, between, during, since, through, until, plus, last, next,
+    this, that, these, those, each, every, its, their, our, my, his, her, your —
+    the number has no pair.
   - Examples: "5 analysts," → (5, analyst); "£2m budget" → (£2m, budget); "15% and" →
-    (15%, and); "twenty sites" → (20, site); "12-person team" → no pair; "2019 - 2022"
-    → no pairs; "40." → no pair.
+    no pair (function word); "twenty sites" → (20, site); "12-person team" → no pair;
+    "2019 - 2022" → no pairs; "40." → no pair.
 - F-A2 Rule. For each rewrite line that is not in the original CV (`original_cv`, after
   the existing normalisation), build its pair set P. Skip the line if P equals the pair
   set of ANY original-CV line (the claim exists as written). Otherwise flag L0-7 BLOCKER
@@ -777,6 +787,8 @@ Spec reviewed by Codex 2026-10-29 (BUILD WITH FIXES); its fixes are folded in be
 - F-A3 Finding: rule `L0-7`, severity BLOCKER. Text: split the rewrite line with the
   existing `split_statements` and use the first statement that contains a number from
   a pair in P but not in Q (the same statement form L0-6 uses, so the UI marks it).
+  The match is by number value only, so an earlier statement holding the same value
+  can be marked instead; if no statement matches, the text is the whole line.
   Detail: `numbers swapped; original line: <original line>`.
 - F-A4 Add `L0-7` to the record rule-id whitelist (src/job_hunt_cv_review.py:189).
 - F-A5 L0-1 is unchanged: `_numbers` keeps its signature and set result. Any helper
@@ -811,6 +823,20 @@ Spec reviewed by Codex 2026-10-29 (BUILD WITH FIXES); its fixes are folded in be
     "in").
   - T6 (tests/test_cv_review_record.py) a review record holding an L0-7 finding passes
     validation and loads.
+  - T7 no L0-7 for honest clause reorders where numbers are followed by function words:
+    "Increased sales by 15% and margin by 3% in 2021." → "Increased margin by 3% and
+    sales by 15% in 2021."; "Reduced costs by 15% and errors by 40% over 2 years." →
+    "Reduced errors by 40% and costs by 15% over 2 years."; "Cut cost by £2m and
+    headcount by 40 in 2020." → "Cut headcount by 40 and cost by £2m in 2020.";
+    "Grew revenue by 20% and profit by 5% last year, with 3 new hires." → "Grew profit
+    by 5% and revenue by 20% last year, with 3 new hires."
+  - T8 unit asserts on the pair helper for every F-A1 example.
+  - T9 pins: "Led 3 teams across 10 sites." plus "Visited 12 sites." → "Led 3 teams
+    across 12 sites." gives no L0-7 (number multiset differs); "Led 2 squads and 1
+    team." → "Led 1 squad and 2 teams." gives L0-7 (plural folding); two identical
+    original lines that both match still give exactly one finding.
+  - T10 pins (added 2026-10-29 after verification, built with chunk 2): "one analyst"
+    gives no pair; "5analysts" gives (5, analyst); "5\tanalysts" gives (5, analyst).
   - Existing L0-1 tests and the eval dry-run test pass with case-12 updated.
 
 ### F-B: reviewer prompt rule for numbers (chunk 2)
@@ -854,9 +880,14 @@ swapped-numbers and percent-swap are BLOCKED, number-reformat and lower-bound ar
 and no other case changes verdict.
 
 ### Limits kept
-- L0-7 misses: a noun before the number ("costs by 15%"); a function word after both
-  numbers ("5 in London"); a swap that also changes the noun; a number moved between
+- L0-7 misses: a noun before the number ("costs by 15%"); a function word after a
+  number ("5 in London", "15% and"); a swap that also changes the noun; a number moved between
   roles. F-B asks the reviewer to catch these; that is not deterministic.
+- L0-7 false flags (verification 2026-10-29: 0 of 38 realistic honest rewordings, 2 of
+  3 contrived ones): the function-word list is closed, so a number followed by an
+  unlisted connector ("15% whilst", "5% then") or a noun in a space-separated list
+  ("Revenue 15% Cost 3% Margin 8%") forms a pair, and reordering such clauses is
+  BLOCKED. The user sees the original line and can approve.
 - Rewrites approved before this fix are not re-checked.
 
 ## Open questions for approval

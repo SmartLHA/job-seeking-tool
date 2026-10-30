@@ -186,7 +186,7 @@ def _valid_review_record(record) -> bool:
             return False
         if any(not isinstance(finding[key], str) for key in ('rule', 'text', 'severity', 'detail')):
             return False
-        if finding['rule'] not in {'L0-empty', 'L0-1', 'L0-2', 'L0-3', 'L0-4', 'L0-5', 'L0-6'} or finding['severity'] not in {'BLOCKER', 'MAJOR', 'MINOR'}:
+        if finding['rule'] not in {'L0-empty', 'L0-1', 'L0-2', 'L0-3', 'L0-4', 'L0-5', 'L0-6', 'L0-7'} or finding['severity'] not in {'BLOCKER', 'MAJOR', 'MINOR'}:
             return False
         if any(finding[key] is not None and not isinstance(finding[key], str) for key in ('item_id', 'cleared_by')):
             return False
@@ -361,22 +361,66 @@ def segment_blocks(text: str) -> list[tuple[str, list[str]]]:
     return result
 
 
+_SCALES = {'': 1, 'k': 1000, 'thousand': 1000, 'm': 1000000,
+           'million': 1000000, 'bn': 1000000000, 'billion': 1000000000}
+_NUMBER = re.compile(r'(?<![\w])([£$€]?)\s*(\d+(?:,\d{3})*(?:\.\d+)?)'
+                     r'(?:\s*(bn|k|m|thousand|million|billion)(?![a-z]))?'
+                     r'(?:\s*(%|percent\b|per\s+cent\b))?')
+_PAIR_WORD = re.compile(r' *([A-Za-z]+)')  # the word after a number, spaces skipped only
+# A function word after a number never makes a pair: reordered clauses ("15% and ... 3% in")
+# would otherwise look like swapped numbers.
+_FUNCTION_WORDS = frozenset(('a an the and or but nor as at by for from in into of off on onto over per '
+    'than to under up via vs versus with within without across after around before between during '
+    'since through until plus last next this that these those each every its their our my his her your').split())
+
+
+def _number_token(currency: str, number: str, scale: str | None, percent: str | None) -> tuple[str, str, str]:
+    value = Decimal(number.replace(',', '')) * _SCALES[scale or '']
+    return (currency, str(value.normalize()), '%' if percent else '')
+
+
 def _numbers(text: str, *, source: bool = False) -> set[tuple[str, str, str]]:
     text = normalize('\n'.join(_BULLET.sub('', line) for line in text.splitlines()))
-    result = set()
-    scales = {'': 1, 'k': 1000, 'thousand': 1000, 'm': 1000000,
-              'million': 1000000, 'bn': 1000000000, 'billion': 1000000000}
-    pattern = (r'(?<![\w])([£$€]?)\s*(\d+(?:,\d{3})*(?:\.\d+)?)'
-               r'(?:\s*(bn|k|m|thousand|million|billion)(?![a-z]))?'
-               r'(?:\s*(%|percent\b|per\s+cent\b))?')
-    for match in re.finditer(pattern, text):
-        currency, number, scale, percent = match.groups()
-        value = Decimal(number.replace(',', '')) * scales[scale or '']
-        result.add((currency, str(value.normalize()), '%' if percent else ''))
+    result = {_number_token(*match.groups()) for match in _NUMBER.finditer(text)}
     words = {'one': 1, **_WORDS} if source else _WORDS
     for match in re.finditer(r'\b(' + '|'.join(words) + r')\b', text):
         result.add(('', str(Decimal(words[match[1]]).normalize()), ''))
     return result
+
+
+def _number_pairs(line: str) -> set[tuple[tuple[str, str, str], str]]:
+    """Pair each number on ONE physical line with the word right after it (for L0-7)."""
+    text = normalize(_BULLET.sub('', line))
+    found = [(m.end(), _number_token(*m.groups())) for m in _NUMBER.finditer(text)]
+    found += [(m.end(), ('', str(Decimal(_WORDS[m[1]]).normalize()), ''))
+              for m in re.finditer(r'\b(' + '|'.join(_WORDS) + r')\b', text)]
+    pairs = set()
+    for end, token in found:
+        word = _PAIR_WORD.match(text, end)
+        if word and word[1] not in _FUNCTION_WORDS:
+            pairs.add((token, word[1][:-1] if word[1].endswith('s') else word[1]))
+    return pairs
+
+
+def _swapped_numbers(original_cv: str, rewrite: str) -> list[tuple[str, str]]:
+    """Find rewrite lines whose numbers moved to other nouns; returns (statement, original line)."""
+    originals = [(line.strip(), normalize(line), _number_pairs(line))
+                 for line in original_cv.splitlines() if line.strip()]
+    known = {normalized for _, normalized, _ in originals}
+    hits = []
+    for line in rewrite.splitlines():
+        pairs = _number_pairs(line)
+        if len(pairs) < 2 or normalize(line) in known or any(pairs == q for _, _, q in originals):
+            continue
+        for original, _, other in originals:
+            if (len(other) >= 2 and pairs != other
+                    and Counter(n for n, _ in pairs) == Counter(n for n, _ in other)
+                    and {w for _, w in pairs} == {w for _, w in other}):
+                moved = {n for n, _ in pairs - other}
+                statements = split_statements(line)
+                hits.append((next((s for s in statements if _numbers(s) & moved), line.strip()), original))
+                break
+    return hits
 
 
 def _term_in(term: str, text: str, case_sensitive: bool = False) -> bool:
@@ -433,6 +477,8 @@ def run_layer0(original_cv: str, evidence: str, context: str, rewrite: str,
             flags = 0 if sensitive else re.I
             if re.search(pattern, statement, flags) and not re.search(pattern, original_cv, flags):
                 add('L0-6', statement, 'MAJOR', 'review instruction tripwire: ' + term)
+    for statement, original in _swapped_numbers(original_cv, rewrite):
+        add('L0-7', statement, 'BLOCKER', 'numbers swapped; original line: ' + original)
     return findings
 
 

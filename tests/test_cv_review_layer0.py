@@ -2,8 +2,8 @@
 import pytest
 
 from src.job_hunt_cv_review import (
-    Finding, is_bullet, is_date_line, listed_headings, normalize,
-    overall_verdict, possible_headings, role_lines, run_layer0,
+    Finding, _number_pairs, _numbers, is_bullet, is_date_line, listed_headings,
+    normalize, overall_verdict, possible_headings, role_lines, run_layer0,
     segment_blocks, split_statements,
 )
 
@@ -245,3 +245,149 @@ def test_dict_findings_verdict_and_empty_only():
 def test_statement_length_boundary():
     assert split_statements('First sentence. Second sentence.') == ['First sentence. Second sentence.']
     assert len(split_statements(' '.join(['word'] * 25) + '. Another sentence.')) == 2
+
+
+def test_swapped_numbers_blocked():
+    before, after = '- Supported 5 analysts across 20 sites.', '- Supported 20 analysts across 5 sites.'
+    findings = check(before, after)
+    assert [(f.rule, f.severity) for f in findings] == [('L0-7', 'BLOCKER')]
+    assert findings[0].text == after
+    assert findings[0].detail == 'numbers swapped; original line: ' + before
+    assert overall_verdict(findings, []) == 'BLOCKED'
+
+
+@pytest.mark.parametrize('before,after', [
+    ('- Supported five analysts across twenty sites.', '- Supported twenty analysts across five sites.'),
+    ('- Supported 5 analysts across 20 sites.', '- Supported twenty analysts across five sites.'),
+    ('- Owned £2m budget and £5m pipeline.', '- Owned £5m budget and £2m pipeline.'),
+])
+def test_swapped_numbers_words_and_money(before, after):
+    findings = check(before, after)
+    assert [(f.rule, f.severity) for f in findings] == [('L0-7', 'BLOCKER')]
+    assert findings[0].text == after
+
+
+def test_swapped_numbers_statement_is_the_changed_sentence():
+    first = 'Led the reporting team through a long and demanding year of change across the whole business and its many regional offices.'
+    before = first + ' Supported 5 analysts across 20 sites.'
+    after = first + ' Supported 20 analysts across 5 sites.'
+    findings = rules(check(before, after), 'L0-7')
+    assert [f.text for f in findings] == ['Supported 20 analysts across 5 sites.']
+    assert findings[0].detail == 'numbers swapped; original line: ' + before
+
+
+@pytest.mark.parametrize('before,after', [
+    ('Supported 5 analysts across 20 sites.', 'Across 20 sites, supported 5 analysts.'),
+    ('Hired 5 analysts and 5 testers.', 'Hired 5 testers and 5 analysts.'),
+    ('Led 3 teams, then 8 teams.', 'Led 8 teams, then 3 teams.'),
+    ('Supported 5 analysts across 20 sites.', 'Supported 5 analysts in 20 locations.'),
+    ('Supported 5 analysts across 20 sites.\nSupported 20 analysts across 5 sites.',
+     'Supported 20 analysts across 5 sites.'),
+    ('Supported 5 analysts across 20 sites.\nSupported 20 analysts across 5 sites.',
+     'Supported 20 analysts across 5 sites in London.'),
+])
+def test_no_swap_when_both_sides_keep_pairs(before, after):
+    assert not rules(check(before, after), 'L0-7')
+
+
+@pytest.mark.parametrize('before,after', [
+    ('Supported 5 analysts.\nHired 3 graduate analysts.', 'Supported 5 analysts.\nHired 3 analysts.'),
+    ('Trained 12 of the 40 staff.', 'Trained 12 staff out of 40.'),
+    ('Grew the team from 3 to 10 analysts.', 'Grew a team of 3 analysts to 10.'),
+    ('Advised 3 FTSE 100 companies.', 'Advised 3 companies in the FTSE 100.'),
+    ('Supported 5 analysts across 20 sites.', 'Supported 5 analysts across 20 sites.'),
+    ('Supported 5 analysts and 20\nsites in total.', 'Supported 20 analysts and 5\nsites in total.'),
+])
+def test_no_swap_when_a_pair_is_lost(before, after):
+    assert not rules(check(before, after), 'L0-7')
+
+
+def test_dated_role_lines_have_no_pairs():
+    before = 'Experience\nAnalyst\nExample Ltd\n2019 - 2022'
+    findings = check(before, before.replace('2022', '2023'))
+    assert [(f.rule, f.severity) for f in findings] == [('L0-1', 'BLOCKER'), ('L0-3', 'BLOCKER'), ('L0-3', 'BLOCKER')]
+
+
+def test_swap_known_limit_shared_function_word():
+    # "in" is a function word, so neither number makes a pair and L0-7 stays silent.
+    findings = check('Delivered 5 in London and 20 in Paris.', 'Delivered 20 in London and 5 in Paris.')
+    assert not rules(findings, 'L0-7')
+
+
+@pytest.mark.parametrize('before,after', [
+    ('Increased sales by 15% and margin by 3% in 2021.', 'Increased margin by 3% and sales by 15% in 2021.'),
+    ('Reduced costs by 15% and errors by 40% over 2 years.', 'Reduced errors by 40% and costs by 15% over 2 years.'),
+    ('Cut cost by £2m and headcount by 40 in 2020.', 'Cut headcount by 40 and cost by £2m in 2020.'),
+    ('Grew revenue by 20% and profit by 5% last year, with 3 new hires.',
+     'Grew profit by 5% and revenue by 20% last year, with 3 new hires.'),
+])
+def test_no_swap_for_clause_reorders_with_function_words(before, after):
+    assert not rules(check(before, after), 'L0-7')
+
+
+def pair(text, word):
+    """Expected pair: the number's identity comes from the L0-1 matcher, the word is given."""
+    return (next(iter(_numbers(text))), word)
+
+
+@pytest.mark.parametrize('line,expected', [
+    ('5 analysts,', {pair('5', 'analyst')}),
+    ('£2m budget', {pair('£2m', 'budget')}),
+    ('15% and', set()),
+    ('twenty sites', {pair('twenty', 'site')}),
+    ('12-person team', set()),
+    ('2019 - 2022', set()),
+    ('40.', set()),
+    ('- Supported 5 analysts across 20 sites.', {pair('5', 'analyst'), pair('20', 'site')}),
+    ('Five Analysts', {pair('5', 'analyst')}),
+    ('5 processes', {pair('5', 'processe')}),
+    ('5 - analysts', set()),
+    ('5, analysts', set()),
+    ('5 2021 analysts', {pair('2021', 'analyst')}),
+    ('5 {analysts}', set()),
+    ('5', set()),
+])
+def test_number_pairs_helper(line, expected):
+    assert _number_pairs(line) == expected
+
+
+FUNCTION_WORDS = ('a an the and or but nor as at by for from in into of off on onto over per than to under up via '
+                  'vs versus with within without across after around before between during since through until '
+                  'plus last next this that these those each every its their our my his her your').split()
+
+
+@pytest.mark.parametrize('word', FUNCTION_WORDS)
+def test_function_word_after_a_number_makes_no_pair(word):
+    # Checked before the plural strip: "this", "its" and "plus" must not fall through as "thi", "it", "plu".
+    assert _number_pairs('5 ' + word) == set()
+    assert _number_pairs('5 ' + word.upper()) == set()
+
+
+def test_number_pairs_ignore_bullet_marker():
+    assert _number_pairs('- Supported 5 analysts') == _number_pairs('Supported 5 analysts') == {pair('5', 'analyst')}
+    assert _number_pairs('1. Supported 5 analysts') == {pair('5', 'analyst')}
+
+
+def test_swap_needs_the_same_number_multiset():
+    # 12 is not among the numbers of the line it would swap with, so nothing moved.
+    before = 'Led 3 teams across 10 sites.\nVisited 12 sites.'
+    assert not rules(check(before, 'Led 3 teams across 12 sites.'), 'L0-7')
+    # Same number set, different counts ({5,5,20} vs {5,20,20}): one number changed, none swapped.
+    assert not rules(check('Hired 5 analysts, 5 testers and 20 leads.',
+                           'Hired 5 analysts, 20 testers and 20 leads.'), 'L0-7')
+
+
+def test_swap_folds_plurals():
+    findings = rules(check('Led 2 squads and 1 team.', 'Led 1 squad and 2 teams.'), 'L0-7')
+    assert len(findings) == 1 and findings[0].severity == 'BLOCKER'
+
+
+def test_swap_gives_one_finding_per_rewrite_line():
+    before = 'Supported 5 analysts across 20 sites.\nSupported 5 analysts across 20 sites.'
+    findings = rules(check(before, 'Supported 20 analysts across 5 sites.'), 'L0-7')
+    assert len(findings) == 1
+    # Two matching but different original lines still give one finding, naming the first.
+    before = 'Supported 5 analysts across 20 sites.\nAcross 20 sites, supported five analysts and trained more.'
+    findings = rules(check(before, 'Supported 20 analysts across 5 sites.'), 'L0-7')
+    assert len(findings) == 1
+    assert findings[0].detail == 'numbers swapped; original line: Supported 5 analysts across 20 sites.'

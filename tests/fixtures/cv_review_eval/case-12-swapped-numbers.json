@@ -16,7 +16,12 @@
   "job_skills": [],
   "labels": {
     "expected_overall": "BLOCKED",
-    "expected_l0": [],
+    "expected_l0": [
+      {
+        "rule": "L0-7",
+        "severity": "BLOCKER"
+      }
+    ],
     "expected_items": [
       {
         "statement": "- Supported 20 analysts across 5 sites.",

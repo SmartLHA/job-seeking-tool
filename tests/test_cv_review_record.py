@@ -556,3 +556,22 @@ def test_ai_reviewed_suffix_cannot_alias_another_jobs_rewrite(gate):
     review.delete_review_record(gate.out, 'job-1')
     assert load_latest_tailored_cv('job-1_ai_reviewed', policy=gate.policy, profile=gate.profile,
                                    base_dir=gate.base) is None
+
+
+def test_l0_7_finding_record_is_valid_and_loads(gate):
+    rec = record_for(gate.profile, gate.body, verdict='BLOCKED')
+    rec['items'] = []
+    rec['l0_findings'] = [asdict(review.Finding(
+        0, 'L0-7', '- Supported 20 analysts across 5 sites.', 'BLOCKER',
+        'numbers swapped; original line: - Supported 5 analysts across 20 sites.'))]
+    raw_record(gate, rec)
+    assert review.read_review_record(gate.out, 'job-1') == rec
+    assert load(gate) == 'ordinary CV'  # BLOCKED: the AI rewrite loads only once approved
+    rec['approval'] = dict(approved_at='2026-10-29T12:01:00+00:00', generation_id=rec['generation_id'],
+                           rewrite_sha256=rec['binding']['rewrite_sha256'])
+    raw_record(gate, rec)
+    assert review.read_review_record(gate.out, 'job-1') == rec
+    assert load(gate) == gate.body
+    rec['verdict'] = 'PASS'  # an L0-7 BLOCKER cannot sit under a PASS verdict
+    raw_record(gate, rec)
+    assert review.read_review_record(gate.out, 'job-1') is None
