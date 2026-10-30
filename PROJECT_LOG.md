@@ -1,3 +1,18 @@
+## 2026-10-30
+
+### AI CV blind review: fix for swapped numbers (spec Fix 3)
+- **Status:** ✅ Built in two chunks. Each chunk was checked by a fresh-context verifier on 2026-10-30 (0 BLOCKER, 0 MAJOR; minor notes folded into the spec; evidence in `archive/cv-review/fix3-2026-10-30/`, local, not in git). Layer 0 now BLOCKS a swap like case-12 ("5 analysts across 20 sites" → "20 analysts across 5 sites"); other swaps depend on the reviewer prompt change. ⬜ Live check of the reviewer change pending Mike's consent on the run.
+- **Motivation:** The second live eval run (2026-10-29, 17 of 19 cases, stop condition not met; spec "Second live run") showed the reviewer labels swapped or invented numbers EXAGGERATED, so case-12 swapped-numbers ended NEEDS_EDIT, not BLOCKED. Mike chose options A and B, as recommended (2026-10-29).
+- **Changes:**
+  - `src/job_hunt_cv_review.py` — new Layer 0 rule L0-7 BLOCKER (`_number_pairs`, `_swapped_numbers`): a changed line with the same numbers and the same words as an original line, but with the numbers traded between words. Function words (`_FUNCTION_WORDS`) never form a pair, so an honest reorder such as "sales by 15% and margin by 3%" → "margin by 3% and sales by 15%" passes (unlisted connectors: see Limits). L0-7 added to the record rule-id whitelist.
+  - `src/job_hunt_cv_review.py` — reviewer prompt: a number that differs from EVIDENCE, or that EVIDENCE attaches to a different thing, is UNSUPPORTED, not EXAGGERATED. `REVIEW_PROMPT_VERSION` is now `cv-blind-review-v1`; v0 records still validate, load and approve.
+  - `tests/fixtures/cv_review_eval/case-12-swapped-numbers.json` expects L0-7. New `tests/fixtures/cv_review_eval_numbers/` (3 cases) so a full live run stays 19 calls.
+  - Tests added in `tests/test_cv_review_layer0.py`, `test_cv_review_blind.py`, `test_cv_review_record.py`, `test_cv_review_eval.py`.
+- **Commits:** `b907901` (spec), `11f3098` (L0-7), `ce152e6` (prompt rule and fixtures), then this docs commit.
+- **Tests:** full suite on the working tree 46 failed, 2852 passed, 20 skipped; the 46 failure ids equal the 2026-10-26 baseline (log: `archive/cv-review/fix3-2026-10-30/chunk-b-full-suite.txt`). Dry run: main folder 19 cases, 0 mismatches; numbers folder 3 cases, 0 mismatches.
+- **Limits:** L0-7 misses a noun before the number, a function word after a number (so percent-swap "costs by 15% and errors by 40%" is left to the reviewer), a swap that also changes the noun, and a number moved between roles. It can BLOCK an honest reorder after an unlisted connector ("whilst", "then") or in a space-separated list ("Revenue 15% Cost 3% Margin 8%"); the user sees the original line and can approve. The reviewer's behaviour on the new rule is UNVERIFIED until the live check.
+- **Next:** one `scripts/cv_review_eval.py --use-cloud --cases <scratch folder>` run on about 8 cases (spec Fix 3 "Live check"), then one real job from the page.
+
 ## 2026-10-28
 
 ### AI CV rewrite: consent gate and blind second reviewer

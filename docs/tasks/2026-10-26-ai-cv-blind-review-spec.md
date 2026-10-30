@@ -890,6 +890,13 @@ and no other case changes verdict.
   BLOCKED. The user sees the original line and can approve.
 - Rewrites approved before this fix are not re-checked.
 
+### Build note (2026-10-30)
+Chunk 1 (F-A) committed `11f3098`, chunk 2 (F-B, T10) committed `ce152e6`; each checked by
+a fresh-context verifier: 0 BLOCKER, 0 MAJOR. Chunk 1's minor notes are folded into F-A1,
+F-A3, T10 and "Limits kept" above. Full suite on the working tree after chunk 2: 46 failed,
+2852 passed, 20 skipped, failing ids identical to the baseline. Evidence (local, not in
+git): `archive/cv-review/fix3-2026-10-30/`. Live check not run yet.
+
 ## Open questions for approval
 - Q-A EVIDENCE/CONTEXT split of the profile facts (deviation above). Approve?
 - Q-B Revise is a button Mike clicks, at most once, not an automatic loop. OK?

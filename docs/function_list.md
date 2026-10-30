@@ -137,10 +137,10 @@ Handlers and changed signatures (`src/`):
 
 | Function | Contract |
 |---|---|
-| `run_layer0(original_cv, evidence, context, rewrite, job_skills, known_skills, aliases=None) -> list[Finding]` | L0-1 numbers, L0-2 headings, L0-3 role lines, L0-4 skill terms (provisional MAJOR), L0-5 ATS drop (MINOR), L0-6 tripwire; empty rewrite is a BLOCKER. |
+| `run_layer0(original_cv, evidence, context, rewrite, job_skills, known_skills, aliases=None) -> list[Finding]` | L0-1 numbers, L0-2 headings, L0-3 role lines, L0-4 skill terms (provisional MAJOR), L0-5 ATS drop (MINOR), L0-6 tripwire, L0-7 numbers swapped (BLOCKER: same numbers and words as an original line, numbers traded between words; helpers `_number_pairs`, `_swapped_numbers`); empty rewrite is a BLOCKER. |
 | `Finding` (dataclass: `layer, rule, text, severity, detail, item_id=None, cleared_by=None`) | One deterministic finding. |
 | `select_review_items(original_cv, rewrite) -> list[dict]` | Every statement of a changed block becomes a review item (cap `MAX_REVIEW_ITEMS` = 80; the rest are UNCHECKED `limit`). |
-| `build_review_prompt(evidence, context, job_skills, rewrite, items, nonce) -> str` | Pure. All untrusted text sits inside `<<<DATA-{nonce}>>>` fences; it has no parameter for writer metadata. `REVIEW_PROMPT_VERSION` = `cv-blind-review-v0`. |
+| `build_review_prompt(evidence, context, job_skills, rewrite, items, nonce) -> str` | Pure. All untrusted text sits inside `<<<DATA-{nonce}>>>` fences; it has no parameter for writer metadata. `REVIEW_PROMPT_VERSION` = `cv-blind-review-v1` (v0 until 2026-10-30; v0 records still load and approve). The prompt says a changed or misattached number is UNSUPPORTED, not EXAGGERATED. |
 | `run_blind_review(original_cv, evidence, context, job_skills, writer_result, writer_model, *, transport=None, nonce=None) -> dict` | Returns `{items, reviewer_model, prompt_version}`. Verdicts SUPPORTED, EXAGGERATED, UNSUPPORTED or UNCHECKED; grounding downgrades by code; transport error, bad JSON or the same model as the writer gives UNCHECKED. `REVIEWER_MODEL` = `gemini-3.5-flash`. |
 | `link_and_clear(findings, items)` | Copies the findings and clears an L0-4 finding when its statement is grounded SUPPORTED. |
 | `item_statuses(items) -> dict[str, str]` | Item id to verdict. |
@@ -155,7 +155,7 @@ Handlers and changed signatures (`src/`):
 | `UnreadableMasterCVError(ValueError)` | Raised by `resolve_master_cv_text` when the referenced master CV cannot be read (including a relative reference with no `base_dir`). The rewrite handler turns it into 422 "CV file could not be read". |
 | Text helpers: `normalize`, `is_bullet`, `split_statements`, `listed_headings`, `possible_headings`, `is_date_line`, `role_lines`, `role_adjacent_lines`, `segment_blocks` | Shared text rules used by all layers. |
 
-Eval: `scripts/cv_review_eval.py` (`--dry-run` or `--use-cloud`, `--cases`, `--out-dir`, `--pace` default 15 s, `--retry-wait` default 65 s) with `tests/fixtures/cv_review_eval/`. Each run writes ONE report file (case-level section with a failure-detail column, plus the item-level section only with `--use-cloud`). `--use-cloud` loads the project `.env` (no key: exit 2). One retry when the reviewer reports `rate_limited` or `server_error`; a case rate limited twice stops the run, marks it and later cases NOT_RUN (left out of the metrics) and exits 3. Live trial 2026-10-28 incomplete (429/503 errors); rerun pending.
+Eval: `scripts/cv_review_eval.py` (`--dry-run` or `--use-cloud`, `--cases`, `--out-dir`, `--pace` default 15 s, `--retry-wait` default 65 s) with `tests/fixtures/cv_review_eval/`. Each run writes ONE report file (case-level section with a failure-detail column, plus the item-level section only with `--use-cloud`). `--use-cloud` loads the project `.env` (no key: exit 2). One retry when the reviewer reports `rate_limited` or `server_error`; a case rate limited twice stops the run, marks it and later cases NOT_RUN (left out of the metrics) and exits 3. Number fixtures: `tests/fixtures/cv_review_eval_numbers/` (3 cases; dry run with `--dry-run --cases tests/fixtures/cv_review_eval_numbers`). Live trial 2026-10-28 incomplete (429/503 errors); second run 2026-10-29 ran 17 of 19 cases; Fix 3 live check pending.
 
 ## Important contracts
 
