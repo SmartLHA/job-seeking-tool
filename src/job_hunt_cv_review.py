@@ -497,7 +497,7 @@ def overall_verdict(l0_findings, item_statuses) -> str:
 
 
 REVIEWER_MODEL = 'gemini-3.5-flash'
-REVIEW_PROMPT_VERSION = 'cv-blind-review-v0'
+REVIEW_PROMPT_VERSION = 'cv-blind-review-v1'
 MAX_REVIEW_ITEMS = 80
 _REVIEW_OUTPUT_TOKENS = 32768
 
@@ -584,6 +584,10 @@ def build_review_prompt(evidence, context, job_skills, rewrite, items, nonce) ->
         'EXAGGERATED means evidence exists but scope, level, ownership, scale, duration or outcome '
         'is overstated, a removed line limited the claim, or a preference is stated as experience. '
         'UNSUPPORTED means absent, contradictory, or evidenced only under a different role. '
+        'A number that differs from EVIDENCE, or that EVIDENCE attaches to a different thing '
+        '(for example two numbers swapped), is UNSUPPORTED, not EXAGGERATED. '
+        'The same number written another way (five and 5, £1.5m and £1,500,000), or a smaller '
+        'lower bound that EVIDENCE still supports (over a dozen for 20), is not a difference. '
         'For SUPPORTED and EXAGGERATED copy a verbatim evidence_quote from EVIDENCE or CONTEXT. '
         'Return JSON only: {"results":[{"id":"s-0","verdict":"SUPPORTED",'
         '"evidence_quote":"verbatim source quote","reason":"explanation"}]}. '

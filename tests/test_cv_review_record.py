@@ -575,3 +575,28 @@ def test_l0_7_finding_record_is_valid_and_loads(gate):
     rec['verdict'] = 'PASS'  # an L0-7 BLOCKER cannot sit under a PASS verdict
     raw_record(gate, rec)
     assert review.read_review_record(gate.out, 'job-1') is None
+
+
+@pytest.mark.parametrize('verdict', ['PASS', 'BLOCKED'])
+def test_v0_prompt_version_record_still_validates_loads_and_can_be_approved(gate, monkeypatch, verdict):
+    # Spec Fix 3 F-B2: bumping REVIEW_PROMPT_VERSION to v1 must not strand records stored under v0.
+    assert review.REVIEW_PROMPT_VERSION == 'cv-blind-review-v1'
+    rec = record_for(gate.profile, gate.body, verdict=verdict)
+    rec['prompt_version'] = 'cv-blind-review-v0'
+    raw_record(gate, rec)
+    assert review._valid_review_record(rec)
+    assert review.read_review_record(gate.out, 'job-1') == rec
+    # PASS loads by itself; BLOCKED loads only once approved.
+    assert load(gate) == (gate.body if verdict == 'PASS' else 'ordinary CV')
+    # Approve through the real handler.
+    monkeypatch.setattr(ui_handlers, 'DEFAULT_TAILORING_POLICY', gate.policy)
+    monkeypatch.setattr(ui_handlers, 'load_candidate_profile', lambda *a: gate.profile)
+    responder = NS(send_json=Mock())
+    request = NS(json_body=dict(generation_id=rec['generation_id'], rewrite_sha256=rec['binding']['rewrite_sha256']))
+    ui_handlers.handle_ai_review_cv_approve(request, NS(profile_path=gate.base / 'profile.json'), responder, 'job-1')
+    args, kwargs = responder.send_json.call_args
+    assert args[0]['ok'] is True and kwargs.get('status', HTTPStatus.OK) == HTTPStatus.OK
+    stored = review.read_review_record(gate.out, 'job-1')
+    assert stored['prompt_version'] == 'cv-blind-review-v0'
+    assert stored['approval']['generation_id'] == rec['generation_id']
+    assert load(gate) == gate.body

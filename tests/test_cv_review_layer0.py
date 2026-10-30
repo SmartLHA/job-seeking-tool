@@ -351,6 +351,23 @@ def test_number_pairs_helper(line, expected):
     assert _number_pairs(line) == expected
 
 
+def test_one_is_not_a_pair_number_word():
+    # T10: unlike L0-1's source side, "one" never starts a pair ("one analyst" is ordinary prose).
+    assert _number_pairs('one analyst') == set()
+    assert _number_pairs('Led one team and two teams') == {pair('two', 'team')}
+
+
+def test_pair_word_may_touch_the_number():
+    # T10: zero spaces between the number and the word is allowed.
+    assert _number_pairs('5analysts') == {pair('5', 'analyst')}
+
+
+def test_pair_word_after_a_tab_counts_as_after_a_space():
+    # T10: the line goes through `normalize` before pairing, so a tab (and NBSP) reads as a space.
+    assert _number_pairs('5\tanalysts') == {pair('5', 'analyst')}
+    assert _number_pairs('5\u00a0analysts') == {pair('5', 'analyst')}
+
+
 FUNCTION_WORDS = ('a an the and or but nor as at by for from in into of off on onto over per than to under up via '
                   'vs versus with within without across after around before between during since through until '
                   'plus last next this that these those each every its their our my his her your').split()

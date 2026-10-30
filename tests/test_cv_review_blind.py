@@ -7,7 +7,7 @@ import pytest
 
 from src import job_hunt_llm as llm
 from src.job_hunt_cv_review import (
-    REVIEWER_MODEL, Finding, build_review_prompt, item_statuses, link_and_clear,
+    REVIEWER_MODEL, REVIEW_PROMPT_VERSION, Finding, build_review_prompt, item_statuses, link_and_clear,
     overall_verdict, run_blind_review, run_layer0, select_review_items,
 )
 
@@ -124,7 +124,7 @@ def test_no_items_no_call(monkeypatch):
     monkeypatch.setattr(llm, '_api_key', lambda: 'synthetic-key')
     monkeypatch.setattr(llm, '_call_gemini_model', lambda *a, **k: calls.append((a, k)))
     result = run_blind_review('Summary\n- Existing fact.', '', '', [], {'reviewed_cv': 'Summary\n- Existing fact.'}, 'writer')
-    assert result == {'items': [], 'reviewer_model': REVIEWER_MODEL, 'prompt_version': 'cv-blind-review-v0'}
+    assert result == {'items': [], 'reviewer_model': REVIEWER_MODEL, 'prompt_version': 'cv-blind-review-v1'}
     assert len(calls) == 0
 
 
@@ -161,6 +161,27 @@ def test_prompt_metadata_and_full_fences(monkeypatch):
     long_source = 'Original CV:\n' + 'synthetic evidence ' * 1500 + 'TAIL_SENTINEL'
     prompt = build_review_prompt(long_source, '', [], '', [], 'fixed')
     assert long_source in prompt
+
+
+UNSUPPORTED_SENTENCE = 'UNSUPPORTED means absent, contradictory, or evidenced only under a different role.'
+NUMBER_RULE = (
+    'A number that differs from EVIDENCE, or that EVIDENCE attaches to a different thing '
+    '(for example two numbers swapped), is UNSUPPORTED, not EXAGGERATED. '
+    'The same number written another way (five and 5, \u00a31.5m and \u00a31,500,000), or a smaller '
+    'lower bound that EVIDENCE still supports (over a dozen for 20), is not a difference.')
+
+
+def test_prompt_version_is_v1():
+    assert REVIEW_PROMPT_VERSION == 'cv-blind-review-v1'
+    assert build_review_prompt('', '', [], '', [], 'fixed').split('\n\n', 1)[0] == 'cv-blind-review-v1'
+
+
+def test_prompt_number_rule_follows_the_unsupported_sentence():
+    # Spec Fix 3 F-B1: the number rule sits right after the UNSUPPORTED sentence, in the instruction paragraph.
+    prompt = build_review_prompt('', '', [], '', [], 'fixed')
+    instruction = prompt.split('\n\n', 2)[1]
+    assert UNSUPPORTED_SENTENCE + ' ' + NUMBER_RULE + ' ' in instruction
+    assert prompt.count(NUMBER_RULE) == 1
 
 
 def test_skill_link_immutable_and_injection():

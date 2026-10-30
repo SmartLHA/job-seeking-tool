@@ -1,0 +1,27 @@
+{
+  "id": "percent-swap",
+  "description": "percent swap",
+  "original_cv": "Summary\n- Cut costs by 15% and errors by 40%.",
+  "rewrite": "Summary\n- Cut costs by 40% and errors by 15%.",
+  "profile": {
+    "years_experience": 5,
+    "skills": [],
+    "target_roles": [
+      "Programme Director"
+    ],
+    "industries": [
+      "Technology"
+    ]
+  },
+  "job_skills": [],
+  "labels": {
+    "expected_overall": "BLOCKED",
+    "expected_l0": [],
+    "expected_items": [
+      {
+        "statement": "- Cut costs by 40% and errors by 15%.",
+        "expected": "UNSUPPORTED"
+      }
+    ]
+  }
+}

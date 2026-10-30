@@ -6,6 +6,7 @@ from scripts import cv_review_eval as ev
 from src import job_hunt_llm
 
 CASES = Path(__file__).parent / 'fixtures/cv_review_eval'
+NUMBERS_CASES = Path(__file__).parent / 'fixtures/cv_review_eval_numbers'
 
 
 @pytest.fixture(autouse=True)
@@ -25,6 +26,41 @@ def test_schema_and_selected_labels():
         assert all(x['expected'] in ev.CLASSES[:3] for x in labels)
         selected = [i['text'] for i in ev.select_review_items(case['original_cv'], case['rewrite'])]
         assert selected == [x['statement'] for x in labels], case['id']
+
+
+def test_numbers_fixtures_hold_the_spec_cases():
+    # Spec Fix 3 F-B3: three cases in their own folder, so the main set stays 15 files / 19 calls.
+    assert len(list(NUMBERS_CASES.glob('*.json'))) == 3
+    cases = {c['id']: c for c in ev.load_cases(NUMBERS_CASES)}
+    expected = {
+        'percent-swap': ('Summary\n- Cut costs by 15% and errors by 40%.',
+                         'Summary\n- Cut costs by 40% and errors by 15%.',
+                         'BLOCKED', '- Cut costs by 40% and errors by 15%.', 'UNSUPPORTED'),
+        'number-reformat': ('Summary\n- Supported five analysts.', 'Summary\n- Supported 5 analysts.',
+                            'PASS', '- Supported 5 analysts.', 'SUPPORTED'),
+        'lower-bound': ('Summary\n- Supported 20 analysts.', 'Summary\n- Supported over a dozen analysts.',
+                        'PASS', '- Supported over a dozen analysts.', 'SUPPORTED'),
+    }
+    assert set(cases) == set(expected)
+    for cid, (original, rewrite, overall, statement, verdict) in expected.items():
+        case = cases[cid]
+        assert (case['original_cv'], case['rewrite']) == (original, rewrite)
+        assert case['labels']['expected_overall'] == overall
+        assert case['labels']['expected_l0'] == []
+        assert case['labels']['expected_items'] == [{'statement': statement, 'expected': verdict}]
+        assert [i['text'] for i in ev.select_review_items(original, rewrite)] == [statement]
+        assert set(case['profile']) == {'years_experience', 'skills', 'target_roles', 'industries'}
+    # Ids stay unique when the live check copies these next to main-set cases.
+    assert not set(cases) & {c['id'] for c in ev.load_cases(CASES)}
+
+
+def test_numbers_dry_run_l0_matches_expected(tmp_path):
+    def forbidden(prompt):
+        pytest.fail('Dry run invoked transport')
+    rows, report = ev.run(ev.load_cases(NUMBERS_CASES), dry_run=True, out_dir=tmp_path, transport=forbidden)
+    assert len(rows) == 3
+    assert not [r for r in rows if r['mismatch']]
+    assert all(r['expected_l0'] == r['actual_l0'] == [] for r in rows)
 
 
 def test_dry_report_no_transport(tmp_path):
@@ -80,7 +116,7 @@ def test_no_contact_patterns():
     import re
     email = re.compile(r'[A-Za-z0-9_.+-]+\x40[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
     phone = re.compile(r'(?<!\d)(?:\+\d[\d ()-]{8,}\d|0\d[\d ()-]{8,}\d)(?!\d)')
-    for file in [*CASES.glob('*.json'), Path(__file__)]:
+    for file in [*CASES.glob('*.json'), *NUMBERS_CASES.glob('*.json'), Path(__file__)]:
         text = file.read_text()
         assert not email.search(text), file.name
         assert not phone.search(text), file.name
