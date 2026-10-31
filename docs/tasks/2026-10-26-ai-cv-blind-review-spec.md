@@ -358,6 +358,9 @@ The function docstring says it rewrites. INDEX.md mentions are updated with the 
   key and whether they cost money; see Q-C). Stored as a constant, with an output
   token limit large enough for 80 items. If it equals the writer's `model_used`,
   every item is UNCHECKED "same_model". No fallback to writer-chain models.
+  (Fix 4, 2026-10-31: the single constant becomes a reviewer chain, still outside the
+  writer chain; "same_model" now means every chain model equals the writer's
+  model_used; see "## Fix 4".)
 - Transport error, no key, timeout or unparseable JSON → every item UNCHECKED
   "reviewer_unavailable".
 - Uses the existing helper `_call_gemini_model` (src/job_hunt_llm.py:58). No new
@@ -906,6 +909,190 @@ git): `archive/cv-review/fix3-2026-10-30/`.
 Live check 2026-10-30 (Mike: "Yes, run it now"; 8 cases, report `archive/cv-review-eval/report-2026-10-30-103803.md`, local): all 8 cases as expected. swapped-numbers and percent-swap BLOCKED (the reviewer labelled both UNSUPPORTED); number-reformat and lower-bound PASS; invented-number (both forms), tool-naming and unclaimed-skill as expected. Item recall 1.000, precision 1.000, UNCHECKED 0 (n=1 run). The reviewer still labelled the invented "12 analysts" / "twelve analysts" EXAGGERATED, not UNSUPPORTED; L0-1 blocks those, so the verdicts are right.
 Pass rule met: swapped-numbers and percent-swap BLOCKED, number-reformat and lower-bound PASS,
 no other case changed verdict.
+
+## Fix 4: reviewer fallback model (2026-10-31, Mike: "Option A")
+Why: the writer already falls through three models on a 429
+(src/job_hunt_llm.py:25-27, :175-221), but the reviewer makes one call to one model
+(src/job_hunt_cv_review.py:499, :651). When that model's free daily quota is used up,
+every item ends UNCHECKED "reviewer_unavailable" (:654-655). Unless Layer 0 found a
+BLOCKER (verdict BLOCKED), the verdict is UNCHECKED, which revise does not accept (revise
+needs BLOCKED or NEEDS_EDIT, src/ui_handlers.py:1664). Mike can then approve the rewrite
+unreviewed or re-run everything, which spends writer quota again. Mike chose option A: a second
+reviewer model of the same class, tried only when the first is out of quota or down.
+Option B (adding gemini-3.5-flash-lite as a third model) was not chosen.
+
+Facts behind the choice (research 2026-10-30, `archive/cv-review/gemini-free-tier-2026-10-30.md`,
+local). Google no longer publishes free-tier numbers, so every figure is third-party
+or observed and UNVERIFIED:
+- gemini-3.5-flash is a deprecated alias that Google routes to gemini-3.6-flash
+  (https://ai.google.dev/gemini-api/docs/deprecations, updated 2026-10-22). Observed cap
+  about 20 requests a day.
+- gemini-3.8-flash: same class, about 20 requests a day
+  (https://www.scriptbyai.com/gemini-api-free-tier-limits/). gemini-3.6-flash is NOT
+  used as the fallback, because it may share the alias's bucket.
+- The quota id seen in a real 429 is `GenerateRequestsPerDayPerProjectPerModel-FreeTier`
+  (spec "First live attempt"), so a different model should have its own daily bucket.
+  Not tested on Mike's key.
+- gemini-3.1-flash-lite (500 a day) is in the writer chain, so it cannot be a reviewer.
+
+Spec reviewed 2026-10-31 by an Opus reviewer (Codex was out of quota): BUILD WITH FIXES,
+report `archive/cv-review/fix4-2026-10-31/spec-opus-review.md` (local). Its fixes are
+folded in below. A read-back check of this section (0 BLOCKER, 1 MAJOR, 8 MINOR, report
+`archive/cv-review/fix4-2026-10-31/spec-readback-verifier.md`) was then folded in too.
+
+### F4 behaviour (one build commit, then a one-line enable commit)
+- F4-1 Constants in src/job_hunt_cv_review.py:
+  - `EVAL_REVIEWER_MODELS = ('gemini-3.5-flash', 'gemini-3.8-flash')`: the models the
+    eval may pin.
+  - `REVIEWER_MODELS = ('gemini-3.5-flash',)` in the build commit. gemini-3.8-flash is
+    added to it in a separate one-line commit ONLY after the live check below passes,
+    so no real CV reaches a reviewer that has not been measured.
+  - `REVIEWER_MODEL` stays, equal to `REVIEWER_MODELS[0]`, so existing imports work.
+  - No model in either tuple may be in the writer chain (test in F4-9).
+- F4-2 `run_blind_review` gains a keyword `models=None` (None means `REVIEWER_MODELS`).
+  Models equal to `writer_model` are removed first. If none is left, every item is
+  UNCHECKED "same_model", as today. The same rule holds on the transport path (F4-6).
+- F4-3 The remaining models are tried in order. Move to the next model only when
+  `_call_gemini_model` returns failure_kind `rate_limited` (429), `server_error` (503)
+  or `not_found` (404). The decision uses failure_kind only, never the
+  `should_try_fallback` flag, which is also True for timeout (src/job_hunt_llm.py:97).
+  Anything else stops the chain:
+  - a reply, valid or not, is used as today (unparseable → UNCHECKED "bad_json");
+  - failure_kind `timeout` or `fatal` (fatal includes HTTP 400, 500, 504 and
+    ConnectTimeout, src/job_hunt_llm.py:93-108) → UNCHECKED "reviewer_unavailable"
+    with that detail;
+  - an exception → UNCHECKED with detail "timeout" or "server_error", as today
+    (src/job_hunt_cv_review.py:678-681); no further model is tried.
+  The key check (`no_key`, src/job_hunt_cv_review.py:648-650) runs once, before the
+  chain, as today. Timeout does not fall through. A 429, 503 or 404 can still arrive
+  late, so the worst case is about two timeouts (about 360 s: a slow 429 on model 1,
+  then a timeout on model 2). Even that is not a hard bound: `requests` applies the
+  180 s timeout per phase (connect, then each read), not in total (`timeout=180` is
+  passed at src/job_hunt_cv_review.py:651-653; `requests.post` is at
+  src/job_hunt_llm.py:92).
+- F4-4 When every model falls through, items are UNCHECKED "reviewer_unavailable" with
+  the LAST model's failure_kind as `unchecked_detail`.
+- F4-5 `review['reviewer_model']` starts as the first model of the chain in use, taken
+  before any model is skipped (`REVIEWER_MODEL` by default; tests/test_cv_review_blind.py:127
+  expects that when there are no items). The no-items, `no_key` and all-skipped paths
+  record this start value. It is then set to each model just before its call, so after
+  a call it names the last model called: the one that replied, or the last one that
+  failed or raised. No new record field; `_valid_review_record` is unchanged, so stored records
+  still load. (The name is the one requested; see "Limits kept" on alias routing.)
+- F4-6 Transport path (tests inject `transport`): the same skip rule as F4-2, then ONE
+  transport call for the first remaining model, which is recorded in `reviewer_model`.
+  No chain on this path. The chain is tested by patching
+  `job_hunt_llm._call_gemini_model` (F4-9).
+- F4-7 Each fall-through logs a warning naming the model and the failure_kind (same
+  style as the writer chain, src/job_hunt_llm.py:192, :209).
+- F4-8 scripts/cv_review_eval.py gains `--reviewer-model`, argparse choices
+  `EVAL_REVIEWER_MODELS`, default `REVIEWER_MODELS[0]`. `run()` itself takes
+  `reviewer_model=REVIEWER_MODELS[0]` and passes `models=(reviewer_model,)`, so a
+  report always measures one model and the retry/stop logic (:75-89) sees that model's
+  failure kind. The report header names the model. `--dry-run` accepts the flag and
+  makes no call.
+- F4-9 New tests, all offline. Fake `_call_gemini_model` helpers return the real
+  4-tuple for each kind, including `should_try_fallback=True` for timeout.
+  - 429, 503 and 404 on model 1 → model 2 called, its reply used, `reviewer_model` is
+    model 2 (pass `models=` with two ids).
+  - timeout and fatal on model 1 → model 2 NOT called.
+  - an exception on model 1 → model 2 NOT called; an exception on model 2 →
+    `reviewer_model` is model 2.
+  - unparseable reply from model 1 → model 2 NOT called; UNCHECKED "bad_json".
+  - 429 on both → UNCHECKED "reviewer_unavailable", detail "rate_limited",
+    `reviewer_model` is model 2.
+  - `writer_model` equal to model 1 → model 1 skipped, model 2 called; equal to the only
+    model → "same_model"; the same two cases on the transport path.
+  - one test runs the real `_call_gemini_model` with a mocked `requests.post` that
+    returns 429 and then 200 (pattern of tests/test_cv_review_blind.py:334-352).
+  - no model in `REVIEWER_MODELS` or `EVAL_REVIEWER_MODELS` is `_ANALYSIS_MODEL`,
+    `_ANALYSIS_FALLBACK_1` or `_ANALYSIS_FALLBACK_2`.
+  - a fall-through logs a warning.
+  - eval: `--reviewer-model` rejects a model outside `EVAL_REVIEWER_MODELS`; `run()`
+    passes a one-model tuple; the report header names the model.
+- F4-10 Existing tests to change (Mike approves this list with the build). All are
+  setup-only; no assertion changes. All are changed in the build commit. The eval stub
+  breaks as soon as `main()` passes the new keyword (TypeError); the three
+  tests/test_cv_review_blind.py items break only after the enable commit:
+  - tests/test_cv_review_blind.py:307-320 (`rate_limited` and `server_error` assert one
+    call): pass `models=(REVIEWER_MODEL,)`.
+  - tests/test_cv_review_blind.py:214-217 (writer equals REVIEWER_MODEL → "same_model"):
+    pass `models=(REVIEWER_MODEL,)`.
+  - tests/test_cv_review_blind.py:102-112, case `same_model` (transport path): pass
+    `models=(REVIEWER_MODEL,)`.
+  - tests/test_cv_review_eval.py:153-154 (stub `fake_run`): accept the new keyword.
+  The builder re-checks this list against the code first. Any other existing test that
+  breaks, or any assertion change, comes back to Mike before it is made.
+- F4-11 Before the build (Mike's consent with the build approval), one names-only
+  models-list call on the key (no prompt, no CV) checks that gemini-3.8-flash is
+  offered, supports generateContent and has an output token limit of at least 32768.
+  It also records whether gemini-3-flash-preview (the writer's first model) is still
+  listed. If gemini-3.8-flash fails any check, stop and ask Mike. The orchestrator runs
+  it as a short Python command that loads the key the way the eval does (`load_dotenv`,
+  scripts/cv_review_eval.py:207, then `job_hunt_llm._api_key()`) and prints only model
+  names and limits. Never print the key; `.env` is read only by `load_dotenv` inside
+  that command, never shown with cat or a Read tool.
+- F4-12 Docs, after the build commit and again after the live check (and the enable
+  commit, if any): INDEX.md, docs/function_list.md, PROJECT_LOG.md and PROJECT_TODO.md
+  get our lines only, and this spec's header status lines are updated. These four files
+  hold other people's uncommitted edits, so the orchestrator (not the builder) stages
+  only our lines, by this method: apply our exact
+  replacements to the working file and to a copy of the staged version
+  (`git show :<path>`); write the copy with `git hash-object -w`; stage it with
+  `git update-index --cacheinfo 100644,<sha>,<path>`; then check that each file's
+  unstaged diff (`git diff --stat`) is the same size as before.
+
+### Acceptance (build commit)
+- Full suite: the same 46 known failures as
+  archive/cv-review/baseline-failures-2026-10-26.txt, zero new; all new tests pass.
+- Dry-run eval of the main folder: L0 actual equals L0 expected on all 19 rows.
+- No generate call to Gemini during build or verification (F4-11 is a models list only).
+- Of the 13 pre-existing uncommitted files, only the four doc files in F4-12 change, and
+  only our own lines are staged. The other nine are not touched.
+
+### Live check, then enable (Mike's consent on the run)
+1. Re-read https://ai.google.dev/gemini-api/docs/deprecations. If gemini-3.8-flash, or
+   the writer's gemini-3-flash-preview, now routes to another model, stop and tell Mike.
+2. One run `--use-cloud --reviewer-model gemini-3.8-flash` on the main folder: 19 calls
+   on gemini-3.8-flash's own quota (about 20 a day, UNVERIFIED).
+3. Pass: all 19 cases ran; no case whose expected verdict is BLOCKED or NEEDS_EDIT came
+   back PASS; UNCHECKED is 0; item recall is at least 0.8; and no more than half of
+   the clean statements are flagged, counted from the eval report's confusion table,
+   which prints no separate "clean flagged" figure (scripts/cv_review_eval.py:56-58,
+   :161) (the last two are the first live trial's stop condition, "## Live trial").
+   Flags on clean statements within that limit are recorded, not a fail
+   (gemini-3.5-flash flagged 3 of 7 clean statements on 2026-10-29).
+4. A run that stopped early is INCONCLUSIVE, not a pass: record how many calls
+   succeeded (the first measurement of gemini-3.8-flash's cap on Mike's key) and run
+   again on another day. Nothing is enabled.
+5. Fail: gemini-3.8-flash stays out of `REVIEWER_MODELS`; report to Mike.
+6. Pass: report the figures to Mike. The one-line enable commit adds gemini-3.8-flash
+   to `REVIEWER_MODELS` (unless Mike said otherwise when he consented to the run), and
+   the full suite runs again with the same bar. On that day model 2 has about one call
+   left, so the fallback is nearly empty until the next reset.
+7. Record the outcome (pass, fail or inconclusive, with the report path and the number
+   of calls that succeeded) in "### Live check result" below.
+
+### Live check result
+Not run yet.
+
+### Limits kept
+- A per-minute 429 also moves to model 2 (the 429 body is dropped, spec C4 fix 2), so
+  model 2's quota can be spent while model 1 still has daily quota left.
+- Whether a failed 429 or 503 call counts against the daily cap is UNVERIFIED.
+- Alias routing: the record names the model requested, not the one that answered.
+  Today gemini-3.5-flash is answered by gemini-3.6-flash (deprecations page, 2026-10-22).
+  If Google routes the writer's gemini-3-flash-preview to the same model as a reviewer,
+  writer and reviewer become one model while the name check still passes. Recording
+  the response's `modelVersion` would close this, but it needs a change to the shared
+  helper and is UNVERIFIED on this key; not in scope. Live check step 1 re-checks the
+  page.
+- gemini-3.8-flash is measured only by the live check above (n=1 run).
+- The writer chain is not changed. gemini-2.5-flash is now offered only to keys that
+  used it before; gemini-3-flash-preview's status is checked only by F4-11 (research
+  2026-10-30, UNVERIFIED on Mike's key).
+- Later list: a "re-review only" action on an UNCHECKED record would stop re-spending
+  writer quota without a second model (reviewer suggestion, not chosen).
 
 ## Open questions for approval
 - Q-A EVIDENCE/CONTEXT split of the profile facts (deviation above). Approve?
