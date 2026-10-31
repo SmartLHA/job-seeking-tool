@@ -151,7 +151,7 @@ def stub_run(monkeypatch, tmp_path):
     """Replace ev.run so main() never reaches the reviewer; records the dry_run flag and pacing keywords."""
     seen = RunCalls()
     def fake_run(cases, *, dry_run, out_dir, transport=None, pace=ev.DEFAULT_PACE,
-                 retry_wait=ev.DEFAULT_RETRY_WAIT, sleep=None):
+                 retry_wait=ev.DEFAULT_RETRY_WAIT, sleep=None, reviewer_model=None):
         seen.append(dry_run)
         seen.kwargs.append(dict(pace=pace, retry_wait=retry_wait, sleep=sleep))
         return [], tmp_path / 'stub-report.md'

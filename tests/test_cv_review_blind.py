@@ -108,7 +108,8 @@ def test_unavailable(mode, monkeypatch):
         return 'not json'
     items = run_blind_review('Summary', 'Summary', '', [], {'reviewed_cv': 'Summary\n- New fact.'},
                             REVIEWER_MODEL if mode == 'same_model' else 'writer',
-                            transport=None if mode == 'no_key' else transport)['items']
+                            transport=None if mode == 'no_key' else transport,
+                            models=(REVIEWER_MODEL,))['items']
     assert items[0]['reason'] == ('same_model' if mode == 'same_model' else 'reviewer_unavailable')
 
 
@@ -213,7 +214,8 @@ def test_quote_validation_order_and_model_severity_ignored():
 
 def test_limit_remains_limit_under_same_model():
     rewrite = 'Summary\n' + '\n'.join(f'- Fact {i}.' for i in range(81))
-    items = run_blind_review('Summary', 'Summary', '', [], {'reviewed_cv': rewrite}, REVIEWER_MODEL)['items']
+    items = run_blind_review('Summary', 'Summary', '', [], {'reviewed_cv': rewrite}, REVIEWER_MODEL,
+                             models=(REVIEWER_MODEL,))['items']
     assert items[0]['reason'] == 'same_model' and items[80]['reason'] == 'limit'
 
 
@@ -312,7 +314,8 @@ def test_unchecked_detail_and_verdict_precedence(kind, monkeypatch):
         calls.append((args, kwargs))
         return ('not json', None, False, None) if kind == 'bad_json' else (None, 'failure', False, kind)
     monkeypatch.setattr(llm, '_call_gemini_model', helper)
-    result = run_blind_review('Summary', 'Summary', '', [], {'reviewed_cv': 'Summary\n- New fact.'}, 'writer')
+    result = run_blind_review('Summary', 'Summary', '', [], {'reviewed_cv': 'Summary\n- New fact.'}, 'writer',
+                              models=(REVIEWER_MODEL,))
     assert len(calls) == (0 if kind == 'no_key' else 1)
     assert result['items'][0]['reason'] == 'reviewer_unavailable'
     assert result['items'][0]['unchecked_detail'] == kind

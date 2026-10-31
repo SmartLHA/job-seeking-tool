@@ -5,6 +5,7 @@ from collections import Counter
 from copy import deepcopy
 import json
 import hashlib
+import logging
 import os
 from pathlib import Path
 import threading
@@ -17,6 +18,8 @@ from src.job_hunt_ats_scorer import score_cv
 from src import job_hunt_llm
 from src.text_grounding import normalize_grounding_text, quote_in_text
 
+
+logger = logging.getLogger(__name__)
 
 AI_REVIEW_LOCK = threading.Lock()
 
@@ -496,7 +499,16 @@ def overall_verdict(l0_findings, item_statuses) -> str:
     return 'PASS'
 
 
-REVIEWER_MODEL = 'gemini-3.5-flash'
+# Reviewer model chain (spec Fix 4). None of these may be in the writer chain
+# (job_hunt_llm._ANALYSIS_MODEL and its two fallbacks); tests/test_cv_review_fallback.py checks it.
+# The eval may pin any model in EVAL_REVIEWER_MODELS; production uses REVIEWER_MODELS only.
+# gemini-3.8-flash joins REVIEWER_MODELS in a separate commit, after its own live check passes.
+EVAL_REVIEWER_MODELS = ('gemini-3.5-flash', 'gemini-3.8-flash')
+REVIEWER_MODELS = ('gemini-3.5-flash',)
+REVIEWER_MODEL = REVIEWER_MODELS[0]
+# Move to the next reviewer model only on these failure kinds (429, 503, 404). Timeout and
+# fatal stop the chain; the decision uses failure_kind, never the helper's should_try_fallback flag.
+_FALL_THROUGH_KINDS = frozenset({'rate_limited', 'server_error', 'not_found'})
 REVIEW_PROMPT_VERSION = 'cv-blind-review-v1'
 MAX_REVIEW_ITEMS = 80
 _REVIEW_OUTPUT_TOKENS = 32768
@@ -619,13 +631,21 @@ def _validated_results(reply, sent):
 
 
 def run_blind_review(original_cv, evidence, context, job_skills, writer_result,
-                     writer_model, *, transport=None, nonce=None) -> dict:
-    """Review only rewritten text and fail closed on unavailable or invalid replies."""
+                     writer_model, *, transport=None, nonce=None, models=None) -> dict:
+    """Review only rewritten text and fail closed on unavailable or invalid replies.
+
+    ``models`` is the reviewer chain (None means ``REVIEWER_MODELS``). Models equal to
+    ``writer_model`` are skipped. The next model is tried only after a 429, 503 or 404.
+    """
     if not isinstance(writer_result, dict) or not isinstance(writer_result.get('reviewed_cv'), str):
         raise ValueError('writer_result.reviewed_cv must be a string')
     items = select_review_items(original_cv, writer_result['reviewed_cv'])
-    review = {'items': items, 'reviewer_model': REVIEWER_MODEL,
+    chain = tuple(REVIEWER_MODELS if models is None else models)
+    # reviewer_model starts as the first model of the chain, before any model is skipped;
+    # it is then set to each model just before its call (spec Fix 4, F4-5).
+    review = {'items': items, 'reviewer_model': chain[0] if chain else REVIEWER_MODEL,
               'prompt_version': REVIEW_PROMPT_VERSION}
+    remaining = [model for model in chain if model != writer_model]
     def unavailable(detail):
         for item in items:
             if not item['limit']:
@@ -637,7 +657,7 @@ def run_blind_review(original_cv, evidence, context, job_skills, writer_result,
     sent = {item['id']: item for item in items if not item['limit']}
     if not sent:
         return review
-    if writer_model == REVIEWER_MODEL:
+    if not remaining:
         for item in sent.values():
             item['reason'] = 'same_model'
         return review
@@ -648,12 +668,22 @@ def run_blind_review(original_cv, evidence, context, job_skills, writer_result,
             key = job_hunt_llm._api_key()
             if not key:
                 return unavailable('no_key')
-            raw, error, _, failure_kind = job_hunt_llm._call_gemini_model(
-                prompt, REVIEWER_MODEL, key, thinking_budget=1024, timeout=180,
-                max_output_tokens=_REVIEW_OUTPUT_TOKENS, response_mime_type='application/json')
+            for position, model in enumerate(remaining):
+                review['reviewer_model'] = model
+                raw, error, _, failure_kind = job_hunt_llm._call_gemini_model(
+                    prompt, model, key, thinking_budget=1024, timeout=180,
+                    max_output_tokens=_REVIEW_OUTPUT_TOKENS, response_mime_type='application/json')
+                if ((error or raw is None) and failure_kind in _FALL_THROUGH_KINDS
+                        and position + 1 < len(remaining)):
+                    logger.warning('CV reviewer model %r failed (%s); trying %r',
+                                   model, failure_kind, remaining[position + 1])
+                    continue
+                break
             if error or raw is None:
                 return unavailable(failure_kind or 'server_error')
         else:
+            # Transport path (tests): one call for the first remaining model, no chain.
+            review['reviewer_model'] = remaining[0]
             raw = transport(prompt)
         if isinstance(raw, str):
             raw = raw.strip()

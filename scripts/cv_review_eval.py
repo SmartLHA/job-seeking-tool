@@ -12,7 +12,8 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from src.job_hunt_cv_review import (run_layer0, run_blind_review, select_review_items,
-                                    link_and_clear, overall_verdict, item_statuses, build_review_source)
+                                    link_and_clear, overall_verdict, item_statuses, build_review_source,
+                                    EVAL_REVIEWER_MODELS, REVIEWER_MODELS)
 from src.job_hunt_models import CandidateProfile, Skill
 from src import job_hunt_llm
 
@@ -72,14 +73,16 @@ def wait(sleep, seconds):
         sleep(seconds)
 
 
-def review_case(case, evidence, context, *, transport, retry_wait, sleep):
+def review_case(case, evidence, context, *, transport, retry_wait, sleep, reviewer_model=REVIEWER_MODELS[0]):
     """Review one case; retry once after retry_wait on a 429 or 503. Returns (review, detail, stop).
 
     stop is True only when both attempts were rate_limited (a repeated rate limit).
+    The reviewer chain is pinned to one model, so a report measures that model alone.
     """
     def attempt():
         review = run_blind_review(case['original_cv'], evidence, context, case['job_skills'],
-                                  {'reviewed_cv': case['rewrite']}, 'synthetic-writer', transport=transport)
+                                  {'reviewed_cv': case['rewrite']}, 'synthetic-writer', transport=transport,
+                                  models=(reviewer_model,))
         return review, failure_detail(review)
     review, first = attempt()
     if first not in RETRY_DETAILS:
@@ -107,7 +110,7 @@ def stop_summary(rows):
 
 
 def run(cases, *, dry_run, out_dir, transport=None, pace=DEFAULT_PACE,
-        retry_wait=DEFAULT_RETRY_WAIT, sleep=time.sleep):
+        retry_wait=DEFAULT_RETRY_WAIT, sleep=time.sleep, reviewer_model=REVIEWER_MODELS[0]):
     rows, pairs, item_rows = [], [], []
     called = False   # a reviewer call was made, so the next one waits `pace` first
     stopped = False  # repeated rate limit: no more reviewer calls, remaining cases are NOT_RUN
@@ -129,7 +132,8 @@ def run(cases, *, dry_run, out_dir, transport=None, pace=DEFAULT_PACE,
             if called:
                 wait(sleep, pace)
             review, detail, stopped = review_case(case, evidence, context, transport=transport,
-                                                  retry_wait=retry_wait, sleep=sleep)
+                                                  retry_wait=retry_wait, sleep=sleep,
+                                                  reviewer_model=reviewer_model)
             called = True
             if stopped:
                 # Left out of every metric: this case's items are not recorded.
@@ -148,6 +152,7 @@ def run(cases, *, dry_run, out_dir, transport=None, pace=DEFAULT_PACE,
                          expected_l0=sorted(expected_l0), actual_l0=sorted(actual_l0)))
     lines = ['# CV review eval', '', WARNING, '',
              'Mode: ' + ('dry-run; Layer 0 only; no network' if dry_run else 'cloud consent; Layer 1'),
+             'Reviewer model: ' + reviewer_model + (' (not called in dry-run)' if dry_run else ''),
              f"Cases including variants: {len(rows)}; matches: {sum(not r['mismatch'] and not r['not_run'] for r in rows)}; mismatches: {sum(r['mismatch'] for r in rows)}", '']
     if stop_summary(rows):
         lines += [stop_summary(rows), '']
@@ -199,6 +204,8 @@ def main(argv=None):
                         help='seconds to wait between consecutive reviewer calls (default %(default)s; live runs only)')
     parser.add_argument('--retry-wait', type=seconds, default=DEFAULT_RETRY_WAIT,
                         help='seconds to wait before the one retry of a 429 or 503 (default %(default)s)')
+    parser.add_argument('--reviewer-model', choices=EVAL_REVIEWER_MODELS, default=REVIEWER_MODELS[0],
+                        help='the one reviewer model to measure; no fallback to another model (default %(default)s)')
     args = parser.parse_args(argv)
     if args.use_cloud:
         # Same form as src/ui_routes.py main(), with the explicit project path.
@@ -212,7 +219,7 @@ def main(argv=None):
                   'in the project .env or the environment); no report written', file=sys.stderr)
             return 2
     rows, report = run(load_cases(args.cases), dry_run=args.dry_run, out_dir=args.out_dir,
-                       pace=args.pace, retry_wait=args.retry_wait)
+                       pace=args.pace, retry_wait=args.retry_wait, reviewer_model=args.reviewer_model)
     print(WARNING)
     for row in rows:
         print(f"{row['id']}: expected overall={row['expected_overall']}; expected gate={row['expected']}; actual={row['actual']}; expected L0={row['expected_l0']}; actual L0={row['actual_l0']}; mismatch={row['mismatch']}")
