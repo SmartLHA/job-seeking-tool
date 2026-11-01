@@ -27,8 +27,9 @@ live check passed 2026-10-30 (8 of 8; see "Live check result" under Fix 3).
 Fix 4 (reviewer fallback model, Mike: "Option A") specified 2026-10-31 (cb39e52), built
 2026-10-31 (3598ea2; verifier ACCEPT, 0 BLOCKER, 0 MAJOR; full suite 46 failed = the
 baseline, 0 new). gemini-3.8-flash is built but NOT enabled: it is not in REVIEWER_MODELS
-until its own live check passes (see "Live check, then enable" under "## Fix 4"; its
-"Live check result" is still "Not run yet").
+until its own live check passes (see "Live check, then enable" under "## Fix 4"). Its live
+check on 2026-11-01 was INCONCLUSIVE (17 of 19 cases ran, then a repeated rate limit; see its
+"Live check result"): still disabled; run again on another day.
 Key functions: ui_handlers.handle_ai_review_cv, handle_ai_review_cv_approve,
 handle_ai_review_cv_revise; job_hunt_llm.ai_rewrite_cv (renamed from
 ai_review_cv_with_llm); job_hunt_cv_review.run_layer0, select_review_items,
@@ -1079,7 +1080,7 @@ folded in below. A read-back check of this section (0 BLOCKER, 1 MAJOR, 8 MINOR,
    of calls that succeeded) in "### Live check result" below.
 
 ### Live check result
-Not run yet.
+Live check 2026-11-01, 22:43-23:24 GMT (Mike: "Yes, run it now"): INCONCLUSIVE; nothing is enabled and gemini-3.8-flash stays out of `REVIEWER_MODELS`. Step 1 first: the deprecations page (last updated 2026-10-22) was re-read; neither gemini-3.8-flash nor the writer's gemini-3-flash-preview is routed to another model. One run `--use-cloud --reviewer-model gemini-3.8-flash` on the main folder (report `archive/cv-review-eval/report-2026-11-01-232448.md`, log `archive/cv-review/fix4-2026-10-31/live-3.8-flash-20261101-224300.log`, both local). The run stopped early on a repeated rate limit: 17 of 19 cases ran; NOT_RUN: tool-naming, unclaimed-skill. Per step 4 that is INCONCLUSIVE, not a pass: run again on another day. First measurement of gemini-3.8-flash's cap on Mike's key: the 429 came after 17 cases (which limit, per minute or daily, is UNVERIFIED; n=1 run). Of the 17 cases that ran, 15 matched and 2 did not: keyword-rephrase ended UNCHECKED on a timeout (expected PASS), and new-title-company-date-title ended NEEDS_EDIT, not BLOCKED, because the reviewer labelled "Director" EXAGGERATED, not UNSUPPORTED (the same title weakness as gemini-3.5-flash on 2026-10-29). Item recall 1.000, precision 0.875, UNCHECKED rate 0.048 (one item, keyword-rephrase's). Clean statements: 2 of 7 flagged UNSUPPORTED, 1 UNCHECKED, 4 SUPPORTED. No case whose expected verdict is BLOCKED or NEEDS_EDIT came back PASS. Even a full run would not have passed: UNCHECKED was 1 and step 3 needs 0.
 
 ### Limits kept
 - A per-minute 429 also moves to model 2 (the 429 body is dropped, spec C4 fix 2), so
