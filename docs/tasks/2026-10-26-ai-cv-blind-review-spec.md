@@ -7,8 +7,8 @@ NONE on all 8 categories; verifier pass on r3 (0 BLOCKER, 6 MAJOR) fixed in r3.1
 verifier re-check of r3.1 (all 18 resolved, 9 MINOR) fixed in r3.2 — the r3.2
 wording edits have not had a further verifier pass.
 
-Implementation status: ⚠️ built C0-C4 (2026-10-28) and Fix 3 (2026-10-30); each chunk
-independently verified; live trial status below. Branch feat/cv-blind-review-2026-10-26.
+Implementation status: ⚠️ built C0-C4 (2026-10-28), Fix 3 (2026-10-30) and Fix 4
+(2026-10-31, 3598ea2); each chunk independently verified; live trial status below. Branch feat/cv-blind-review-2026-10-26.
 Commits: 231a329 (spec), 10325b2 (C0 consent), 110acba (rename), 9467fc4 (Layer 0), 762961d (C2 blind reviewer), e9812fc (C3a record and
 loader gate), ab3fabc (C3b approve/revise), 98629a1 (C4 eval set), a2fdc59 (C3c page UI).
 Test bar (AC17 as amended), two full-suite runs. On the WORKING TREE, which also holds
@@ -24,6 +24,11 @@ ran 17 of 19 cases (see "Second live run"). Fix 3 (swapped numbers) specified 20
 built 2026-10-30: commits b907901
 (spec), 11f3098 (L0-7), ce152e6 (prompt rule v1), 9f764fc (docs); see "## Fix 3". Its
 live check passed 2026-10-30 (8 of 8; see "Live check result" under Fix 3).
+Fix 4 (reviewer fallback model, Mike: "Option A") specified 2026-10-31 (cb39e52), built
+2026-10-31 (3598ea2; verifier ACCEPT, 0 BLOCKER, 0 MAJOR; full suite 46 failed = the
+baseline, 0 new). gemini-3.8-flash is built but NOT enabled: it is not in REVIEWER_MODELS
+until its own live check passes (see "Live check, then enable" under "## Fix 4"; its
+"Live check result" is still "Not run yet").
 Key functions: ui_handlers.handle_ai_review_cv, handle_ai_review_cv_approve,
 handle_ai_review_cv_revise; job_hunt_llm.ai_rewrite_cv (renamed from
 ai_review_cv_with_llm); job_hunt_cv_review.run_layer0, select_review_items,
