@@ -11,6 +11,9 @@ NUMBERS_CASES = Path(__file__).parent / 'fixtures/cv_review_eval_numbers'
 
 @pytest.fixture(autouse=True)
 def no_cloud(monkeypatch):
+    monkeypatch.setattr(ev, 'REVIEWER_MODELS', ('gemini-3.5-flash',))
+    for function in (ev.run, ev.review_case):
+        monkeypatch.setattr(function, '__kwdefaults__', dict(function.__kwdefaults__, reviewer_model='gemini-3.5-flash'))
     def blocked(*args, **kwargs):
         pytest.fail('Unexpected cloud transport')
     monkeypatch.setattr(job_hunt_llm, '_call_gemini_model', blocked)
@@ -180,6 +183,7 @@ def test_dry_run_does_not_load_env(monkeypatch, fake_dotenv, stub_run, tmp_path)
 
 
 def test_use_cloud_without_key_fails_fast(monkeypatch, fake_dotenv, stub_run, tmp_path, capsys):
+    monkeypatch.setattr(ev, 'REVIEWER_MODELS', ('gemini-3.5-flash',))
     monkeypatch.setattr(job_hunt_llm, '_api_key', lambda: None)
     out_dir = tmp_path / 'out'
     rc = ev.main(['--use-cloud', '--cases', str(CASES), '--out-dir', str(out_dir)])
@@ -195,6 +199,7 @@ def test_use_cloud_without_key_fails_fast(monkeypatch, fake_dotenv, stub_run, tm
 
 
 def test_use_cloud_tolerates_missing_dotenv_package(monkeypatch, stub_run, tmp_path, capsys):
+    monkeypatch.setattr(ev, "REVIEWER_MODELS", ("gemini-3.5-flash",))
     import sys
     monkeypatch.setitem(sys.modules, 'dotenv', None)  # makes `from dotenv import ...` raise ImportError
     monkeypatch.setattr(job_hunt_llm, '_api_key', lambda: FAKE_KEY)

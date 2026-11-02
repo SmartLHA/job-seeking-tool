@@ -14,6 +14,8 @@ from src.job_hunt_cv_review import (
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
+    from src import job_hunt_cv_review
+    monkeypatch.setattr(job_hunt_cv_review, 'REVIEWER_MODELS', ('gemini-3.5-flash',))
     def forbidden(*args, **kwargs):
         raise AssertionError('network forbidden')
     monkeypatch.setattr(llm, '_call_gemini_model', forbidden)

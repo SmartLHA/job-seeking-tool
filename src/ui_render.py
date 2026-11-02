@@ -30,6 +30,8 @@ _AI_CV_SCRIPT = r"""
 var aiBtn=document.getElementById('ai-cv-btn');
 var aiConsent=document.getElementById('ai-cv-consent');
 var aiResult=document.getElementById('tailor-result');
+var aiScope=(aiConsent&&aiConsent.dataset&&aiConsent.dataset.consentScope)||'gemini';
+var aiProviders=aiScope==='gemini+openai'?'Google Gemini and OpenAI':'Google Gemini';
 if(!aiBtn||!aiResult)return;
 
 var AI_BADGES={
@@ -60,7 +62,8 @@ function aiMessage(text,isError){
   return p;
 }
 function aiErrorText(code,action,network){
-  if(code==='consent_required')return 'Tick the box to send your CV to Google Gemini, then click '+(action==='Revise'?'Revise once with findings':'AI Review CV')+' again.';
+  if(code==='consent_stale')return 'The AI services used for this check have changed. Reload the page and tick the box again.';
+  if(code==='consent_required')return 'Tick the box to send your CV to '+aiProviders+', then click '+(action==='Revise'?'Revise once with findings':'AI Review CV')+' again.';
   if(code==='cv_too_long_for_ai_review')return 'Your CV is longer than 15,000 characters, so AI review cannot run on it.';
   if(code==='stale')return 'This review is out of date. Run AI Review CV again.';
   if(code==='busy')return 'Another AI review is running. Try again in a moment.';
@@ -223,7 +226,7 @@ function aiRender(d,notice){
     var revise=aiEl(actions,'button','Revise once with findings');
     revise.style.cssText=AI_BTN_STYLE;
     revise.addEventListener('click',function(){
-      aiRun('revise',{use_cloud:!!(aiConsent&&aiConsent.checked),generation_id:d.generation_id},'Revise',d);
+      aiRun('revise',{use_cloud:!!(aiConsent&&aiConsent.checked),consent_scope:aiScope,generation_id:d.generation_id},'Revise',d);
     });
   }
   var footer=aiEl(panel,'p',AI_FOOTER_TEXT);
@@ -246,7 +249,7 @@ function aiFail(code,action,previous,network){
 function aiRun(path,body,action,previous){
   aiBtn.disabled=true;
   aiBtn.textContent='Reviewing… (30–60 s)';
-  aiMessage('Gemini is reviewing your CV against this job — please wait…',false);
+  aiMessage(aiScope==='gemini+openai'?'Reviewing your CV against this job':'Gemini is reviewing your CV against this job — please wait…',false);
   var request;
   try{request=aiSend(path,body);}catch(err){request=Promise.reject(err);}
   if(aiConsent)aiConsent.checked=false;
@@ -262,7 +265,7 @@ function aiRun(path,body,action,previous){
   });
 }
 aiBtn.addEventListener('click',function(){
-  aiRun('',{use_cloud:!!(aiConsent&&aiConsent.checked)},'',null);
+  aiRun('',{use_cloud:!!(aiConsent&&aiConsent.checked),consent_scope:aiScope},'',null);
 });
 })();
 """
@@ -343,7 +346,7 @@ _BOARD_CSS = """
 """
 
 
-def render_board_page(board: dict[str, Any], *, model_label: str = "") -> str:
+def render_board_page(board: dict[str, Any], *, model_label: str = "", consent_scope: str = "gemini") -> str:
     """Render the board payload as a read-only, accessible kanban page."""
     columns = board.get("columns") if isinstance(board, dict) else {}
     columns = columns if isinstance(columns, dict) else {}
@@ -407,7 +410,7 @@ def render_board_page(board: dict[str, Any], *, model_label: str = "") -> str:
 
     body = (
         '<div class="app-shell">'
-        f'{_render_sidebar("board")}'
+        f'{_render_sidebar("board", consent_scope=consent_scope)}'
         '<main class="main-content">'
         '<div class="content-inner board-page">'
         '<section class="panel">'
@@ -435,6 +438,7 @@ def render_home_page(
     profile_tab_html: str = "",
     evaluate_notice: str | None = None,
     model_label: str = "",
+    consent_scope: str = "gemini",
 ) -> str:
     tab = _normalize_home_tab(tab)
     error_html = f'<div class="panel error">{escape(error)}</div>' if error else ""
@@ -443,7 +447,7 @@ def render_home_page(
     evaluate_notice_html = f'<div class="panel flash success">{escape(evaluate_notice)}</div>' if evaluate_notice else ""
     profile_name_esc = escape(profile_name or "")
     target_roles = escape(", ".join(profile_target_roles) or "—")
-    sidebar = _render_sidebar(tab)
+    sidebar = _render_sidebar(tab, consent_scope=consent_scope)
     body = f"""
     <div class="app-shell">
       {sidebar}
@@ -1311,6 +1315,7 @@ class JobPageViewModel:
     flash_kind: str
     embed: bool
     model_label: str
+    consent_scope: str = "gemini"
     skill_extraction_method: str | None = None  # Slice 1c
 
 
@@ -2254,7 +2259,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'border:1px solid var(--accent);background:transparent;color:var(--accent);">'
             f'&#128161; AI Review CV</button>'
             f'<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);">'
-            f'<input type="checkbox" id="ai-cv-consent"> Send my CV to Google Gemini for this rewrite and its check</label>'
+            f'<input type="checkbox" id="ai-cv-consent" data-consent-scope="{escape(vm.consent_scope)}"> Send my CV to {"Google Gemini and OpenAI" if vm.consent_scope == "gemini+openai" else "Google Gemini"} for this rewrite and its check</label>'
             f'</span>'
             f'<button type="button" id="cover-btn" '
             f'style="display:inline-flex;align-items:center;gap:7px;padding:10px 15px;border-radius:var(--r-md);'
@@ -2644,7 +2649,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         """
         return render_page(f"{vm.job_title} @ {vm.company}", body, model_label=vm.model_label)
 
-    sidebar = _render_sidebar("history")
+    sidebar = _render_sidebar("history", consent_scope=vm.consent_scope)
     body = f"""
     <div class="app-shell">
       {sidebar}
@@ -2740,6 +2745,7 @@ def render_profile_page(
     model_label: str = "",
     enabled_sources: list[str] | None = None,
     active_scoring_preset: str = "balanced",
+    consent_scope: str = "gemini",
 ) -> str:
     """Render the My Profile tab page."""
     # Saved Searches (Daily Job Digest — D1). Source options come from the
@@ -2901,7 +2907,7 @@ def render_profile_page(
 
     # Build body via string concat - each piece is a single-quoted Python string
     # inner double-quotes inside HTML work via string concatenation: "<attr " + "value" + ">"
-    _sidebar_html = _render_sidebar("profile")
+    _sidebar_html = _render_sidebar("profile", consent_scope=consent_scope)
     body = "".join([
         '<div class="app-shell">',
           _sidebar_html,
@@ -3279,6 +3285,7 @@ def render_digest_page(
     sources: list[str],
     saved_searches: list[tuple[str, str]],
     model_label: str = "",
+    consent_scope: str = "gemini",
 ) -> str:
     """Render the Daily Digest feed. PURE: every external job field (title, company,
     location) is HTML-escaped; [View] links only to the internal /job/{id} (the
@@ -3374,7 +3381,7 @@ def render_digest_page(
 
     body = "".join([
         '<div class="app-shell">',
-          _render_sidebar("digest"),
+          _render_sidebar("digest", consent_scope=consent_scope),
           '<main class="main-content"><div class="content-inner">',
           '<section class="panel">',
           '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">',
@@ -3453,7 +3460,7 @@ def render_digest_page(
     return render_page("Daily Digest", body, model_label=model_label)
 
 
-def _render_sidebar(active_tab: str = "") -> str:
+def _render_sidebar(active_tab: str = "", *, consent_scope: str = "gemini") -> str:
     """Render the left sidebar nav, matching the Claude deliverable design."""
     _svg = lambda paths, sw="1.7": (
         f'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
@@ -3530,7 +3537,7 @@ def _render_sidebar(active_tab: str = "") -> str:
       <div class="sidebar-spacer"></div>
       <div class="sidebar-privacy">
         <div class="sidebar-privacy-title">{lock_svg} Local-first</div>
-        <div class="sidebar-privacy-body">Records are stored on this device. Optional Gemini features send relevant text to Google. CV skill suggestions use Gemini only with your consent. AI CV review sends the CV to Gemini only after the per-click consent. Nothing auto-applies.</div>
+        <div class="sidebar-privacy-body">Records are stored on this device. Optional Gemini features send relevant text to Google. CV skill suggestions use Gemini only with your consent. AI CV review sends the CV to {"Google Gemini and OpenAI" if consent_scope == "gemini+openai" else "Gemini"} only after the per-click consent. Nothing auto-applies.</div>
       </div>
       <div class="sidebar-updated" style="padding:8px 18px 14px;font-size:10px;color:var(--ink-faint);letter-spacing:.02em;">
         Page updated {_PAGE_UPDATED.get(active_tab, "—")}

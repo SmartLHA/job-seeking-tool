@@ -55,6 +55,7 @@ from src.ui_render import (
     _normalize_home_tab,
 )
 
+from src.job_hunt_cv_review import consent_scope
 from src.job_hunt_orchestrator import run_local_evaluation_flow_from_payload
 from src.job_hunt_parsing import parse_job_from_text, parse_job_from_url
 from src.job_hunt_outcomes import allowed_next_statuses, create_outcome_record, reset_terminal_outcome, update_outcome
@@ -213,6 +214,7 @@ def render_profile(req, config, responder, profile_id, *, parsed_cv_text=None, p
 
     from src.job_hunt_scoring_presets import load_preset_name
     page = render_profile_page(
+        consent_scope=consent_scope(),
         profile_id=profile_id,
         vm=_build_profile_page_vm(profile_obj),
         parsed_cv_text=parsed_cv_text,
@@ -535,6 +537,7 @@ def render_home(req, config, responder, *, values=None, error=None, tab='search'
         reed_other_results=reed_other_results,
     )
     page = render_home_page(
+        consent_scope=consent_scope(),
         profile_name=profile.name or profile.candidate_id,
         profile_target_roles=list(profile.target_roles or []),
         history=history,
@@ -1647,6 +1650,11 @@ def handle_ai_review_cv(req, config, responder, job_id, *, _revise=False):
         responder.send_json({"ok": False, "error": "consent_required"}, status=HTTPStatus.FORBIDDEN)
         return
 
+    if body.get("consent_scope", "gemini") != consent_scope():
+        error = "consent_stale" if "consent_scope" in body else "AI services changed - reload the page"
+        responder.send_json({"error": error}, status=HTTPStatus.CONFLICT)
+        return
+
     if not AI_REVIEW_LOCK.acquire(blocking=False):
         responder.send_json({"ok": False, "error": "busy"}, status=HTTPStatus.CONFLICT)
         return
@@ -1904,7 +1912,7 @@ def handle_get_board(req, config, responder):
 def handle_get_board_view(req, config, responder):
     from src.job_hunt_index import query_board
     board = query_board(_index_db_path(config))
-    responder.send_html(render_board_page(board, model_label=config.model_label))
+    responder.send_html(render_board_page(board, model_label=config.model_label, consent_scope=consent_scope()))
 
 
 def handle_batch_evaluate(req, config, responder):
@@ -2622,6 +2630,7 @@ def handle_digest(req, config, responder):
     except Exception:
         searches = []
     page = render_digest_page(
+        consent_scope=consent_scope(),
         entries=entries,
         filters=raw,
         sources=get_enabled_sources(),
@@ -3287,6 +3296,7 @@ def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash,
             keyword_match_baseline_rate=None, keyword_match_source="master",
         )
     return JobPageViewModel(
+        consent_scope=consent_scope(),
         job_id=reviewed_job.job_id, source_type=reviewed_job.source_type,
         source_ref=reviewed_job.source_ref, url=getattr(reviewed_job, "url", None),
         job_title=reviewed_job.job_title,

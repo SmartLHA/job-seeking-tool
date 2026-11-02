@@ -99,6 +99,8 @@ def test_ordinary_tailor_rejects_output_symlinks(tmp_path, kind):
 @pytest.mark.parametrize("symlink_leaf", [False, True])
 @pytest.mark.parametrize("configured_alias", [False, True])
 def test_ai_review_rejects_symlink_save_but_keeps_result(tmp_path, monkeypatch, symlink_leaf, configured_alias):
+    from src import job_hunt_cv_review
+    monkeypatch.setattr(job_hunt_cv_review, 'REVIEWER_MODELS', ('gemini-3.5-flash',))
     output = tmp_path / "tailored"
     output.mkdir()
     if configured_alias:

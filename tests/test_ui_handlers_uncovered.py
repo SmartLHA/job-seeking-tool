@@ -712,6 +712,8 @@ class TestHandleAiReviewCv:
         assert responder.last_status == HTTPStatus.FORBIDDEN
 
     def test_handle_ai_review_cv_success_with_mock_llm(self, tmp_path: Path, monkeypatch) -> None:
+        from src import job_hunt_cv_review
+        monkeypatch.setattr(job_hunt_cv_review, "REVIEWER_MODELS", ("gemini-3.5-flash",))
         # Handler writes to CWD-relative output/tailored_cvs/; keep that inside tmp_path.
         monkeypatch.chdir(tmp_path)
         config = UIServerConfig(

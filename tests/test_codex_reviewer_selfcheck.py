@@ -86,3 +86,29 @@ def test_selfcheck_requires_consent_before_readiness(monkeypatch):
     with pytest.raises(SystemExit) as exc:
         sc.main([])
     assert exc.value.code == 2
+
+
+def test_mocked_main_exact_prompt_input_arguments(fake_codex_run, monkeypatch):
+    import subprocess
+    calls = []
+    monkeypatch.setattr(sc.codex, 'check_codex_ready', lambda **kw: None)
+    monkeypatch.setattr(sc.codex, 'resolve_codex', lambda: ('/fake/codex', '/fake/node'))
+    def fake(args, **kwargs):
+        calls.append((args, kwargs))
+        if '--version' in args:
+            return subprocess.CompletedProcess(args, 0, 'codex-cli 0.166.0', '')
+        if 'prompt-input' in args:
+            assert list(Path(kwargs['cwd']).iterdir()) == []
+            assert 'input' not in kwargs
+            return subprocess.CompletedProcess(args, 0, '[]', '')
+        Path(args[args.index('-o') + 1]).write_text(ANSWER)
+        return subprocess.CompletedProcess(args, 0, P4, '')
+    fake_codex_run(fake)
+    assert sc.main(['--yes']) == 0
+    expected = ['/fake/codex', 'debug', 'prompt-input']
+    for feature in sc.codex.DISABLED_FEATURES:
+        expected += ['--disable', feature]
+    expected += ['-c', 'web_search="disabled"', '-c', 'mcp_servers={}', '-c', 'model="gpt-6-luna"', 'probe']
+    assert calls[1][0] == expected
+    assert calls[1][1]['env'] == calls[2][1]['env']
+    assert calls[1][1]['cwd'] == calls[2][0][calls[2][0].index('-C') + 1]

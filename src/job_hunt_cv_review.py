@@ -506,6 +506,12 @@ def overall_verdict(l0_findings, item_statuses) -> str:
 EVAL_REVIEWER_MODELS = ('gemini-3.5-flash', 'gemini-3.8-flash', 'gpt-6-luna')
 REVIEWER_MODELS = ('gemini-3.5-flash',)
 REVIEWER_MODEL = REVIEWER_MODELS[0]
+
+
+def consent_scope():
+    """Provider set requiring explicit per-click CV consent."""
+    return 'gemini+openai' if any(model.startswith('gpt-') for model in REVIEWER_MODELS) else 'gemini'
+
 # Move to the next reviewer model only on these failure kinds (429, 503, 404). Timeout and
 # fatal stop the chain; the decision uses failure_kind, never the helper's should_try_fallback flag.
 _FALL_THROUGH_KINDS = frozenset({'rate_limited', 'server_error', 'not_found'})

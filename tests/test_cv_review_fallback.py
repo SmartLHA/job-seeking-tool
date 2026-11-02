@@ -38,6 +38,10 @@ SUCCESS = (GOOD, None, False, None)
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
+    monkeypatch.setattr(cvr, 'REVIEWER_MODELS', ('gemini-3.5-flash',))
+    monkeypatch.setitem(globals(), 'REVIEWER_MODELS', ('gemini-3.5-flash',))
+    monkeypatch.setattr(ev, 'REVIEWER_MODELS', ('gemini-3.5-flash',))
+    monkeypatch.setattr(ev.run, '__kwdefaults__', dict(ev.run.__kwdefaults__, reviewer_model='gemini-3.5-flash'))
     def forbidden(*args, **kwargs):
         raise AssertionError('network forbidden')
     monkeypatch.setattr(llm.requests, 'post', forbidden)

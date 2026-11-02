@@ -143,12 +143,11 @@ def main(argv=None):
             env = codex.build_env(binary, node, temp_dir=temporary)
             exec_args = codex.build_exec_args(binary, 'gpt-6-luna', work, schema, answer_file)
             # Use the same feature/config arguments for the local instruction render.
-            debug_args = [binary, 'debug', 'prompt-input', '-s', 'read-only', '-C', str(work),
-                          '--ignore-user-config']
+            debug_args = [binary, 'debug', 'prompt-input']
             for feature in codex.DISABLED_FEATURES:
                 debug_args += ['--disable', feature]
             debug_args += ['-c', 'web_search="disabled"', '-c', 'mcp_servers={}',
-                           '-m', 'gpt-6-luna', '-c', 'model_reasoning_effort="low"', '-']
+                           '-c', 'model="gpt-6-luna"', 'probe']
             print('Codex path: ' + binary + ' (realpath: ' + os.path.realpath(binary) + ')')
             print('Environment names: ' + ', '.join(sorted(env)))
             version_args = [binary, '--version']
@@ -157,7 +156,7 @@ def main(argv=None):
             print('Version: ' + version.stdout.strip())
             print('Instruction arguments: ' + json.dumps(debug_args))
             prompt = probe_prompt(canary_file)
-            render = codex._run(debug_args, input=prompt, timeout=10, env=env)
+            render = codex._run(debug_args, timeout=10, env=env, cwd=str(work))
             print('Probe arguments: ' + json.dumps(exec_args))
             result = codex._run(exec_args, input=prompt, timeout=180, env=env)
             answer = answer_file.read_text(encoding='utf-8') if answer_file.is_file() else ''

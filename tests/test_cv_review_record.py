@@ -221,6 +221,7 @@ def test_valid_empty_rewrite_raises(gate):
 
 @pytest.fixture
 def handler_env(tmp_path, monkeypatch):
+    monkeypatch.setattr(review, 'REVIEWER_MODELS', ('gemini-3.5-flash',))
     p = profile()
     out = tmp_path / 'tailored'
     out.mkdir()

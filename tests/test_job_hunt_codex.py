@@ -262,3 +262,13 @@ def test_schema_validates_reply_example_and_rejects_unknown_verdict():
     assert validate(example, c.REVIEW_OUTPUT_SCHEMA)
     example['results'][0]['unexpected'] = 'extra'
     assert not validate(example, c.REVIEW_OUTPUT_SCHEMA)
+
+
+def test_run_forwards_empty_working_directory_without_prompt(tmp_path, monkeypatch):
+    process = Mock(returncode=0)
+    process.communicate.return_value = ('[]', '')
+    popen = Mock(return_value=process)
+    monkeypatch.setattr(c.subprocess, 'Popen', popen)
+    REAL_RUN(['fake', 'debug', 'prompt-input', 'probe'], timeout=10, env={}, cwd=str(tmp_path))
+    assert popen.call_args.kwargs['cwd'] == str(tmp_path)
+    assert process.communicate.call_args.kwargs == {'input': None, 'timeout': 10}

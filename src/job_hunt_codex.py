@@ -30,11 +30,11 @@ REVIEW_OUTPUT_SCHEMA = {
 }
 
 
-def _run(args, *, input=None, timeout, env):
+def _run(args, *, input=None, timeout, env, cwd=None):
     """Launch one isolated process group; reap the entire group on timeout."""
     process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True, env=env,
-                               start_new_session=True)
+                               start_new_session=True, cwd=cwd)
     try:
         stdout, stderr = process.communicate(input=input, timeout=timeout)
     except subprocess.TimeoutExpired:

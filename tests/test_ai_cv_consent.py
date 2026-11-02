@@ -16,7 +16,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from src import job_hunt_llm, ui_handlers, ui_render
+from src import job_hunt_cv_review, job_hunt_llm, ui_handlers, ui_render
 from src.job_hunt_config import TailoringPolicy
 from src.ui_routes import _parse_request
 
@@ -31,6 +31,7 @@ def no_gemini_transport(monkeypatch):
     def blocked(*args, **kwargs):
         raise AssertionError("Gemini transport must not be reached from these tests")
 
+    monkeypatch.setattr(job_hunt_cv_review, "REVIEWER_MODELS", ("gemini-3.5-flash",))
     monkeypatch.setattr(job_hunt_llm, "_call_gemini_reasoning", blocked)
     monkeypatch.setattr(job_hunt_llm, "_call_gemini_model", blocked)
 
@@ -246,7 +247,7 @@ _JS_SUFFIX = r"""
   assert.strictEqual(calls.length, 1);
   assert.strictEqual(calls[0].url, '/job/job-1/ai-review-cv');
   assert.strictEqual(calls[0].method, 'POST');
-  assert.deepStrictEqual(calls[0].body, {use_cloud: false});
+  assert.deepStrictEqual(calls[0].body, {use_cloud: false, consent_scope: 'gemini'});
   assert.strictEqual(btn.disabled, false);
   assert.strictEqual(resultDiv.children.length, 1);
   assert(resultDiv.children[0].textContent.includes('Tick the box'));
@@ -258,7 +259,7 @@ _JS_SUFFIX = r"""
   nextResponse = respond(true, {ok: true, reviewed_cv: 'Synthetic rewrite', changes: [], model_used: 'm', saved_path: 'a.md'});
   click();
   assert.strictEqual(calls.length, 2);
-  assert.deepStrictEqual(calls[1].body, {use_cloud: true});
+  assert.deepStrictEqual(calls[1].body, {use_cloud: true, consent_scope: 'gemini'});
   assert.strictEqual(calls[1].checkedWhenSent, true);
   assert.strictEqual(consent.checked, false, 'checkbox must be unchecked right after the request is sent');
   await flush();
@@ -271,7 +272,7 @@ _JS_SUFFIX = r"""
   click();
   assert.strictEqual(consent.checked, false);
   await flush();
-  assert.deepStrictEqual(calls[2].body, {use_cloud: true});
+  assert.deepStrictEqual(calls[2].body, {use_cloud: true, consent_scope: 'gemini'});
   assert.strictEqual(consent.checked, false);
 
   // 4. too-long CV: readable message, set with textContent on a created element.
@@ -470,7 +471,7 @@ def test_revise_sends_consent_unchecks_box_and_renders_round_one(tmp_path):
   const sent = calls.at(-1);
   assert.strictEqual(sent.url, '/job/job-1/ai-review-cv/revise');
   assert.strictEqual(sent.method, 'POST');
-  assert.deepStrictEqual(sent.body, {use_cloud: true, generation_id: 'gen-1'});
+  assert.deepStrictEqual(sent.body, {use_cloud: true, consent_scope: 'gemini', generation_id: 'gen-1'});
   assert.strictEqual(sent.checkedWhenSent, true);
   assert.strictEqual(consent.checked, false, 'unchecked right after the request is sent');
   assert.strictEqual(btn.disabled, true);
@@ -486,7 +487,7 @@ def test_revise_sends_consent_unchecks_box_and_renders_round_one(tmp_path):
   await load(withFindings('BLOCKED'));
   nextResponse = respond(false, {ok: false, error: 'consent_required'});
   findButton('Revise once with findings').listeners.click();
-  assert.deepStrictEqual(calls.at(-1).body, {use_cloud: false, generation_id: 'gen-1'});
+  assert.deepStrictEqual(calls.at(-1).body, {use_cloud: false, consent_scope: 'gemini', generation_id: 'gen-1'});
   await flush();
 
   // a failed request unchecks the box too, and the previous result is back with its buttons
@@ -620,3 +621,119 @@ def test_server_text_appears_only_as_text_and_never_writes_inner_html(tmp_path):
   assert(all(resultDiv).every(n => n.tag !== 'img'));
   assert.strictEqual(innerHtmlWrites.length, 0, 'the AI review flow never writes innerHTML');
 """)
+
+
+@pytest.mark.parametrize("scope,models", [("gemini", ("gemini-3.5-flash",)),
+                                          ("gemini+openai", ("gpt-6-luna", "gemini-3.5-flash"))])
+@pytest.mark.parametrize("revise", [False, True])
+@pytest.mark.parametrize("sent", [None, "gemini", "gemini+openai"])
+def test_scope_gate_both_actions(env, monkeypatch, scope, models, revise, sent):
+    monkeypatch.setattr(job_hunt_cv_review, "REVIEWER_MODELS", models)
+    generation = Mock()
+    monkeypatch.setattr(ui_handlers, "_run_ai_cv_generation", generation)
+    # A valid current record lets the revise path reach the mocked generation.
+    monkeypatch.setattr(job_hunt_cv_review, "read_review_record", lambda *a: {
+        "generation_id": "g", "revise_round": 0, "verdict": "BLOCKED", "l0_findings": [], "items": []})
+    monkeypatch.setattr(ui_handlers, "_ai_cv_binding_current", lambda *a: True)
+    body = {"use_cloud": True, "generation_id": "g"}
+    if sent is not None:
+        body["consent_scope"] = sent
+    responder = SimpleNamespace(send_json=Mock())
+    ui_handlers.handle_ai_review_cv(SimpleNamespace(json_body=body), env.config, responder, JOB_ID, _revise=revise)
+    if (sent or "gemini") != scope:
+        generation.assert_not_called()
+        env.writer.assert_not_called()
+        assert responder.send_json.call_args.kwargs["status"] == HTTPStatus.CONFLICT
+        assert responder.send_json.call_args.args[0] == {"error": "consent_stale" if sent else "AI services changed - reload the page"}
+    else:
+        generation.assert_called_once()
+    body["use_cloud"] = False
+    ui_handlers.handle_ai_review_cv(SimpleNamespace(json_body=body), env.config, responder, JOB_ID, _revise=revise)
+    assert responder.send_json.call_args.kwargs["status"] == HTTPStatus.FORBIDDEN
+
+
+@pytest.mark.parametrize("scope", ["gemini", "gemini+openai"])
+def test_scope_page_and_runtime(tmp_path, monkeypatch, scope):
+    from dataclasses import replace
+    from tests.test_cover_letter_form import _vm
+    html = ui_render.render_job_page(replace(_vm(), consent_scope=scope))
+    assert 'data-consent-scope="' + scope + '"' in html
+    providers = "Google Gemini and OpenAI" if scope == "gemini+openai" else "Google Gemini"
+    assert "Send my CV to " + providers + " for this rewrite and its check" in html
+    assert "AI CV review sends the CV to " + (providers if scope == "gemini+openai" else "Gemini") + " only after the per-click consent." in html
+    script = ui_render._AI_CV_SCRIPT
+    prefix = _JS_PREFIX.replace("const consent = {checked: false};", "const consent = {checked: false, dataset: {consentScope: '" + scope + "'}};")
+    body = """
+(async () => {
+  consent.checked=true;
+  nextResponse=respond(false,{error:'consent_stale'}); click();
+  assert(pageText().includes(EXPECTED_PROGRESS)); await flush();
+  assert.deepStrictEqual(calls.at(-1).body,{use_cloud:true,consent_scope:SCOPE});
+  assert(pageText().includes('The AI services used for this check have changed. Reload the page and tick the box again.'));
+  await load(result('BLOCKED'));
+  consent.checked=true; nextResponse=respond(false,{error:'consent_stale'});
+  findButton('Revise once with findings').listeners.click(); await flush();
+  assert.deepStrictEqual(calls.at(-1).body,{use_cloud:true,consent_scope:SCOPE,generation_id:'gen-1'});
+  assert(pageText().includes('The AI services used for this check have changed. Reload the page and tick the box again.'));
+  nextResponse=respond(false,{error:'consent_required'}); click(); await flush();
+  assert(pageText().includes('Tick the box to send your CV to PROVIDERS, then click AI Review CV again.'));
+  await load(result('BLOCKED'));
+  nextResponse=respond(false,{error:'consent_required'});
+  findButton('Revise once with findings').listeners.click(); await flush();
+  assert(pageText().includes('Tick the box to send your CV to PROVIDERS, then click Revise once with findings again.'));
+  console.log('ok');
+})().catch(e=>{console.error(e);process.exitCode=1;});
+""".replace('PROVIDERS', providers).replace('SCOPE', repr(scope)).replace('EXPECTED_PROGRESS', repr('Reviewing your CV against this job' if scope == 'gemini+openai' else 'Gemini is reviewing your CV against this job — please wait…'))
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    path = tmp_path / 'scope.js'
+    path.write_text(prefix + script + _JS_HELPERS + body)
+    result = subprocess.run([node, str(path)], capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+
+
+def test_old_script_readable_scope_less_409(tmp_path, env, monkeypatch):
+    import json
+    monkeypatch.setattr(job_hunt_cv_review, 'REVIEWER_MODELS', ('gpt-6-luna', 'gemini-3.5-flash'))
+    payload, status = _call(env, SimpleNamespace(json_body={'use_cloud': True}))
+    assert status == HTTPStatus.CONFLICT
+    env.writer.assert_not_called()
+    old = subprocess.run(['git', 'show', '0e56f5c:src/ui_render.py'], capture_output=True, text=True, check=True).stdout
+    script = re.search(r'_AI_CV_SCRIPT = r"""(.*?)"""', old, re.S).group(1)
+    body = """
+(async()=>{
+ nextResponse=respond(false,SERVER_ERROR);
+ click(); await flush();
+ assert(pageText().includes('AI services changed - reload the page'));
+ await load(result('BLOCKED'));
+ nextResponse=respond(false,SERVER_ERROR);
+ findButton('Revise once with findings').listeners.click(); await flush();
+ assert(pageText().includes('Revise failed: AI services changed - reload the page'));
+})().catch(e=>{console.error(e);process.exitCode=1;});
+"""
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node not available')
+    path = tmp_path / 'old-scope.js'
+    path.write_text(_JS_PREFIX + script + _JS_HELPERS + body.replace("SERVER_ERROR", json.dumps(payload)))
+    result = subprocess.run([node, str(path)], capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize('scope', ['gemini', 'gemini+openai'])
+@pytest.mark.parametrize('page', ['board', 'home', 'profile', 'digest'])
+def test_all_sidebar_entrypoints_receive_scope(scope, page):
+    if page == 'board':
+        html = ui_render.render_board_page({}, consent_scope=scope)
+    elif page == 'home':
+        html = ui_render.render_home_page(profile_name='Synthetic', profile_target_roles=[], history=[],
+                                         values={}, error=None, consent_scope=scope)
+    elif page == 'profile':
+        html = ui_render.render_profile_page(profile_id='synthetic', vm=ui_handlers._build_profile_page_vm(None),
+                                            parsed_cv_text=None, parsed_filename=None, errors={}, form_values=None,
+                                            consent_scope=scope)
+    else:
+        html = ui_render.render_digest_page(entries=[], filters={}, sources=[], saved_searches=[], consent_scope=scope)
+    assert ('AI CV review sends the CV to ' + ('Google Gemini and OpenAI' if scope == 'gemini+openai' else 'Gemini')
+            + ' only after the per-click consent.') in html
