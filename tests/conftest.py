@@ -48,3 +48,29 @@ def explain_check_post_systemone_fence(monkeypatch):
         raise AssertionError('pytest Ollama transport fence: no socket connection permitted')
 
     monkeypatch.setattr(job_hunt_explain_check, '_post_systemone', blocked)
+
+
+@pytest.fixture(autouse=True)
+def codex_transport_fence(monkeypatch):
+    """Record forbidden launches even when application exception handling swallows them."""
+    from src import job_hunt_codex
+    calls = []
+
+    def refuse(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError('pytest Codex transport fence: supply an explicit fake')
+
+    monkeypatch.setattr(job_hunt_codex, '_run', refuse)
+    yield calls
+    if calls:
+        pytest.fail('Codex transport fence recorded an unexpected launch')
+
+
+@pytest.fixture
+def fake_codex_run(monkeypatch, codex_transport_fence):
+    """Opt in to an offline adapter fake; never restore the real launcher."""
+    from src import job_hunt_codex
+
+    def install(fake):
+        monkeypatch.setattr(job_hunt_codex, '_run', fake)
+    return install
