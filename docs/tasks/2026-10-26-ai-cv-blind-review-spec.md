@@ -1071,10 +1071,11 @@ folded in below. A read-back check of this section (0 BLOCKER, 1 MAJOR, 8 MINOR,
 4. A run that stopped early is INCONCLUSIVE, not a pass: record how many calls
    succeeded (the first measurement of gemini-3.8-flash's cap on Mike's key) and run
    again on another day. Nothing is enabled.
-4a. A complete run (all 19 cases ran) that misses step 3 only because UNCHECKED is above
-   0 is run once more on another day. If that second complete run again has UNCHECKED
-   above 0, it is a fail (step 5). The 2026-11-01 run stopped early, so it does not count
-   as the first complete run (Mike, 2026-11-02: "重跑一次，再有就 fail").
+   - 4a. A complete run (all 19 cases ran) that misses step 3 only because UNCHECKED
+     is above 0 is run once more; if that second complete run again has UNCHECKED above
+     0, it is a fail (step 5) (Mike, 2026-11-02: "重跑一次，再有就 fail"). Reading, not
+     Mike's words: the rerun is on another day, as in step 4 (quota), and the 2026-11-01
+     run stopped early, so it does not count as the first complete run.
 5. Fail: gemini-3.8-flash stays out of `REVIEWER_MODELS`; report to Mike.
 6. Pass: report the figures to Mike. The one-line enable commit adds gemini-3.8-flash
    to `REVIEWER_MODELS` (unless Mike said otherwise when he consented to the run), and
