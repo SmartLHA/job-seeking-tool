@@ -15,7 +15,7 @@ from src.job_hunt_cv_review import (run_layer0, run_blind_review, select_review_
                                     link_and_clear, overall_verdict, item_statuses, build_review_source,
                                     EVAL_REVIEWER_MODELS, REVIEWER_MODELS)
 from src.job_hunt_models import CandidateProfile, Skill
-from src import job_hunt_llm
+from src import job_hunt_llm, job_hunt_codex
 
 WARNING = 'Fifteen cases are a smoke check, not proof of reliability.'
 CLASSES = ('SUPPORTED', 'EXAGGERATED', 'UNSUPPORTED', 'UNCHECKED')
@@ -153,6 +153,7 @@ def run(cases, *, dry_run, out_dir, transport=None, pace=DEFAULT_PACE,
     lines = ['# CV review eval', '', WARNING, '',
              'Mode: ' + ('dry-run; Layer 0 only; no network' if dry_run else 'cloud consent; Layer 1'),
              'Reviewer model: ' + reviewer_model + (' (not called in dry-run)' if dry_run else ''),
+             'Provider: ' + ('OpenAI (Codex CLI)' if reviewer_model.startswith('gpt-') else 'Google Gemini'),
              f"Cases including variants: {len(rows)}; matches: {sum(not r['mismatch'] and not r['not_run'] for r in rows)}; mismatches: {sum(r['mismatch'] for r in rows)}", '']
     if stop_summary(rows):
         lines += [stop_summary(rows), '']
@@ -207,7 +208,12 @@ def main(argv=None):
     parser.add_argument('--reviewer-model', choices=EVAL_REVIEWER_MODELS, default=REVIEWER_MODELS[0],
                         help='the one reviewer model to measure; no fallback to another model (default %(default)s)')
     args = parser.parse_args(argv)
-    if args.use_cloud:
+    if args.use_cloud and args.reviewer_model.startswith('gpt-'):
+        failure = job_hunt_codex.check_codex_ready()
+        if failure:
+            print('error: Codex reviewer not ready (' + failure + '); no report written', file=sys.stderr)
+            return 2
+    elif args.use_cloud:
         # Same form as src/ui_routes.py main(), with the explicit project path.
         try:
             from dotenv import load_dotenv

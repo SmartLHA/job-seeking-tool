@@ -15,7 +15,7 @@ from decimal import Decimal
 import re
 
 from src.job_hunt_ats_scorer import score_cv
-from src import job_hunt_llm
+from src import job_hunt_llm, job_hunt_codex
 from src.text_grounding import normalize_grounding_text, quote_in_text
 
 
@@ -503,7 +503,7 @@ def overall_verdict(l0_findings, item_statuses) -> str:
 # (job_hunt_llm._ANALYSIS_MODEL and its two fallbacks); tests/test_cv_review_fallback.py checks it.
 # The eval may pin any model in EVAL_REVIEWER_MODELS; production uses REVIEWER_MODELS only.
 # gemini-3.8-flash joins REVIEWER_MODELS in a separate commit, after its own live check passes.
-EVAL_REVIEWER_MODELS = ('gemini-3.5-flash', 'gemini-3.8-flash')
+EVAL_REVIEWER_MODELS = ('gemini-3.5-flash', 'gemini-3.8-flash', 'gpt-6-luna')
 REVIEWER_MODELS = ('gemini-3.5-flash',)
 REVIEWER_MODEL = REVIEWER_MODELS[0]
 # Move to the next reviewer model only on these failure kinds (429, 503, 404). Timeout and
@@ -665,14 +665,20 @@ def run_blind_review(original_cv, evidence, context, job_skills, writer_result,
                                  list(sent.values()), nonce if nonce is not None else uuid4().hex)
     try:
         if transport is None:
-            key = job_hunt_llm._api_key()
-            if not key:
-                return unavailable('no_key')
             for position, model in enumerate(remaining):
+                if not model.startswith('gpt-'):
+                    key = job_hunt_llm._api_key()
+                    if not key:
+                        raw, error, failure_kind = None, 'no_key', 'no_key'
+                        continue
                 review['reviewer_model'] = model
-                raw, error, _, failure_kind = job_hunt_llm._call_gemini_model(
-                    prompt, model, key, thinking_budget=1024, timeout=180,
-                    max_output_tokens=_REVIEW_OUTPUT_TOKENS, response_mime_type='application/json')
+                if model.startswith('gpt-'):
+                    raw, error, _, failure_kind = job_hunt_codex.call_codex_reviewer(
+                        prompt, model, job_hunt_codex.REVIEW_OUTPUT_SCHEMA, timeout=180)
+                else:
+                    raw, error, _, failure_kind = job_hunt_llm._call_gemini_model(
+                        prompt, model, key, thinking_budget=1024, timeout=180,
+                        max_output_tokens=_REVIEW_OUTPUT_TOKENS, response_mime_type='application/json')
                 if ((error or raw is None) and failure_kind in _FALL_THROUGH_KINDS
                         and position + 1 < len(remaining)):
                     logger.warning('CV reviewer model %r failed (%s); trying %r',

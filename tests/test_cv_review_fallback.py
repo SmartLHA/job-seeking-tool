@@ -299,7 +299,7 @@ def test_reviewer_constants_stay_outside_the_writer_chain():
     assert REVIEWER_MODELS and REVIEWER_MODEL == REVIEWER_MODELS[0]
     assert set(REVIEWER_MODELS) <= set(EVAL_REVIEWER_MODELS)
     assert len(set(REVIEWER_MODELS)) == len(REVIEWER_MODELS)
-    assert EVAL_REVIEWER_MODELS == ('gemini-3.5-flash', 'gemini-3.8-flash')
+    assert EVAL_REVIEWER_MODELS == ('gemini-3.5-flash', 'gemini-3.8-flash', 'gpt-6-luna')
     assert REVIEWER_MODELS[0] == 'gemini-3.5-flash'
 
 
