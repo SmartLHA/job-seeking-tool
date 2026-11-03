@@ -31,6 +31,7 @@ def no_gemini_transport(monkeypatch):
     def blocked(*args, **kwargs):
         raise AssertionError("Gemini transport must not be reached from these tests")
 
+    monkeypatch.setattr(job_hunt_cv_review, "REVIEWER_MODEL", "gemini-3.5-flash")
     monkeypatch.setattr(job_hunt_cv_review, "REVIEWER_MODELS", ("gemini-3.5-flash",))
     monkeypatch.setattr(job_hunt_llm, "_call_gemini_reasoning", blocked)
     monkeypatch.setattr(job_hunt_llm, "_call_gemini_model", blocked)
@@ -699,7 +700,14 @@ def test_old_script_readable_scope_less_409(tmp_path, env, monkeypatch):
     payload, status = _call(env, SimpleNamespace(json_body={'use_cloud': True}))
     assert status == HTTPStatus.CONFLICT
     env.writer.assert_not_called()
-    old = subprocess.run(['git', 'show', '0e56f5c:src/ui_render.py'], capture_output=True, text=True, check=True).stdout
+    git = shutil.which('git')
+    if not git:
+        pytest.skip('git not available for historical UI script')
+    try:
+        old = subprocess.run([git, 'show', '0e56f5c:src/ui_render.py'],
+                             capture_output=True, text=True, check=True).stdout
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pytest.skip('historical UI script commit 0e56f5c not available')
     script = re.search(r'_AI_CV_SCRIPT = r"""(.*?)"""', old, re.S).group(1)
     body = """
 (async()=>{

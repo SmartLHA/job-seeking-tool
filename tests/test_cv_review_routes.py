@@ -20,6 +20,7 @@ _REAL_REASONING = llm._call_gemini_reasoning
 
 @pytest.fixture(autouse=True)
 def no_gemini(monkeypatch):
+    monkeypatch.setattr(review, 'REVIEWER_MODEL', 'gemini-3.5-flash')
     monkeypatch.setattr(review, 'REVIEWER_MODELS', ('gemini-3.5-flash',))
     def forbidden(*a, **kw):
         raise AssertionError('real Gemini calls forbidden')

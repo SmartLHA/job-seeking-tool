@@ -272,3 +272,19 @@ def test_run_forwards_empty_working_directory_without_prompt(tmp_path, monkeypat
     REAL_RUN(['fake', 'debug', 'prompt-input', 'probe'], timeout=10, env={}, cwd=str(tmp_path))
     assert popen.call_args.kwargs['cwd'] == str(tmp_path)
     assert process.communicate.call_args.kwargs == {'input': None, 'timeout': 10}
+
+
+def test_run_timeout_drain_is_bounded_and_preserves_original(monkeypatch, fake_codex_run):
+    original = subprocess.TimeoutExpired('fake', 180)
+    drain = subprocess.TimeoutExpired('fake', 5)
+    process = Mock(pid=123, returncode=None)
+    process.communicate.side_effect = [original, drain]
+    monkeypatch.setattr(c.subprocess, 'Popen', Mock(return_value=process))
+    kill = Mock()
+    monkeypatch.setattr(c.os, 'killpg', kill)
+    with pytest.raises(subprocess.TimeoutExpired) as caught:
+        REAL_RUN(['fake'], input='secret', timeout=180, env={})
+    assert caught.value is original
+    assert [call.kwargs for call in process.communicate.call_args_list] == [
+        {'input': 'secret', 'timeout': 180}, {'timeout': 5}]
+    kill.assert_called_once_with(123, c.signal.SIGKILL)

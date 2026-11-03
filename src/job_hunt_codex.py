@@ -42,7 +42,10 @@ def _run(args, *, input=None, timeout, env, cwd=None):
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-        process.communicate()
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
         raise
     return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
 

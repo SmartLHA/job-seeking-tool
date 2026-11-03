@@ -37,11 +37,14 @@ SUCCESS = (GOOD, None, False, None)
 
 
 @pytest.fixture(autouse=True)
-def no_network(monkeypatch):
-    monkeypatch.setattr(cvr, 'REVIEWER_MODELS', ('gemini-3.5-flash',))
-    monkeypatch.setitem(globals(), 'REVIEWER_MODELS', ('gemini-3.5-flash',))
-    monkeypatch.setattr(ev, 'REVIEWER_MODELS', ('gemini-3.5-flash',))
-    monkeypatch.setattr(ev.run, '__kwdefaults__', dict(ev.run.__kwdefaults__, reviewer_model='gemini-3.5-flash'))
+def no_network(monkeypatch, request):
+    if request.node.name != 'test_reviewer_constants_stay_outside_the_writer_chain':
+        monkeypatch.setattr(cvr, 'REVIEWER_MODEL', 'gemini-3.5-flash')
+        monkeypatch.setitem(globals(), 'REVIEWER_MODEL', 'gemini-3.5-flash')
+        monkeypatch.setattr(cvr, 'REVIEWER_MODELS', ('gemini-3.5-flash',))
+        monkeypatch.setitem(globals(), 'REVIEWER_MODELS', ('gemini-3.5-flash',))
+        monkeypatch.setattr(ev, 'REVIEWER_MODELS', ('gemini-3.5-flash',))
+        monkeypatch.setattr(ev.run, '__kwdefaults__', dict(ev.run.__kwdefaults__, reviewer_model='gemini-3.5-flash'))
     def forbidden(*args, **kwargs):
         raise AssertionError('network forbidden')
     monkeypatch.setattr(llm.requests, 'post', forbidden)
