@@ -55,6 +55,16 @@ Gemini; other optional Gemini actions retain their own disclosures. Extracted
 text is stored as `docs/master_cv.txt` within the selected profile. New saves
 update the reference; existing legacy references and files are retained.
 
+AI Review CV today rewrites and checks with Google Gemini only, after a per-click
+consent. An OpenAI reviewer (`gpt-6-luna` through the local Codex CLI, signed in with
+a ChatGPT account in its own Codex home `~/.codex-cv-reviewer`, or the folder named by
+the `CV_REVIEW_CODEX_HOME` environment variable) is built but off: `REVIEWER_MODELS`
+in `src/job_hunt_cv_review.py` still lists Gemini only, so the app sends no CV to
+OpenAI. It needs the Codex CLI and `node`, and the live check in
+`docs/tasks/2026-11-01-openai-cv-reviewer-spec.md`, before it is switched on. The
+full privacy disclosure lands with that enable commit; what OpenAI keeps or trains on
+for this login route is UNVERIFIED.
+
 All UI requests require one valid loopback Host at the bound port. POST clients
 must supply a matching Origin or Referer; headerless POST clients are rejected.
 AI explanation is POST-only (GET returns 405 with `Allow: POST`). Search selections

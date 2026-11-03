@@ -512,8 +512,9 @@ def consent_scope():
     """Provider set requiring explicit per-click CV consent."""
     return 'gemini+openai' if any(model.startswith('gpt-') for model in REVIEWER_MODELS) else 'gemini'
 
-# Move to the next reviewer model only on these failure kinds (429, 503, 404). Timeout and
-# fatal stop the chain; the decision uses failure_kind, never the helper's should_try_fallback flag.
+# Move to the next reviewer model only on these failure kinds (for Gemini a 429, 503 or 404; for
+# the Codex CLI a usage limit, no login or binary, or any other failed run). Timeout and fatal
+# stop the chain; the decision uses failure_kind, never the helper's should_try_fallback flag.
 _FALL_THROUGH_KINDS = frozenset({'rate_limited', 'server_error', 'not_found'})
 REVIEW_PROMPT_VERSION = 'cv-blind-review-v1'
 MAX_REVIEW_ITEMS = 80
@@ -641,7 +642,9 @@ def run_blind_review(original_cv, evidence, context, job_skills, writer_result,
     """Review only rewritten text and fail closed on unavailable or invalid replies.
 
     ``models`` is the reviewer chain (None means ``REVIEWER_MODELS``). Models equal to
-    ``writer_model`` are skipped. The next model is tried only after a 429, 503 or 404.
+    ``writer_model`` are skipped. A model id starting with ``gpt-`` is called through the Codex
+    CLI (``job_hunt_codex``), any other id through Gemini. The next model is tried only after a
+    ``rate_limited``, ``server_error`` or ``not_found`` failure (for Gemini a 429, 503 or 404).
     """
     if not isinstance(writer_result, dict) or not isinstance(writer_result.get('reviewed_cv'), str):
         raise ValueError('writer_result.reviewed_cv must be a string')

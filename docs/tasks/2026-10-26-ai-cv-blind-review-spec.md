@@ -30,6 +30,10 @@ baseline, 0 new). gemini-3.8-flash is built but NOT enabled: it is not in REVIEW
 until its own live check passes (see "Live check, then enable" under "## Fix 4"). Its live
 check on 2026-11-01 was INCONCLUSIVE (17 of 19 cases ran, then a repeated rate limit; see its
 "Live check result"): still disabled; run again on another day.
+OpenAI reviewer (docs/tasks/2026-11-01-openai-cv-reviewer-spec.md, approved 2026-11-02):
+built in af5c746, 4c7e6ce, 9d12c38 and 5819a92, NOT enabled. It supersedes D3 and the
+Providers line below in part (notes added there); Gemini stays the only live reviewer
+until its live check passes and the enable commit lands.
 Key functions: ui_handlers.handle_ai_review_cv, handle_ai_review_cv_approve,
 handle_ai_review_cv_revise; job_hunt_llm.ai_rewrite_cv (renamed from
 ai_review_cv_with_llm); job_hunt_cv_review.run_layer0, select_review_items,
@@ -79,6 +83,11 @@ downstream code (ATS recheck, export bundle) use the rewrite.
   "reviewer must be a different family from the writer". Mitigation: the reviewer
   model is outside the writer chain and must differ from the writer's actual
   `model_used`. Accepted risk: writer and reviewer may share blind spots.
+  Superseded in part by docs/tasks/2026-11-01-openai-cv-reviewer-spec.md (Mike,
+  2026-11-01: "OpenAI 主審 (Recommended)", model "只用 gpt-6-luna"): an OpenAI reviewer
+  restores the different-family rule. It is BUILT (2026-11-02) but NOT ENABLED, so
+  until its live check passes and the enable commit lands, D3 as written stays in
+  force and Gemini is the only live reviewer. The original D3 text above is unchanged.
 - D4 Rename: "Rename + update targets (Recommended)". `ai_review_cv_with_llm` becomes
   `ai_rewrite_cv`; import, mock-target, call-site and docstring lines change; no
   assertion changes.
@@ -144,6 +153,11 @@ downstream code (ATS recheck, export bundle) use the rewrite.
 - Providers: Gemini REST only (src/job_hunt_llm.py:36) plus local Nimble
   (src/job_hunt_explain_check.py:18-21; its local server reports base model Qwen3.5
   9B, checked 2026-10-26). No Anthropic or OpenAI code.
+  Update 2026-11-02: docs/tasks/2026-11-01-openai-cv-reviewer-spec.md supersedes the
+  last sentence. src/job_hunt_codex.py now holds a Codex CLI adapter for an OpenAI
+  reviewer (gpt-6-luna), built in af5c746, 4c7e6ce, 9d12c38 and 5819a92 but NOT
+  enabled: REVIEWER_MODELS is still ('gemini-3.5-flash',), so Gemini stays the only
+  live reviewer, and the writer is Gemini only. The original line above is unchanged.
 
 ## Hard constraints
 - The working tree holds uncommitted work in 13 files (810 insertions, files last
@@ -238,6 +252,12 @@ downstream code (ATS recheck, export bundle) use the rewrite.
    "cv_too_long_for_ai_review"}` before the consent check and any cloud call. The
    writer sees only the first 15,000 characters (src/job_hunt_llm.py:484), so the
    heading and role checks against the full original could never pass (Q-F).
+6. Update 2026-11-02 (OpenAI reviewer spec O-8, built in 9d12c38): the page also sends
+   `consent_scope` ("gemini" or "gemini+openai") with `use_cloud`, and the server answers
+   409 when it differs from `consent_scope()` in src/job_hunt_cv_review.py (`consent_stale`,
+   or the sentence "AI services changed - reload the page" when the request sent none).
+   The scope is "gemini" until a `gpt-` model is in REVIEWER_MODELS, so today's label
+   (Google Gemini), sidebar line and items 1-5 above are unchanged.
 
 ### S1 Rename + Layer 0 deterministic gate (no LLM, always runs)
 New module src/job_hunt_cv_review.py with
@@ -371,6 +391,13 @@ The function docstring says it rewrites. INDEX.md mentions are updated with the 
   "reviewer_unavailable".
 - Uses the existing helper `_call_gemini_model` (src/job_hunt_llm.py:58). No new
   client.
+  Update 2026-11-02 (OpenAI reviewer spec O-5, built in 4c7e6ce): `run_blind_review` is
+  provider-aware. A model id starting `gpt-` is called through
+  `job_hunt_codex.call_codex_reviewer` (a subprocess of the local Codex CLI; no new Python
+  package), any other id through `_call_gemini_model`, and the Google key check now runs
+  just before each Gemini call instead of before the chain. `gpt-6-luna` is in
+  EVAL_REVIEWER_MODELS only, so the reviewer the page uses is still the single Gemini
+  model described above. The heading "(Gemini)" is the live state until the enable commit.
 - C2 build notes (2026-10-27, from the C2 verifier and a live smoke test on synthetic
   data):
   - Grounding tests EVIDENCE and CONTEXT separately. A quote that spans the boundary

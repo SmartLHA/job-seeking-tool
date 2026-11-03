@@ -1,7 +1,13 @@
 # OpenAI CV reviewer through the local Codex CLI — design spec
 
-Status: DRAFT r6 2026-11-02. Not approved; nothing built.
+Status: r6 2026-11-02, APPROVED by Mike 2026-11-02 ("Yes, build it"). BUILT 2026-11-02/03 in four commits:
+af5c746 (chunk A, Codex CLI adapter), 4c7e6ce (chunk B, provider-aware chain, eval option, self-check),
+9d12c38 (chunk C, consent scope), 5819a92 (fix, test pins and bounded drain). NOT ENABLED: REVIEWER_MODELS
+is unchanged until "Live check, then enable" steps 1-5 pass, each with Mike's consent on the day.
+Docs (O-12) recorded 2026-11-03 after the build; they are updated again after the live check and the enable.
 Parent spec: docs/tasks/2026-10-26-ai-cv-blind-review-spec.md (blind reviewer; "## Fix 4" reviewer chain).
+Parent-spec line numbers cited below (D3 :78-81, Providers :144-146, :172, S0, S2) are as of commit 0e56f5c;
+the notes added to the parent spec on 2026-11-03 shifted later lines by up to 27 (it grew from 1160 to 1187 lines).
 Evidence folder (local, untracked): archive/cv-review/openai-reviewer-2026-11-01/ ("EV" below).
 Review history: r1 reviewed by Codex 2026-11-01, VERDICT NOT READY (EV/spec-codex-review-r1.md);
 r2 reviewed by Codex, BUILD WITH FIXES, one HIGH (EV/spec-codex-review-r2.md); r3 reviewed by
