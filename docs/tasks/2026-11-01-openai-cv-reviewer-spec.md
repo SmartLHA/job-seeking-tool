@@ -347,6 +347,28 @@ transcript; the event and answer files are in EV/probes/.
    of the clean statements flagged). Record time per call. An early stop is INCONCLUSIVE.
 5. On pass: the enable commit (O-6, fallback.py:303), the full suite again, docs (O-12).
 
+### Real-job trial 2026-11-04 (one run, from the page)
+Mike picked the job and consented to this one run. His answer, to a question asked in
+Chinese (translated: "Which job for the real-job trial? The click sends your real CV to
+Google (rewrite) and OpenAI gpt-6-luna (review), one run only"), was "Michael Page Senior BA".
+- Job reed-57517499 (Senior Business Analyst, Michael Page Technology). The run used the
+  server already running at 127.0.0.1:9000, started 17:40 GMT from the main checkout, which
+  is after the enable commit. The consent box was ticked and "AI Review CV" clicked once,
+  at 17:47:07 GMT.
+- The record was written at 17:47:46, about 40 s for writer plus reviewer (n=1; the
+  per-call split was not measured). It is at
+  `output/tailored_cvs/reed-57517499_ai_reviewed.review.json` (local, gitignored).
+- Writer gemini-3-flash-preview; reviewer gpt-6-luna. The fallback was not used.
+- Verdict NEEDS_EDIT. Of 22 items, 13 are SUPPORTED and 9 EXAGGERATED (all MAJOR). None
+  is UNSUPPORTED and none UNCHECKED.
+- Layer 0: 7 L0-4 "new skill term" findings (process improvement, systems integration,
+  transformation programmes, digital transformation). The reviewer cleared 1 of them (s-8).
+- The 9 flags share one pattern: the rewrite added "transformation" or "systems
+  integration" scope that the evidence does not state. No invented title or employer
+  appeared, so this run gives no evidence on the title decision (parent spec, Fix 3).
+- Not judged here: whether each flag is right. A real job has no ground truth for recall
+  or precision, so that needs Mike's reading of the page.
+
 ## Limits and risks
 - Training: Plus content may be used for training unless Mike turns it off (step 1).
 - Terms: the scripted personal use of a ChatGPT-login Codex is UNVERIFIED against the
