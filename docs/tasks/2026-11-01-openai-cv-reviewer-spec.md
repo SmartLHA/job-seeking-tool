@@ -1,10 +1,12 @@
 # OpenAI CV reviewer through the local Codex CLI — design spec
 
-Status: r6 2026-11-02, APPROVED by Mike 2026-11-02 ("Yes, build it"). BUILT 2026-11-02/03 in four commits:
+Status: ENABLED 2026-11-04 (Mike: "Yes, enable it"), enable commit 40cc011; steps 1-4 passed: (1) Mike read the OpenAI pages live and accepted the points, "All pass, go step 2"; (2) `~/.codex-cv-reviewer` created and logged in; (3) self-check 4 of 4 PASS on codex-cli 0.166.0; (4) eval 19 of 19 cases, recall 1.000, precision 0.833, UNCHECKED 0, 3 of 8 clean statements flagged.
+Earlier status: r6 2026-11-02, APPROVED by Mike 2026-11-02 ("Yes, build it"). BUILT 2026-11-02/03 in four commits:
 af5c746 (chunk A, Codex CLI adapter), 4c7e6ce (chunk B, provider-aware chain, eval option, self-check),
-9d12c38 (chunk C, consent scope), 5819a92 (fix, test pins and bounded drain). NOT ENABLED: REVIEWER_MODELS
-is unchanged until "Live check, then enable" steps 1-5 pass, each with Mike's consent on the day.
-Docs (O-12) recorded 2026-11-03 after the build; they are updated again after the live check and the enable.
+9d12c38 (chunk C, consent scope), 5819a92 (fix, test pins and bounded drain). It was NOT ENABLED until the
+"Live check, then enable" steps 1-5 passed, each with Mike's consent on the day; REVIEWER_MODELS is now
+('gpt-6-luna', 'gemini-3.5-flash') since 40cc011.
+Docs (O-12) recorded 2026-11-03 after the build; updated again 2026-11-04 after the live check and the enable.
 Parent spec: docs/tasks/2026-10-26-ai-cv-blind-review-spec.md (blind reviewer; "## Fix 4" reviewer chain).
 Parent-spec line numbers cited below (D3 :78-81, Providers :144-146, :172, S0, S2) are as of commit 0e56f5c;
 the notes added to the parent spec on 2026-11-03 shifted later lines by up to 27 (it grew from 1160 to 1187 lines).

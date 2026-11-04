@@ -55,15 +55,30 @@ Gemini; other optional Gemini actions retain their own disclosures. Extracted
 text is stored as `docs/master_cv.txt` within the selected profile. New saves
 update the reference; existing legacy references and files are retained.
 
-AI Review CV today rewrites and checks with Google Gemini only, after a per-click
-consent. An OpenAI reviewer (`gpt-6-luna` through the local Codex CLI, signed in with
-a ChatGPT account in its own Codex home `~/.codex-cv-reviewer`, or the folder named by
-the `CV_REVIEW_CODEX_HOME` environment variable) is built but off: `REVIEWER_MODELS`
-in `src/job_hunt_cv_review.py` still lists Gemini only, so the app sends no CV to
-OpenAI. It needs the Codex CLI and `node`, and the live check in
-`docs/tasks/2026-11-01-openai-cv-reviewer-spec.md`, before it is switched on. The
-full privacy disclosure lands with that enable commit; what OpenAI keeps or trains on
-for this login route is UNVERIFIED.
+AI Review CV rewrites with Google Gemini, then checks the rewrite with a second
+reviewer, after a per-click consent that names Google Gemini and OpenAI. The reviewer
+is OpenAI `gpt-6-luna` through the local Codex CLI, signed in with the owner's
+personal ChatGPT account (Plus per the owner; plan UNVERIFIED) in its own Codex home `~/.codex-cv-reviewer` (or the folder named
+by the `CV_REVIEW_CODEX_HOME` environment variable). It was enabled on 2026-11-04
+(commit `40cc011`); it needs the Codex CLI and `node`. What is sent and what is kept:
+
+- When the AI CV review is used, the original CV text, the rewrite, the profile
+  evidence and context, and the job's required and preferred skills are sent to OpenAI
+  through the Codex CLI (not the full job advert). If OpenAI fails with a rate limit, a server error or
+  not-found, they are sent to Google Gemini (`gemini-3.5-flash`) instead. A timeout
+  gives UNCHECKED with no fallback.
+- Training: personal-plan (Free, Plus, Pro) content may be used for model training unless "Improve the model for
+  everyone" is off in ChatGPT data controls. The default is ON; the owner turned it off
+  on 2026-11-04. Anyone else running this must check their own setting. Codex also has
+  a separate "Include environments" training setting; whether it applies to local CLI
+  runs is UNVERIFIED.
+- Retention: OpenAI publishes no retention period for Codex CLI requests (UNVERIFIED
+  beyond that; `--ephemeral` stops only local session files).
+- Terms: the OpenAI Europe Terms of Use ban "Automatically or programmatically
+  extracting data or Output". The owner read this and accepted the risk on 2026-11-04.
+- Quota: reviews share the account's Codex quota with development work.
+- The live check and its results are in
+  `docs/tasks/2026-11-01-openai-cv-reviewer-spec.md`.
 
 All UI requests require one valid loopback Host at the bound port. POST clients
 must supply a matching Origin or Referer; headerless POST clients are rejected.
