@@ -15,7 +15,7 @@ from src.ui_render import JobPageViewModel, render_job_page
 from tests.test_cover_letter import build_analysis, build_job, build_profile
 
 
-def _vm() -> JobPageViewModel:
+def _vm(**overrides) -> JobPageViewModel:
     values = {}
     import dataclasses
 
@@ -34,6 +34,7 @@ def _vm() -> JobPageViewModel:
         match_score=85.0, confidence="high", decision="apply", effective_decision="apply",
         flash_kind="info", model_label="m", source_type="copied_text",
     )
+    values.update(overrides)
     return JobPageViewModel(**values)
 
 

@@ -179,8 +179,17 @@ function aiRenderRewrite(panel,d,flagged){
   });
 }
 
-/* Draws one result. `notice` is an optional error line shown under the buttons. */
-function aiRender(d,notice){
+/* Local time of a stored UTC ISO string, to the minute. */
+function aiWhen(iso){
+  var t=new Date(iso);
+  if(isNaN(t.getTime()))return String(iso||'');
+  var p=function(n){return (n<10?'0':'')+n;};
+  return t.getFullYear()+'-'+p(t.getMonth()+1)+'-'+p(t.getDate())+' '+p(t.getHours())+':'+p(t.getMinutes());
+}
+
+/* Draws one result. `notice` is an optional line shown under the buttons: an error line
+   in the error colour, or (when `info` is true) a plain information line. */
+function aiRender(d,notice,info){
   aiResult.textContent='';
   window._aiReviewedCvText=d.reviewed_cv||'';
   var review=d.review||{};
@@ -200,7 +209,7 @@ function aiRender(d,notice){
   var actions=aiEl(panel,'div');
   actions.style.cssText='margin-top:12px;';
   var note=aiEl(panel,'p',notice||'','ai-cv-notice');
-  note.style.cssText='margin:8px 0 0;font-size:13px;color:var(--skip);';
+  note.style.cssText='margin:8px 0 0;font-size:13px;color:'+(info?'var(--ink-soft)':'var(--skip)')+';';
   if(verdict!=='PASS'&&!approved){
     var approve=aiEl(actions,'button','Approve this rewrite');
     approve.style.cssText=AI_BTN_STYLE;
@@ -215,9 +224,11 @@ function aiRender(d,notice){
           return;
         }
         approve.disabled=false;
+        note.style.color='var(--skip)';
         note.textContent=aiErrorText(res.data&&res.data.error,'Approve',false);
       }).catch(function(err){
         approve.disabled=false;
+        note.style.color='var(--skip)';
         note.textContent=aiErrorText(err&&err.message,'Approve',true);
       });
     });
@@ -267,6 +278,14 @@ function aiRun(path,body,action,previous){
 aiBtn.addEventListener('click',function(){
   aiRun('',{use_cloud:!!(aiConsent&&aiConsent.checked),consent_scope:aiScope},'',null);
 });
+/* A saved review embedded by the server (read-only; no cloud call is made here). */
+var aiSavedEl=document.getElementById('ai-cv-saved');
+if(aiSavedEl){
+  try{
+    var aiSaved=JSON.parse(aiSavedEl.textContent);
+    if(aiSaved&&typeof aiSaved==='object')aiRender(aiSaved,'Last AI review: '+aiWhen(aiSaved.created_at),true);
+  }catch(e){}
+}
 })();
 """
 
@@ -1317,6 +1336,8 @@ class JobPageViewModel:
     model_label: str
     consent_scope: str = "gemini"
     skill_extraction_method: str | None = None  # Slice 1c
+    ai_cv_saved: dict | None = None  # saved AI CV review in POST-success shape (current record only)
+    ai_cv_stale: bool = False  # a saved AI CV review exists but no longer matches the CV/profile
 
 
 SKILL_METHOD_LABELS = {
@@ -2234,6 +2255,20 @@ def render_job_page(vm: "JobPageViewModel") -> str:
                 f'{escape(label)}</button>'
             )
 
+        ai_cv_stale_html = ""
+        ai_cv_saved_html = ""
+        if vm.ai_cv_saved is not None:
+            # Escape <, > and & inside the JSON text so no data can close the script element.
+            _saved_json = (json.dumps(vm.ai_cv_saved, ensure_ascii=False)
+                           .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026"))
+            ai_cv_saved_html = f'<script type="application/json" id="ai-cv-saved">{_saved_json}</script>'
+        elif vm.ai_cv_stale:
+            ai_cv_stale_html = (
+                '<p id="ai-cv-stale" style="margin:0;font-size:13px;color:var(--ink-soft);">'
+                'An earlier AI review of this job no longer matches your CV or profile. '
+                'Click AI Review CV to review again.</p>'
+            )
+
         action_bar_html = (
             f'<div style="position:sticky;bottom:0;margin-top:20px;padding:16px 0;'
             f'background:linear-gradient(to top,var(--bg) 65%,transparent);">'
@@ -2279,7 +2314,8 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);">'
             f'&#11015; Download package</a>'
             f'</div>'
-            f'<div id="tailor-result" style="margin-top:12px;"></div>'
+            f'<div id="tailor-result" style="margin-top:12px;">{ai_cv_stale_html}</div>'
+            f'{ai_cv_saved_html}'
             f'</div>'
             f'</div>'
         )

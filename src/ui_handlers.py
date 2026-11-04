@@ -554,6 +554,47 @@ def render_home(req, config, responder, *, values=None, error=None, tab='search'
     responder.send_html(page)
 
 
+def _ai_cv_saved_fields(config, job_id) -> dict:
+    """Read-only view of the saved AI CV review for the job page.
+
+    Returns the view-model fields ``ai_cv_saved`` (a dict in the POST-success shape, current
+    record only) and ``ai_cv_stale`` (a record exists but no longer matches the CV or profile).
+    Any problem reading gives the plain page: no panel, no notice, no exception.
+    """
+    none = {"ai_cv_saved": None, "ai_cv_stale": False}
+    try:
+        from src.job_hunt_cv_review import (
+            build_review_source, canonical_cv_body, compute_binding, read_review_record,
+            resolve_master_cv_text,
+        )
+        output_dir = Path(DEFAULT_TAILORING_POLICY.output_dir)
+        record = read_review_record(output_dir, job_id)
+        if record is None:
+            return none
+        md_path = output_dir / f"{job_id}_ai_reviewed.md"
+        if md_path.is_symlink():
+            return none
+        body = canonical_cv_body(md_path.read_text(encoding="utf-8"))
+        profile = load_candidate_profile(config.profile_path)
+        cv_text = resolve_master_cv_text(profile, config.profile_path.parent)
+        evidence, context = build_review_source(profile, cv_text)
+        if record["binding"] != compute_binding(profile, cv_text, evidence, context, body, job_id):
+            return {"ai_cv_saved": None, "ai_cv_stale": True}
+        review = {"verdict": record["verdict"], "l0_findings": record["l0_findings"],
+                  "items": record["items"], "reviewer_model": record["reviewer_model"]}
+        return {"ai_cv_saved": {
+            "reviewed_cv": body, "changes": [], "saved_path": md_path.name,
+            "model_used": record["writer_model"], "review": review,
+            "generation_id": record["generation_id"],
+            "rewrite_sha256": record["binding"]["rewrite_sha256"],
+            "revise_round": record["revise_round"], "approval": record["approval"],
+            "created_at": record["created_at"],
+        }, "ai_cv_stale": False}
+    except Exception as exc:
+        logger.debug("Saved AI CV review not shown for %s: %s", job_id, exc)
+        return none
+
+
 def render_job(req, config, responder, job_id, *, flash=None, flash_kind='success', embed=None):
     if not job_id.strip():
         responder.redirect("/")
@@ -598,6 +639,7 @@ def render_job(req, config, responder, job_id, *, flash=None, flash_kind='succes
         qualitative_grade=qualitative_grade,
         flash=flash, flash_kind=flash_kind, embed=embed,
         model_label=config.model_label,
+        **_ai_cv_saved_fields(config, job_id),
     ))
     responder.send_html(page)
 
@@ -1351,6 +1393,7 @@ def render_result(req, config, responder, result):
         result.reviewed_job, result.analysis, outcome,
         flash="Job evaluated and saved locally.", flash_kind="success",
         model_label=config.model_label,
+        **_ai_cv_saved_fields(config, result.reviewed_job.job_id),
     ))
     responder.send_html(page)
 
@@ -3258,7 +3301,7 @@ def _keyword_match_vm_fields(reviewed_job, analysis) -> dict:
 
 def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash,
                        qualitative_assessment=None, qualitative_index=None, qualitative_grade=None, flash_kind="success",
-                       embed=False, model_label="") -> "JobPageViewModel":
+                       embed=False, model_label="", ai_cv_saved=None, ai_cv_stale=False) -> "JobPageViewModel":
     if analysis is not None:
         sb = analysis.score_breakdown
         rows = [
@@ -3317,7 +3360,8 @@ def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash,
         qualitative_assessment=qualitative_assessment,
         qualitative_index=qualitative_index,
         qualitative_grade=qualitative_grade,
-        flash=flash, flash_kind=flash_kind, embed=embed, model_label=model_label, **a,
+        flash=flash, flash_kind=flash_kind, embed=embed, model_label=model_label,
+        ai_cv_saved=ai_cv_saved, ai_cv_stale=ai_cv_stale, **a,
     )
 
 

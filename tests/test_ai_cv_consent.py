@@ -6,6 +6,7 @@ the Gemini transport, so no test can reach the network.
 from __future__ import annotations
 
 import io
+import json
 import re
 import shutil
 import subprocess
@@ -151,9 +152,9 @@ def test_cv_of_exactly_15000_chars_is_still_allowed(env):
 
 # ---- page: checkbox, request body, reset, error messages ---------------------
 
-def _job_html() -> str:
+def _job_html(**vm_overrides) -> str:
     from tests.test_cover_letter_form import _vm
-    return ui_render.render_job_page(_vm())
+    return ui_render.render_job_page(_vm(**vm_overrides))
 
 
 def test_page_has_unchecked_consent_checkbox_with_exact_label_next_to_button():
@@ -340,17 +341,26 @@ const BUSY = 'Another AI review is running. Try again in a moment.';
 """
 
 
-def _run_page_js(tmp_path, body):
-    """Run the real page script in node against the fake DOM, then ``body`` (async)."""
+def _run_page_js(tmp_path, body, html=None):
+    """Run the real page script in node against the fake DOM, then ``body`` (async).
+
+    ``html`` is the rendered page to take the script from (default: a plain job page). When
+    it embeds a saved review (``#ai-cv-saved``), the JSON text is placed on a fake element.
+    """
     node = shutil.which("node")
     if not node:
         pytest.skip("node not available")
-    scripts = re.findall(r"<script>(.*?)</script>", _job_html(), re.S)
+    html = _job_html() if html is None else html
+    scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
+    saved = re.search(r'<script type="application/json" id="ai-cv-saved">(.*?)</script>', html, re.S)
+    inject = ""
+    if saved:
+        inject = "ids['ai-cv-saved'] = {textContent: " + json.dumps(saved.group(1)) + "};\n"
     script = next(s for s in scripts if s.startswith("/* tailor + cover */"))
     checks = ("(async () => {\n" + body + "\nconsole.log('ok');\n})()"
               ".catch(e => { console.error(e); process.exitCode = 1; });\n")
     path = tmp_path / "ai-cv-panel.js"
-    path.write_text(_JS_PREFIX + script + _JS_HELPERS + checks)
+    path.write_text(_JS_PREFIX + inject + script + _JS_HELPERS + checks)
     result = subprocess.run([node, str(path)], capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "ok"
