@@ -1,6 +1,8 @@
-<!-- STATUS: DRAFT r2.1 2026-11-04 (r1 verifier: 0 BLOCKER, 3 MAJOR, 6 MINOR; r2 verifier: 0 BLOCKER, 0 MAJOR, 3 MINOR;
-all fixed in r2 and r2.1), awaiting Mike's approval. Nothing is built before he
-says "Yes, build it" (or similar). -->
+<!-- STATUS: APPROVED r2.1 2026-11-04. Mike answered "Approve the build with option A
+(hide the stale result)?" (translated from Chinese) with "Yes, build it (A)". So Q1 = A:
+a stale record is hidden and only the S3 line is shown. Reviews of r1 (verifier: 0
+BLOCKER, 3 MAJOR, 6 MINOR) and r2 (verifier: 0 BLOCKER, 0 MAJOR, 3 MINOR) were all
+fixed in r2 and r2.1. -->
 
 # AI CV review: show the saved result again after a page reload — design spec
 
@@ -165,6 +167,6 @@ in `tests/test_ai_cv_consent.py` extended:
   code; Mike says when.
 
 ## Open question for Mike
-- Q1 Stale record:
+- Q1 Stale record (answered 2026-11-04: A, see STATUS):
   - (A, recommended) hide it and show the one-line S3 message;
   - (B) show the old result read-only, with a warning and no buttons.
