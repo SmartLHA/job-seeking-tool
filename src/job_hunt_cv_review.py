@@ -504,7 +504,7 @@ def overall_verdict(l0_findings, item_statuses) -> str:
 # The eval may pin any model in EVAL_REVIEWER_MODELS; production uses REVIEWER_MODELS only.
 # gemini-3.8-flash joins REVIEWER_MODELS in a separate commit, after its own live check passes.
 EVAL_REVIEWER_MODELS = ('gemini-3.5-flash', 'gemini-3.8-flash', 'gpt-6-luna')
-REVIEWER_MODELS = ('gemini-3.5-flash',)
+REVIEWER_MODELS = ('gpt-6-luna', 'gemini-3.5-flash')  # enabled 2026-11-04: OpenAI first, Gemini fallback (spec O-6)
 REVIEWER_MODEL = REVIEWER_MODELS[0]
 
 
