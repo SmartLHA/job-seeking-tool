@@ -29,7 +29,8 @@ Fix 4 (reviewer fallback model, Mike: "Option A") specified 2026-10-31 (cb39e52)
 baseline, 0 new). gemini-3.8-flash is built but NOT enabled: it is not in REVIEWER_MODELS
 until its own live check passes (see "Live check, then enable" under "## Fix 4"). Its live
 check on 2026-11-01 was INCONCLUSIVE (17 of 19 cases ran, then a repeated rate limit; see its
-"Live check result"): still disabled; run again on another day.
+"Live check result"): still disabled. The re-run is dropped for now (Mike, 2026-11-04;
+see "Decision 2026-11-04" under that heading).
 OpenAI reviewer (docs/tasks/2026-11-01-openai-cv-reviewer-spec.md, approved 2026-11-02):
 built in af5c746, 4c7e6ce, 9d12c38 and 5819a92, ENABLED 2026-11-04 in 40cc011 (REVIEWER_MODELS =
 ('gpt-6-luna', 'gemini-3.5-flash')). It supersedes D3 and the Providers line below in part
@@ -797,6 +798,10 @@ numbers in SOURCE, and the reviewer labelled the swap EXAGGERATED (the prompt ne
 mentions numbers). Mike approved option A (narrowed) plus option B for numbers only.
 This moves the narrow swap case defined in F-A2 out of "Not in scope". Titles
 ("Director" came back EXAGGERATED) are NOT changed here; that is a separate decision.
+Titles decision 2026-11-04: no change for now; decide after a real-job trial. Mike,
+answering item 3 of an options list ("'Director' job title", options "A: Leave it as is
+and decide after you try a real job" and "B: I write a fix design; nothing gets built
+until you approve"): "3 A".
 Builder: implementer, two chunks (F-A, then F-B), commit after each passing chunk.
 Spec reviewed by Codex 2026-10-29 (BUILD WITH FIXES); its fixes are folded in below.
 
@@ -1124,6 +1129,12 @@ folded in below. A read-back check of this section (0 BLOCKER, 1 MAJOR, 8 MINOR,
 
 ### Live check result
 Live check 2026-11-01, 22:43-23:24 GMT (Mike: "Yes, run it now"): INCONCLUSIVE; nothing is enabled and gemini-3.8-flash stays out of `REVIEWER_MODELS`. Step 1 first: the deprecations page (last updated 2026-10-22) was re-read; neither gemini-3.8-flash nor the writer's gemini-3-flash-preview is routed to another model. One run `--use-cloud --reviewer-model gemini-3.8-flash` on the main folder (report `archive/cv-review-eval/report-2026-11-01-232448.md`, log `archive/cv-review/fix4-2026-10-31/live-3.8-flash-20261101-224300.log`, both local). The run stopped early on a repeated rate limit: 17 of 19 cases ran; NOT_RUN: tool-naming, unclaimed-skill. Per step 4 that is INCONCLUSIVE, not a pass: run again on another day. First measurement of gemini-3.8-flash's cap on Mike's key: the 429 came after 17 cases (which limit, per minute or daily, is UNVERIFIED; n=1 run). Of the 17 cases that ran, 15 matched and 2 did not: keyword-rephrase ended UNCHECKED on a timeout (expected PASS), and new-title-company-date-title ended NEEDS_EDIT, not BLOCKED, because the reviewer labelled "Director" EXAGGERATED, not UNSUPPORTED (the same title weakness as gemini-3.5-flash on 2026-10-29). Item recall 1.000, precision 0.875, UNCHECKED rate 0.048 (one item, keyword-rephrase's). Clean statements: 2 of 7 flagged UNSUPPORTED, 1 UNCHECKED, 4 SUPPORTED. No case whose expected verdict is BLOCKED or NEEDS_EDIT came back PASS. Even a full run would not have passed: UNCHECKED was 1 and step 3 needs 0.
+
+Decision 2026-11-04: the re-run is dropped for now, and gemini-3.8-flash stays out of
+`REVIEWER_MODELS`. Mike, answering item 2 of an options list ("Rerun the gemini-3.8-flash
+check", options "A: Drop it for now" and "B: Pick a day to rerun it"): "2 A". Reading,
+not Mike's words: a later re-run needs a new decision from Mike, and step 4a still
+applies if one is made.
 
 ### Limits kept
 - A per-minute 429 also moves to model 2 (the 429 body is dropped, spec C4 fix 2), so
