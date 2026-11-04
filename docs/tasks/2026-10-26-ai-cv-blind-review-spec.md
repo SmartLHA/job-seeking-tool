@@ -1106,11 +1106,14 @@ folded in below. A read-back check of this section (0 BLOCKER, 1 MAJOR, 8 MINOR,
    again on another day. Nothing is enabled.
    - 4a. A complete run (all 19 cases ran) with UNCHECKED above 0 is run once more; if
      that second complete run again has UNCHECKED above 0, it is a fail (step 5). Mike,
-     2026-11-02, answering "gemini-3.8-flash runs all 19 cases but UNCHECKED > 0: fail
-     or rerun?": "重跑一次，再有就 fail". Reading, not Mike's words: this applies when
-     UNCHECKED is the only part of step 3 missed; the rerun is on another day, as in
-     step 4 (quota); and the 2026-11-01 run stopped early, so it does not count as the
-     first complete run.
+     2026-11-02, answering (translated from Chinese) "gemini-3.8-flash runs all 19 cases
+     but UNCHECKED > 0: fail or rerun?": "重跑一次，再有就 fail". This applies only when
+     UNCHECKED is the only part of step 3 missed. A complete run that misses step 3 on
+     UNCHECKED and on any other condition is a fail at once (step 5): Mike, 2026-11-04,
+     answering (translated from Chinese) "If a complete run has UNCHECKED > 0 and another
+     pass condition also fails, is it a fail straight away?": "當 fail". Reading, not
+     Mike's words: the rerun is on another day, as in step 4 (quota); and the 2026-11-01
+     run stopped early, so it does not count as the first complete run.
 5. Fail: gemini-3.8-flash stays out of `REVIEWER_MODELS`; report to Mike.
 6. Pass: report the figures to Mike. The one-line enable commit adds gemini-3.8-flash
    to `REVIEWER_MODELS` (unless Mike said otherwise when he consented to the run), and
