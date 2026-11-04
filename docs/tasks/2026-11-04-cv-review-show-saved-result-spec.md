@@ -165,6 +165,21 @@ in `tests/test_ai_cv_consent.py` extended:
   `/job/reed-57517499` on Mike's running server shows the NEEDS_EDIT panel with 9 flagged
   items and the "Last AI review:" notice. The server must be restarted to load the new
   code; Mike says when.
+  - Result 2026-11-04: MET, on a newer record.
+    - Mike: "好，重啟". By then the old server (started 17:40) was no longer running.
+    - A new server was started from the main checkout at d3cf153, with
+      `--profile data/mic_profile/candidate_profile.json --port 9000`. With this profile
+      and with `data/mic_profile.json`, the helper gives a current record.
+    - The 17:47 record had already been replaced. A fresh run (revise_round 0) was made
+      from the page at 18:03:41 UTC, not by Claude.
+    - On reload the page shows the 18:03 panel:
+      - verdict BLOCKED (28 items: 20 SUPPORTED, 7 EXAGGERATED, 1 UNSUPPORTED);
+      - Approve and Revise buttons;
+      - the notice "Last AI review: 2026-11-04 18:03", in the normal text colour;
+      - no "Changes made" list;
+      - no stale line;
+      - the consent box not ticked.
+    - No cloud call was made.
 
 ## Open question for Mike
 - Q1 Stale record (answered 2026-11-04: A, see STATUS):
