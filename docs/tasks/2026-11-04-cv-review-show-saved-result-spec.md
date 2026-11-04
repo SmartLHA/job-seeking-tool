@@ -1,5 +1,5 @@
-<!-- STATUS: DRAFT r2 2026-11-04 (r1 checked by a verifier: 0 BLOCKER, 3 MAJOR, 6 MINOR,
-fixed in r2), awaiting Mike's approval. Nothing is built before he
+<!-- STATUS: DRAFT r2.1 2026-11-04 (r1 verifier: 0 BLOCKER, 3 MAJOR, 6 MINOR; r2 verifier: 0 BLOCKER, 0 MAJOR, 3 MINOR;
+all fixed in r2 and r2.1), awaiting Mike's approval. Nothing is built before he
 says "Yes, build it" (or similar). -->
 
 # AI CV review: show the saved result again after a page reload — design spec
@@ -21,13 +21,13 @@ flagged sentences again without spending another cloud run.
 - The result panel is drawn only by `aiRender(d, notice)` in the inline script
   `_AI_CV_SCRIPT` (`src/ui_render.py:183-234`). Its only input is the POST success JSON.
 - Every server value goes in through `textContent` (`aiEl`, `src/ui_render.py:48-54`).
-  `tests/test_ai_cv_consent.py:359` asserts that the script has no `innerHTML`.
+  `tests/test_ai_cv_consent.py:359-360` asserts that the script has no `innerHTML`.
 - The POST success JSON (`src/ui_handlers.py:1804-1816`) has these fields:
   `ok, reviewed_cv, changes, saved_path, model_used, review{verdict, l0_findings, items,
   reviewer_model}, generation_id, rewrite_sha256, revise_round, approval`.
 - On disk there are two files. The path is built at `src/job_hunt_cv_review.py:98-102`, the
-  md header at `src/ui_handlers.py:1783`, and both writes happen at
-  `src/ui_handlers.py:1787-1797`:
+  md header at `src/ui_handlers.py:1783`, and the writes happen at
+  `src/ui_handlers.py:1795-1798`:
   - `<output_dir>/<job_id>_ai_reviewed.review.json`, the record: verdict, items,
     l0_findings, generation_id, revise_round, writer_model, reviewer_model, approval,
     binding, created_at.
@@ -80,7 +80,10 @@ flagged sentences again without spending another cloud run.
   3. Load the profile and the master CV. Either fails to load, or the master CV is
      missing or unreadable: S4. The review cannot be judged, and the AI Review CV button
      would fail on the same inputs.
-  4. Compare the binding, as `_ai_cv_binding_current` does. Not equal: S3. Equal: S2.
+  4. Compare `record["binding"]` with a fresh `compute_binding` built from the inputs
+     read in steps 2-3. Not equal: S3. Equal: S2. The helper does its own comparison and
+     does not call `_ai_cv_binding_current`. That function turns read and decode errors
+     into False, which would give S3 where S4 is meant.
 - S3. **Stale record** (binding not current, for example the CV or profile changed after
   the review): no panel. The result area shows one line instead: "An earlier AI review of
   this job no longer matches your CV or profile. Click AI Review CV to review again."
