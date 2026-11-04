@@ -1,4 +1,5 @@
-<!-- STATUS: DRAFT r1 2026-11-04, awaiting Mike's approval. Nothing is built before he
+<!-- STATUS: DRAFT r2 2026-11-04 (r1 checked by a verifier: 0 BLOCKER, 3 MAJOR, 6 MINOR,
+fixed in r2), awaiting Mike's approval. Nothing is built before he
 says "Yes, build it" (or similar). -->
 
 # AI CV review: show the saved result again after a page reload — design spec
@@ -24,8 +25,9 @@ flagged sentences again without spending another cloud run.
 - The POST success JSON (`src/ui_handlers.py:1804-1816`) has these fields:
   `ok, reviewed_cv, changes, saved_path, model_used, review{verdict, l0_findings, items,
   reviewer_model}, generation_id, rewrite_sha256, revise_round, approval`.
-- On disk (`src/job_hunt_cv_review.py:98-102`, `src/ui_handlers.py:1783`) there are two
-  files:
+- On disk there are two files. The path is built at `src/job_hunt_cv_review.py:98-102`, the
+  md header at `src/ui_handlers.py:1783`, and both writes happen at
+  `src/ui_handlers.py:1787-1797`:
   - `<output_dir>/<job_id>_ai_reviewed.review.json`, the record: verdict, items,
     l0_findings, generation_id, revise_round, writer_model, reviewer_model, approval,
     binding, created_at.
@@ -58,10 +60,27 @@ flagged sentences again without spending another cloud run.
   - `rewrite_sha256` = `record["binding"]["rewrite_sha256"]`;
   - one extra field, `created_at`, from the record.
   The renderer embeds `d` in a `<script type="application/json" id="ai-cv-saved">` element.
-  Encoding is `json.dumps` with `<`, `>` and `&` escaped as `<`, `>` and
-  `&`, so no data can close the script element. On page load the inline script parses
-  that element and calls `aiRender(d, notice)`. The notice is "Last AI review:
-  <created_at, local time, minutes>".
+  Encoding: `json.dumps(d)`, then every `<`, `>` and `&` in the JSON text is replaced by
+  the JSON unicode escape for that character. The escape is a backslash, the letter u,
+  and then the four hex digits 003c, 003e or 0026. No data can then close the script
+  element. On page load the inline script parses that element and calls `aiRender(d, notice)`.
+  The notice is "Last AI review: <created_at>":
+  - `created_at` is the record's UTC ISO string, which the browser converts to local
+    time, shown to the minute;
+  - it is shown in the normal text colour, not the error colour that `ai-cv-notice` uses
+    today (`src/ui_render.py:203`).
+- S2a. Both pages that render the job page get the value: `render_job`
+  (`src/ui_handlers.py:557-602`) and `render_result` (`src/ui_handlers.py:1350-1355`, the
+  page after an evaluation or Re-evaluate). Build it in one helper and call it from both,
+  or from the shared view-model builder.
+- S2b. Order of checks in the helper. The whole helper runs inside a broad try/except,
+  and any exception gives S4.
+  1. Read the record with `read_review_record`; None gives S4.
+  2. Read the md file. It is missing, a symlink, or unreadable: S4.
+  3. Load the profile and the master CV. Either fails to load, or the master CV is
+     missing or unreadable: S4. The review cannot be judged, and the AI Review CV button
+     would fail on the same inputs.
+  4. Compare the binding, as `_ai_cv_binding_current` does. Not equal: S3. Equal: S2.
 - S3. **Stale record** (binding not current, for example the CV or profile changed after
   the review): no panel. The result area shows one line instead: "An earlier AI review of
   this job no longer matches your CV or profile. Click AI Review CV to review again."
@@ -90,6 +109,17 @@ Small change: about 3 source files (`src/ui_handlers.py`, `src/ui_render.py`, ma
 `src/job_hunt_cv_review.py` for a read helper) plus tests. Builder: the `implementer`
 agent (sonnet), one chunk. A fresh verifier runs after the build, then the full suite.
 
+Test work, part of the same chunk. AC1, AC1a and AC5 need the node page-script harness
+in `tests/test_ai_cv_consent.py` extended:
+- The fake DOM resolves only the ids it defines (`getElementById: id => ids[id] || null`,
+  about :202-300). It needs an `ai-cv-saved` element whose `textContent` holds the
+  embedded JSON.
+- `_run_page_js` (:343-357) renders `_job_html()` from the `_vm()` factory in
+  `tests/test_cover_letter_form.py`. That factory needs a way to pass the new view-model
+  field.
+- The harness picks scripts with `re.findall(r"<script>(.*?)</script>")`, so the JSON
+  element is not run as a script. It still needs a hook to inject the JSON text.
+
 ## Acceptance criteria
 - AC1 Current NEEDS_EDIT record. The rendered job page contains `#ai-cv-saved`. Under the
   node page-script harness (`_run_page_js`, `tests/test_ai_cv_consent.py:343`) the panel
@@ -103,9 +133,16 @@ agent (sonnet), one chunk. A fresh verifier runs after the build, then the full 
   `revise_round` 1: there is no Revise button.
 - AC3 Stale record (the master CV changed after the record was written): there is no
   `#ai-cv-saved` and no panel, and the S3 line is shown.
+- AC1a S7: the reloaded panel has no "Changes made" list. The notice element is not
+  styled with the error colour.
+- AC2a The page rendered by `render_result` with a current record also contains
+  `#ai-cv-saved` (S2a).
 - AC4 Each of these renders the page with no panel and no S3 line, and raises no
-  exception: no record, invalid JSON, a record that fails validation, a symlinked record,
-  and a missing md file.
+  exception:
+  - no record; invalid JSON; a record that fails validation; a symlinked record;
+  - a missing md file; a symlinked md file;
+  - a profile that fails to load; a missing or unreadable master CV;
+  - a helper that raises an unexpected exception (monkeypatched).
 - AC5 Injection. A record whose item text, reason, L0 detail and rewrite contain
   `</script><script>alert(1)</script>` and `<img src=x onerror=alert(1)>` produces page
   HTML in which the data never appears as a raw `</script` or `<img`. The panel shows the
