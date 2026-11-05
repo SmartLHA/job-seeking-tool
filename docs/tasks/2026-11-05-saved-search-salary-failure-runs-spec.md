@@ -1,9 +1,11 @@
 # Saved searches: salary floor, visible Reed failures, kept run results
 
-<!-- STATUS: DRAFT r4 2026-11-05. Not approved. Nothing is built until Mike approves
-(dispatch.md Builder discipline item 5). r2 to r4 apply three Codex design reviews (the third
-raised no HIGH issue) and a fresh verifier check of r3 (0 BLOCKER, 0 MAJOR, 5 MINOR). The
-Gemini pre-check was skipped: the brief bars Gemini calls without Mike's consent. -->
+<!-- STATUS: APPROVED r4 2026-11-05. Mike answered "Approve the design with all three
+recommendations (Q1–Q3)?" with "Approve, build it". So Q1 = keep and count jobs with no listed
+salary; Q2 = keep a range that reaches the floor; Q3 = read 50 jobs, filter locally, at most 10
+attempts per run. r2 to r4 apply three Codex design reviews (the third raised no HIGH issue)
+and a fresh verifier check of r3 (0 BLOCKER, 0 MAJOR, 5 MINOR). The Gemini pre-check was
+skipped: the brief bars Gemini calls without Mike's consent. -->
 
 ## 1. Problem
 
