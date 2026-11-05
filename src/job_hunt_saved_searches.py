@@ -430,18 +430,51 @@ def search_run_status(jobs_fetched: int, errors: list[str]) -> str:
     return ("partial" if jobs_fetched else "failed") if errors else "ok"
 
 
+def search_run_error(error: str, search_id: str) -> str:
+    """Remove the search-local prefix for both live and stored messages."""
+    text = str(error)
+    for prefix in (f"{search_id}: ", f"{search_id}/"):
+        if text.startswith(prefix):
+            return text[len(prefix):]
+    return text
+
+
+def search_run_summary(counts: Mapping[str, Any], *, search_id: str,
+                       source_name: str) -> dict[str, str]:
+    """Build the shared user-facing status and summary without mutating counts."""
+    errors = [search_run_error(e, search_id) for e in counts.get("errors", [])]
+    fetched = counts.get("jobs_fetched", 0)
+    new = counts.get("jobs_new", 0)
+    status = search_run_status(fetched, errors)
+    labels = (("jobs_llm_queued", "queued for AI"), ("jobs_skipped", "skipped"),
+              ("jobs_already_seen", "already seen"), ("jobs_below_floor", "below salary floor"),
+              ("jobs_salary_unknown", "salary unknown"),
+              ("jobs_held_over", "not attempted (budget reached)"))
+    details = ", ".join(f"{counts[key]} {label}" for key, label in labels if counts.get(key, 0))
+    base = f"fetched {fetched}, {str(new) + ' new' if new else 'nothing new'}"
+    if status == "failed":
+        summary = f"Run failed: {errors[0]}. No jobs were fetched."
+        if len(errors) > 1:
+            summary += f" (+{len(errors) - 1} more)"
+    elif status == "partial":
+        summary = f"Run finished with {len(errors)} problem(s): {base}"
+        if details:
+            summary += f" ({details})"
+        summary += f". First: {errors[0]}"
+    elif not fetched:
+        summary = f"Run done: {source_name} returned no jobs for this search."
+    else:
+        summary = f"Run done: {base}" + (f" ({details})" if details else "") + "."
+    return {"run_status": status, "summary": summary}
+
+
 def record_search_run(search_id: str, *, state_root: str | Path, trigger: str,
                       started_at: str, finished_at: str, salary_floor: int | None = None,
                       errors: list[str] | None = None, **counts: int) -> None:
     """Persist one search attempt, including bounded, search-local errors."""
     kept_errors = []
     for error in (errors or [])[:20]:
-        text = str(error)
-        for prefix in (f"{search_id}: ", f"{search_id}/"):
-            if text.startswith(prefix):
-                text = text[len(prefix):]
-                break
-        kept_errors.append(text[:500])
+        kept_errors.append(search_run_error(error, search_id)[:500])
     values = {key: int(counts.get(key, 0)) for key in _RUN_COUNTERS}
     values.update(search_id=search_id, trigger=trigger, started_at=started_at,
                   finished_at=finished_at, salary_floor=salary_floor,

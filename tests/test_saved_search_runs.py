@@ -229,3 +229,176 @@ def test_run_now_http_history(tmp_path, monkeypatch):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+@pytest.mark.parametrize("counts,status,summary", [
+    ({"errors": ["s1: timeout"]}, "failed", "Run failed: timeout. No jobs were fetched."),
+    ({"errors": ["s1/problem", "second", "third"]}, "failed", "Run failed: problem. No jobs were fetched. (+2 more)"),
+    ({"jobs_fetched": 3, "jobs_new": 1, "errors": ["s1: timeout"]}, "partial", "Run finished with 1 problem(s): fetched 3, 1 new. First: timeout"),
+    ({}, "ok", "Run done: Stub returned no jobs for this search."),
+    ({"jobs_fetched": 2, "jobs_already_seen": 2}, "ok", "Run done: fetched 2, nothing new (2 already seen)."),
+    ({"jobs_fetched": 12, "jobs_new": 2, "jobs_llm_queued": 1, "jobs_skipped": 2,
+      "jobs_already_seen": 3, "jobs_below_floor": 4, "jobs_salary_unknown": 5, "jobs_held_over": 1},
+     "ok", "Run done: fetched 12, 2 new (1 queued for AI, 2 skipped, 3 already seen, 4 below salary floor, 5 salary unknown, 1 not attempted (budget reached))."),
+])
+def test_summary_table(counts, status, summary, tmp_path, monkeypatch):
+    assert searches.search_run_summary(counts, search_id="s1", source_name="Stub") == {
+        "run_status": status, "summary": summary}
+    import src.ui_handlers as handlers
+    config, _ = setup(tmp_path)
+    source()
+    monkeypatch.setattr(handlers, "load_saved_search", lambda *a, **k: search())
+    monkeypatch.setattr(handlers, "_load_active_profile", lambda c: object())
+    result_counts = {key: counts.get(key, 0) for key in searches._RUN_COUNTERS}
+    result = scheduler.DigestRunResult(started_at="a", finished_at="b", searches_run=1,
+                                      errors=counts.get("errors", []), **result_counts)
+    monkeypatch.setattr(scheduler, "run_digest_pipeline", lambda **k: result)
+    responder = Responder()
+    handlers.handle_run_now(None, config, responder, "s1")
+    assert responder.payload["ok"] is True
+    assert responder.payload["run_status"] == status
+    assert responder.payload["summary"] == summary
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_run_now_response_summary_without_socket(tmp_path, monkeypatch, failed):
+    import src.ui_handlers as handlers
+    config, _ = setup(tmp_path)
+    source(fail=RuntimeError("timeout") if failed else None)
+    monkeypatch.setattr(handlers, "load_saved_search", lambda *a, **k: search())
+    monkeypatch.setattr(handlers, "_load_active_profile", lambda c:
+                        candidate_profile_from_dict({"candidate_id": "synthetic"}))
+    responder = Responder()
+    handlers.handle_run_now(None, config, responder, "s1")
+    assert responder.payload["ok"] is True
+    assert responder.payload["run_status"] == ("failed" if failed else "ok")
+    assert responder.payload["summary"] == (
+        "Run failed: fetch failed: timeout. No jobs were fetched." if failed
+        else "Run done: Stub returned no jobs for this search.")
+    assert "run_status" not in scheduler.DigestRunResult("a", "b", 0, 0, 0, 0, 0, 0, 0, []).to_dict()
+    assert "summary" not in scheduler.DigestRunResult("a", "b", 0, 0, 0, 0, 0, 0, 0, []).to_dict()
+
+
+def test_disabled_run_before_profile_without_row(tmp_path, monkeypatch):
+    import src.ui_handlers as handlers
+    config, _ = setup(tmp_path)
+    monkeypatch.setattr(handlers, "load_saved_search", lambda *a, **k: search(enabled=False))
+    def forbidden(*a):
+        raise AssertionError("profile must not load")
+    monkeypatch.setattr(handlers, "_load_active_profile", forbidden)
+    responder = Responder()
+    handlers.handle_run_now(None, config, responder, "s1")
+    assert responder.payload == {"ok": True, "run_status": "not_run",
+                                 "summary": "Not run: this saved search is disabled."}
+    assert searches.list_search_runs("s1", state_root=tmp_path) == []
+
+
+def test_list_summaries_newest_and_source_fallback(tmp_path, monkeypatch):
+    import src.ui_handlers as handlers
+    config, _ = setup(tmp_path)
+    source()
+    monkeypatch.setattr(handlers, "list_saved_searches", lambda **k: [search()])
+    for n in range(25):
+        record(tmp_path, jobs_fetched=n, errors=["one", "two", "<script>"])
+    responder = Responder()
+    handlers.handle_saved_searches_list(None, config, responder)
+    rows = responder.payload["searches"][0]["runs"]
+    assert len(rows) == 20
+    assert [r["jobs_fetched"] for r in rows] == list(range(24, 4, -1))
+    assert rows[0]["errors"] == ["one", "two", "<script>"]
+    for row in rows:
+        assert row["summary"] == f'Run finished with 3 problem(s): fetched {row["jobs_fetched"]}, nothing new. First: one'
+        assert row["run_status"] == "partial"
+    assert handlers._saved_search_source_name(search()) == "Stub"
+    assert handlers._saved_search_source_name(search(source="missing")) == "Missing"
+
+
+def test_served_profile_script_summary_and_history_escape():
+    from src.ui_render import ProfilePageViewModel, render_profile_page
+    vm = ProfilePageViewModel(has_profile=False, name="", target_roles=[], locations=[],
+        remote_preference="", salary_floor_gbp=None, right_to_work_uk=False, skills=[],
+        years_experience=0, industries=[], certifications=[], achievements=[],
+        master_cv_ref="", master_cv_text="")
+    page = render_profile_page(profile_id="synthetic", vm=vm, parsed_cv_text=None,
+                               parsed_filename=None, errors={}, form_values=None)
+    assert 'setStatus(d.summary, d.run_status === "failed" || d.run_status === "partial")' in page
+    script = page[page.index('var listEl = document.getElementById("saved-searches-list")'):]
+    assert "Run done" not in script
+    for escaped in ('esc(run.finished_at)', 'esc(run.summary)', 'esc(error)',
+                    'esc(run.trigger === "manual" ? "Run now" : "scheduled")', 'esc(s.last_run_count)'):
+        assert escaped in script
+    assert 'runs.map(function(run)' in script
+    assert 'runText(runs[0])' in script
+    assert 'Run history (' in script and 'Last run ' in script and ' new)' in script
+    assert 'run.run_status === "failed" || run.run_status === "partial" ? "#b91c1c"' in script
+
+
+def test_partial_multicount_summary():
+    counts = {"jobs_fetched": 8, "jobs_new": 2, "jobs_skipped": 3,
+              "jobs_salary_unknown": 1, "errors": ["s1: first", "s1/second"]}
+    assert searches.search_run_summary(counts, search_id="s1", source_name="Stub") == {
+        "run_status": "partial",
+        "summary": "Run finished with 2 problem(s): fetched 8, 2 new (3 skipped, 1 salary unknown). First: first"}
+
+
+@pytest.mark.parametrize("outcome", ["ok", "failed", "disabled"])
+def test_http_step4_run_now_and_served_profile(tmp_path, monkeypatch, outcome):
+    """Actual HTTP acceptance coverage; requires separately authorized socket execution."""
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from src.ui_state import UIServerConfig
+    from src.ui_routes import _build_handler
+    import src.ui_handlers as handlers
+
+    source(fail=RuntimeError("timeout") if outcome == "failed" else None)
+    state = tmp_path / "state"
+    ensure_storage_layout(state)
+    monkeypatch.setattr(searches, "get_enabled_sources", lambda: ["stub"])
+    searches.save_saved_search(search(enabled=outcome != "disabled"), state_root=state)
+    profile = candidate_profile_from_dict({"candidate_id": "synthetic",
+                                          "digest_enabled": False, "digest_llm_enabled": False})
+    def active_profile(config):
+        if outcome == "disabled":
+            raise AssertionError("disabled search must not load profile")
+        return profile
+    monkeypatch.setattr(handlers, "_load_active_profile", active_profile)
+    monkeypatch.setattr(handlers, "_allowed_profile_dir", lambda pid: tmp_path / "synthetic-profile")
+    monkeypatch.setattr(handlers, "load_candidate_profile", lambda path: profile)
+    monkeypatch.setattr(handlers, "get_enabled_sources", lambda: ["stub"])
+    config = UIServerConfig(profile_path=tmp_path / "synthetic.json", state_root=state,
+                            report_dir=tmp_path / "reports", host="127.0.0.1", port=0)
+    server = ThreadingHTTPServer((config.host, config.port), _build_handler(config))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        request = urllib.request.Request(base + "/saved-searches/s1/run-now", method="POST",
+                                         headers={"Origin": base})
+        with urllib.request.urlopen(request) as response:
+            payload = json.loads(response.read())
+        assert payload["ok"] is True
+        assert payload["run_status"] == {"ok": "ok", "failed": "failed", "disabled": "not_run"}[outcome]
+        assert payload["summary"] == {
+            "ok": "Run done: Stub returned no jobs for this search.",
+            "failed": "Run failed: fetch failed: timeout. No jobs were fetched.",
+            "disabled": "Not run: this saved search is disabled.",
+        }[outcome]
+        with urllib.request.urlopen(base + "/saved-searches") as response:
+            rows = json.loads(response.read())["searches"][0]["runs"]
+        if outcome == "disabled":
+            assert rows == []
+        else:
+            assert rows[0]["summary"] == payload["summary"]
+            assert rows[0]["trigger"] == "manual"
+        with urllib.request.urlopen(base + "/profile?profile_id=synthetic") as response:
+            page = response.read().decode()
+        script = page[page.index('var listEl = document.getElementById("saved-searches-list")'):]
+        assert 'setStatus(d.summary, d.run_status === "failed" || d.run_status === "partial")' in script
+        assert "Run done" not in script
+        assert 'esc(run.summary)' in script and 'esc(error)' in script
+        assert 'esc(run.finished_at)' in script and 'Run history (' in script
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)

@@ -2498,6 +2498,12 @@ def handle_jobs_save(req, config, responder):
 # Saved Searches (Daily Job Digest — phase D1)
 # --------------------------------------------------------------------------- #
 
+def _saved_search_source_name(search):
+    from src.job_sources.source_registry import get_source
+    source = get_source(search.source_id)
+    return source.display_name if source else search.source_id.capitalize()
+
+
 def _saved_search_to_json(s: SavedSearch, runs=None) -> dict[str, Any]:
     return {
         "search_id": s.search_id,
@@ -2515,11 +2521,14 @@ def _saved_search_to_json(s: SavedSearch, runs=None) -> dict[str, Any]:
 def handle_saved_searches_list(req, config, responder):
     """GET /saved-searches — JSON list of all saved searches."""
     searches = list_saved_searches(state_root=config.state_root)
-    from src.job_hunt_saved_searches import list_search_runs
+    from src.job_hunt_saved_searches import list_search_runs, search_run_summary
     payload = []
     for search in searches:
         try:
             runs = list_search_runs(search.search_id, state_root=config.state_root, limit=20)
+            for run in runs:
+                run.update(search_run_summary(run, search_id=search.search_id,
+                                             source_name=_saved_search_source_name(search)))
         except Exception as exc:
             logger.warning("saved-searches: could not read runs for %s: %s", search.search_id, exc)
             runs = []
@@ -2605,19 +2614,23 @@ def handle_run_now(req, config, responder, search_id):
         responder.send_json({"ok": False, "error": "Invalid search_id"}, status=HTTPStatus.BAD_REQUEST)
         return
 
+    if not search.enabled:
+        responder.send_json({"ok": True, "run_status": "not_run",
+                             "summary": "Not run: this saved search is disabled."})
+        return
+
     try:
         profile = _load_active_profile(config)
     except Exception as exc:
         from datetime import datetime
         from src.job_hunt_saved_searches import record_search_run
         now = datetime.now().isoformat(timespec="seconds")
-        if search.enabled:
-            try:
-                record_search_run(search_id, state_root=config.state_root, trigger="manual",
-                                  started_at=now, finished_at=now,
-                                  errors=[f"Could not load profile: {exc}"])
-            except Exception as record_exc:
-                logger.warning("run-now: run record not saved for %s: %s", search_id, record_exc)
+        try:
+            record_search_run(search_id, state_root=config.state_root, trigger="manual",
+                              started_at=now, finished_at=now,
+                              errors=[f"Could not load profile: {exc}"])
+        except Exception as record_exc:
+            logger.warning("run-now: run record not saved for %s: %s", search_id, record_exc)
         responder.send_json({"ok": False, "error": f"Could not load profile: {exc}"},
                             status=HTTPStatus.INTERNAL_SERVER_ERROR)
         return
@@ -2635,7 +2648,9 @@ def handle_run_now(req, config, responder, search_id):
     except Exception as exc:
         logger.warning("run-now: could not update last_run for %s: %s", search_id, exc)
 
-    payload = {"ok": True, **result.to_dict()}
+    from src.job_hunt_saved_searches import search_run_summary
+    payload = {"ok": True, **search_run_summary(result.to_dict(), search_id=search_id,
+                source_name=_saved_search_source_name(search)), **result.to_dict()}
     responder.send_json(payload)
 
 

@@ -212,8 +212,6 @@ def _run_digest_pipeline_locked(
     jobs_below_floor = jobs_salary_unknown = jobs_held_over = 0
     newly_queued = 0                                 # global cap counter (across searches)
     errors: list[str] = []
-    # Slice C (2026-07-21 plan): score with whichever named weight preset is
-    # currently persisted, computed once per run (not per-job).
     def save_run(ss, search_started, before, error_start, floor, propagating=False):
         counts = {key: value - before[key] for key, value in totals().items()}
         try:
@@ -235,6 +233,8 @@ def _run_digest_pipeline_locked(
                     jobs_already_seen=jobs_already_seen, jobs_below_floor=jobs_below_floor,
                     jobs_salary_unknown=jobs_salary_unknown, jobs_held_over=jobs_held_over)
 
+    # Slice C (2026-07-21 plan): score with whichever named weight preset is
+    # currently persisted, computed once per run (not per-job).
     try:
         _scoring_policy = get_active_scoring_policy(state_root=state_root)
     except Exception as exc:
