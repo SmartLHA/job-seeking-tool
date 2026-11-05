@@ -2498,7 +2498,7 @@ def handle_jobs_save(req, config, responder):
 # Saved Searches (Daily Job Digest — phase D1)
 # --------------------------------------------------------------------------- #
 
-def _saved_search_to_json(s: SavedSearch) -> dict[str, Any]:
+def _saved_search_to_json(s: SavedSearch, runs=None) -> dict[str, Any]:
     return {
         "search_id": s.search_id,
         "name": s.name,
@@ -2508,13 +2508,23 @@ def _saved_search_to_json(s: SavedSearch) -> dict[str, Any]:
         "created_at": s.created_at,
         "last_run_at": s.last_run_at,
         "last_run_count": s.last_run_count,
+        "runs": runs if runs is not None else [],
     }
 
 
 def handle_saved_searches_list(req, config, responder):
     """GET /saved-searches — JSON list of all saved searches."""
     searches = list_saved_searches(state_root=config.state_root)
-    responder.send_json({"searches": [_saved_search_to_json(s) for s in searches]})
+    from src.job_hunt_saved_searches import list_search_runs
+    payload = []
+    for search in searches:
+        try:
+            runs = list_search_runs(search.search_id, state_root=config.state_root, limit=20)
+        except Exception as exc:
+            logger.warning("saved-searches: could not read runs for %s: %s", search.search_id, exc)
+            runs = []
+        payload.append(_saved_search_to_json(search, runs))
+    responder.send_json({"searches": payload})
 
 
 def handle_saved_searches_create(req, config, responder):
@@ -2598,6 +2608,16 @@ def handle_run_now(req, config, responder, search_id):
     try:
         profile = _load_active_profile(config)
     except Exception as exc:
+        from datetime import datetime
+        from src.job_hunt_saved_searches import record_search_run
+        now = datetime.now().isoformat(timespec="seconds")
+        if search.enabled:
+            try:
+                record_search_run(search_id, state_root=config.state_root, trigger="manual",
+                                  started_at=now, finished_at=now,
+                                  errors=[f"Could not load profile: {exc}"])
+            except Exception as record_exc:
+                logger.warning("run-now: run record not saved for %s: %s", search_id, record_exc)
         responder.send_json({"ok": False, "error": f"Could not load profile: {exc}"},
                             status=HTTPStatus.INTERNAL_SERVER_ERROR)
         return
@@ -2607,6 +2627,7 @@ def handle_run_now(req, config, responder, search_id):
         saved_searches=[search],
         profile=profile,
         db_path=_index_db_path(config),
+        trigger="manual",
     )
     # Record run metadata on the saved search (best-effort).
     try:

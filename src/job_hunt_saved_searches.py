@@ -62,6 +62,35 @@ CREATE TABLE IF NOT EXISTS saved_searches (
 """
 
 
+_RUNS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS saved_search_runs (
+  run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  search_id TEXT NOT NULL,
+  trigger TEXT NOT NULL CHECK (trigger IN ('manual','scheduled')),
+  started_at TEXT NOT NULL,
+  finished_at TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('ok','partial','failed')),
+  salary_floor INTEGER,
+  jobs_fetched INTEGER NOT NULL DEFAULT 0,
+  jobs_new INTEGER NOT NULL DEFAULT 0,
+  jobs_scored INTEGER NOT NULL DEFAULT 0,
+  jobs_llm_queued INTEGER NOT NULL DEFAULT 0,
+  jobs_skipped INTEGER NOT NULL DEFAULT 0,
+  jobs_already_seen INTEGER NOT NULL DEFAULT 0,
+  jobs_below_floor INTEGER NOT NULL DEFAULT 0,
+  jobs_salary_unknown INTEGER NOT NULL DEFAULT 0,
+  jobs_held_over INTEGER NOT NULL DEFAULT 0,
+  errors TEXT NOT NULL DEFAULT '[]'
+);
+"""
+_RUNS_INDEX_SQL = """CREATE INDEX IF NOT EXISTS idx_saved_search_runs_search
+  ON saved_search_runs (search_id, run_id DESC)"""
+_RUN_COUNTERS = (
+    "jobs_fetched", "jobs_new", "jobs_scored", "jobs_llm_queued", "jobs_skipped",
+    "jobs_already_seen", "jobs_below_floor", "jobs_salary_unknown", "jobs_held_over",
+)
+
+
 class SavedSearchError(ValueError):
     """Base class for saved-search validation/storage errors."""
 
@@ -186,6 +215,8 @@ def _init_connection(conn: sqlite3.Connection) -> None:
     if str(mode).lower() != "wal":
         conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(_TABLE_SQL)
+    conn.execute(_RUNS_TABLE_SQL)
+    conn.execute(_RUNS_INDEX_SQL)
     conn.commit()
 
 
@@ -346,6 +377,7 @@ def delete_saved_search(search_id: str, *, state_root: str | Path) -> bool:
         cur = conn.execute(
             "DELETE FROM saved_searches WHERE search_id = ?", (search_id,)
         )
+        conn.execute("DELETE FROM saved_search_runs WHERE search_id = ?", (search_id,))
         conn.commit()
         return cur.rowcount > 0
     finally:
@@ -391,3 +423,55 @@ def update_last_run(search_id: str, *, state_root: str | Path, count: int) -> No
         conn.commit()
     finally:
         conn.close()
+
+
+def search_run_status(jobs_fetched: int, errors: list[str]) -> str:
+    """Classify counts and errors identically for live and persisted runs."""
+    return ("partial" if jobs_fetched else "failed") if errors else "ok"
+
+
+def record_search_run(search_id: str, *, state_root: str | Path, trigger: str,
+                      started_at: str, finished_at: str, salary_floor: int | None = None,
+                      errors: list[str] | None = None, **counts: int) -> None:
+    """Persist one search attempt, including bounded, search-local errors."""
+    kept_errors = []
+    for error in (errors or [])[:20]:
+        text = str(error)
+        for prefix in (f"{search_id}: ", f"{search_id}/"):
+            if text.startswith(prefix):
+                text = text[len(prefix):]
+                break
+        kept_errors.append(text[:500])
+    values = {key: int(counts.get(key, 0)) for key in _RUN_COUNTERS}
+    values.update(search_id=search_id, trigger=trigger, started_at=started_at,
+                  finished_at=finished_at, salary_floor=salary_floor,
+                  status=search_run_status(values["jobs_fetched"], kept_errors),
+                  errors=json.dumps(kept_errors))
+    columns = tuple(values)
+    conn = _connect(state_root)
+    try:
+        conn.execute(
+            f"INSERT INTO saved_search_runs ({', '.join(columns)}) "
+            f"VALUES ({', '.join(':' + key for key in columns)})", values)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_search_runs(search_id: str, *, state_root: str | Path,
+                     limit: int = 20) -> list[dict[str, Any]]:
+    """Return the newest search attempts as plain dictionaries."""
+    conn = _connect(state_root)
+    try:
+        rows = conn.execute(
+            "SELECT * FROM saved_search_runs WHERE search_id = ? ORDER BY run_id DESC LIMIT ?",
+            (search_id, max(0, min(20, int(limit)))),
+        ).fetchall()
+    finally:
+        conn.close()
+    results = []
+    for row in rows:
+        item = dict(row)
+        item["errors"] = json.loads(item["errors"])
+        results.append(item)
+    return results
