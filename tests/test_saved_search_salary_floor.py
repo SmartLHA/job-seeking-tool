@@ -6,7 +6,7 @@ import pytest
 import requests
 
 import src.job_hunt_scheduler as scheduler
-from src.job_sources import source_registry as registry
+from src.job_sources import reed_client, source_registry as registry
 from src.job_sources.reed_source import normalize_reed_search_params, reed_filter_notes
 from src.job_sources.adzuna_source import normalize_adzuna_search_params
 from src.job_sources.linkedin_source import normalize_search_params as normalize_linkedin
@@ -18,6 +18,8 @@ from src.job_hunt_index import is_already_indexed, upsert_job
 @pytest.fixture(autouse=True)
 def offline(monkeypatch):
     before = dict(registry._REGISTRY)
+    monkeypatch.setenv("REED_API_KEY", "fake-test-key")
+    monkeypatch.setattr(reed_client, "_ensure_env_loaded", lambda: None)
     skills = Mock(return_value=(["python", "sql"], ["excel"], None))
     monkeypatch.setattr(scheduler, "extract_skills_from_text", skills)
     monkeypatch.setattr(requests.sessions.Session, "request", Mock(side_effect=AssertionError("No network")))
