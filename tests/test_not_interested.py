@@ -12,6 +12,7 @@ import json
 import sqlite3
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
@@ -161,9 +162,17 @@ def _server(tmp_path):
         thread.join(timeout=5)
 
 
+def _same_origin(url: str) -> str:
+    """Origin header value for a request to url (the server rejects POSTs without one)."""
+    parts = urllib.parse.urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
+
 def _req(url, *, method="GET", body=None):
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    headers = {"Content-Type": "application/json"} if data is not None else {}
+    headers = (
+        {"Content-Type": "application/json", "Origin": _same_origin(url)} if data is not None else {}
+    )
     request = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(request) as resp:
