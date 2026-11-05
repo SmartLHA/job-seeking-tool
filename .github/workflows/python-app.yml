@@ -17,7 +17,7 @@ jobs:
 
     runs-on: ubuntu-latest
     env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/job-tool-playwright
+      PLAYWRIGHT_BROWSERS_PATH: /tmp/job-tool-playwright
 
     steps:
     - uses: actions/checkout@v4
