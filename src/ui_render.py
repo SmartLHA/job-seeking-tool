@@ -3272,7 +3272,7 @@ def render_profile_page(
           '    try {',
           '      var r = await fetch("/saved-searches/" + encodeURIComponent(id) + "/run-now", { method: "POST" });',
           '      var d = await r.json().catch(function(){return {};});',
-          '      if (!r.ok || !d.ok) { setStatus(d.error || "Run failed", true); return; }',
+          '      if (!r.ok || !d.ok) { setStatus(d.error || "Run failed", true); await load(); return; }',
           '      setStatus(d.summary, d.run_status === "failed" || d.run_status === "partial");',
           '      await load();',
           '    } catch (e) { setStatus("Run failed", true); }',

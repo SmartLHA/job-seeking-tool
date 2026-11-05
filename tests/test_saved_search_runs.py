@@ -322,6 +322,8 @@ def test_served_profile_script_summary_and_history_escape():
     page = render_profile_page(profile_id="synthetic", vm=vm, parsed_cv_text=None,
                                parsed_filename=None, errors={}, form_values=None)
     assert 'setStatus(d.summary, d.run_status === "failed" || d.run_status === "partial")' in page
+    # A failed reply can still have added a run row, so the list refreshes and the error stays.
+    assert 'setStatus(d.error || "Run failed", true); await load(); return;' in page
     script = page[page.index('var listEl = document.getElementById("saved-searches-list")'):]
     assert "Run done" not in script
     for escaped in ('esc(run.finished_at)', 'esc(run.summary)', 'esc(error)',
