@@ -28,6 +28,8 @@ HIST_30_5 = {"histogram": {"10000": "6", "30000": "6", "50000": "6", "70000": "6
 def _env(monkeypatch):
     monkeypatch.setenv("ADZUNA_APP_ID", APP_ID)
     monkeypatch.setenv("ADZUNA_APP_KEY", APP_KEY)
+    # Seeded histograms and cache-only route reads share a deterministic clock.
+    monkeypatch.setattr(ac, "_utc_now", lambda: T0)
 
 
 def _resp(payload):
@@ -167,7 +169,7 @@ def test_route_200_shows_up_on_job_page(config):
     assert "Market:" in html
 
 
-def test_route_second_click_replaces_snapshot_with_new_date(config):
+def test_route_second_click_replaces_snapshot_with_new_date(config, monkeypatch):
     _seed_cache(config)
     ui_handlers.handle_set_market_position(None, config, _Resp(), "job-1")
     first = load_job_analysis("job-1", config.state_root).market_snapshot
@@ -178,6 +180,7 @@ def test_route_second_click_replaces_snapshot_with_new_date(config):
         ac.fetch_adzuna_salary_histogram(
             "senior business analyst", cache_dir=cache_dir, now=lambda: later,
         )
+    monkeypatch.setattr(ac, "_utc_now", lambda: later)
     r2 = _Resp()
     ui_handlers.handle_set_market_position(None, config, r2, "job-1")
     second = load_job_analysis("job-1", config.state_root).market_snapshot
