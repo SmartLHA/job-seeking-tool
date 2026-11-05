@@ -15,6 +15,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import math
 import threading
 import time
 from dataclasses import dataclass, field
@@ -73,12 +74,18 @@ logger = logging.getLogger(__name__)
 _PIPELINE_LOCK = threading.Lock()
 _LLM_WORKER_LOCK = threading.Lock()
 
+# Search salaries below this amount may be rates with an unknown pay period.
+_ANNUAL_SALARY_THRESHOLD = 10_000
+# A local salary filter reads further while retaining the original attempt budget.
+_SALARY_FLOOR_FETCH_SIZE = 50
+
 # Skip reasons that get logged + counted (already-seen is neither — it's expected).
 _SKIP_REASONS = {
     "missing_source_job_id",
     "missing_description_raw",
     "adapter_error",
     "evaluation_error",
+    "below_salary_floor",
     "linkedin_detail_invalid_id",
     "linkedin_detail_blocked",
     "linkedin_detail_failed",
@@ -98,6 +105,9 @@ class DigestRunResult:
     jobs_skipped: int          # blank id / empty description / adapter / eval error
     jobs_already_seen: int     # dedup hits — expected, not errors (observability)
     errors: list[str] = field(default_factory=list)
+    jobs_below_floor: int = 0
+    jobs_salary_unknown: int = 0
+    jobs_held_over: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -111,7 +121,36 @@ class DigestRunResult:
             "jobs_skipped": self.jobs_skipped,
             "jobs_already_seen": self.jobs_already_seen,
             "errors": list(self.errors),
+            "jobs_below_floor": self.jobs_below_floor,
+            "jobs_salary_unknown": self.jobs_salary_unknown,
+            "jobs_held_over": self.jobs_held_over,
         }
+
+
+def _salary_number(value: Any) -> float | None:
+    """Read a finite positive salary from a number or display string."""
+    try:
+        number = float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) and number > 0 else None
+
+
+def _salary_floor(params: dict[str, Any]) -> float | None:
+    if "minimumSalary" not in params or "resultsToTake" not in params:
+        return None
+    return _salary_number(params["minimumSalary"])
+
+
+def _salary_verdict(result: dict[str, Any], floor: float) -> str:
+    """Apply the ordered salary rule without fetching details or changing input."""
+    salaries = [_salary_number(result.get(key)) for key in ("salary_min_gbp", "salary_max_gbp")]
+    top = max((salary for salary in salaries if salary is not None), default=None)
+    if top is None or top < _ANNUAL_SALARY_THRESHOLD:
+        return "unknown"
+    if top >= floor:
+        return "keep"
+    return "below"
 
 
 def _log_skipped(state_root: Path, run_date: str, *, source: str, saved_search_id: str,
@@ -166,6 +205,7 @@ def _run_digest_pipeline_locked(
 
     searches_run = jobs_fetched = jobs_new = jobs_scored = 0
     jobs_llm_queued = jobs_skipped = jobs_already_seen = 0
+    jobs_below_floor = jobs_salary_unknown = jobs_held_over = 0
     newly_queued = 0                                 # global cap counter (across searches)
     errors: list[str] = []
     # Slice C (2026-07-21 plan): score with whichever named weight preset is
@@ -198,6 +238,11 @@ def _run_digest_pipeline_locked(
         # Fetch (whole-search failure is logged, never aborts other searches)
         try:
             params = source.normalize_search_params(dict(ss.params))
+            salary_floor = _salary_floor(params)
+            attempt_budget = None
+            if salary_floor is not None and "resultsToTake" not in ss.params:
+                attempt_budget = int(params["resultsToTake"])
+                params["resultsToTake"] = str(min(_SALARY_FLOOR_FETCH_SIZE, profile.digest_max_per_source))
             results = source.search_handler(params)
         except Exception as exc:
             errors.append(f"{ss.search_id}: fetch failed: {exc}")
@@ -205,6 +250,7 @@ def _run_digest_pipeline_locked(
             continue
 
         searches_run += 1
+        attempts = 0
         # One bounded cache per saved search prevents repeated detail requests for
         # duplicate cards, including failures. A later run gets a fresh attempt.
         detail_cache: dict[str, tuple[str, str | None]] = {}
@@ -236,6 +282,16 @@ def _run_digest_pipeline_locked(
                 jobs_already_seen += 1
                 finish_initialization(source_id, sjid, ss.search_id)
                 continue
+            if salary_floor is not None:
+                verdict = _salary_verdict(result, salary_floor)
+                if verdict == "below":
+                    _log_skipped(state_root, run_date, source=source_id,
+                                 saved_search_id=ss.search_id, reason="below_salary_floor",
+                                 title=title, url=url)
+                    jobs_below_floor += 1
+                    continue
+                if verdict == "unknown":
+                    jobs_salary_unknown += 1
             if not has_description and source_id == "linkedin":
                 if sjid not in detail_cache:
                     from src.job_sources.linkedin_source import enrich_digest_result
@@ -255,7 +311,11 @@ def _run_digest_pipeline_locked(
                              title=title, url=url)
                 jobs_skipped += 1
                 continue
+            if attempt_budget is not None and attempts >= attempt_budget:
+                jobs_held_over += 1
+                continue
             # --- Convert + deterministic evaluate (failure here = a skip) ---
+            attempts += 1
             try:
                 payload = reviewed_job_payload_from_ui_result(result, source_id=source_id)
                 required, preferred, _warn = extract_skills_from_text(payload["description_raw"])
@@ -325,6 +385,9 @@ def _run_digest_pipeline_locked(
         jobs_skipped=jobs_skipped,
         jobs_already_seen=jobs_already_seen,
         errors=errors,
+        jobs_below_floor=jobs_below_floor,
+        jobs_salary_unknown=jobs_salary_unknown,
+        jobs_held_over=jobs_held_over,
     )
 
 

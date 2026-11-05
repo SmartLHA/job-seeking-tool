@@ -69,7 +69,7 @@ def fetch_reed_jobs(keyword: str, location: str, max_results: int = 50, *, skip:
             save_raw_response(response.text, "reed")
         
         if response.status_code == 429:
-            logger.warning("Reed API rate limit exceeded (429). Returning empty list.")
+            logger.warning("Reed API rate limit exceeded (429). Raising ReedFetchError.")
             raise ReedFetchError("Reed rate limit reached (HTTP 429)")
         
         response.raise_for_status()
