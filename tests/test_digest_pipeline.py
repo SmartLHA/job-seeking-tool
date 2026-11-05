@@ -34,6 +34,18 @@ def _fast_skills(monkeypatch):
                         lambda text: (["python", "sql"], ["excel"], None))
 
 
+@pytest.fixture(autouse=True)
+def _restore_source_registry():
+    """_register_stub replaces process-global sources (reed/adzuna/linkedin); restore after each test."""
+    from src.job_sources import source_registry as _reg
+    snapshot = dict(_reg._REGISTRY)
+    try:
+        yield
+    finally:
+        _reg._REGISTRY.clear()
+        _reg._REGISTRY.update(snapshot)
+
+
 def _register_stub(results, source_id="stub"):
     register(JobSource(
         source_id=source_id, display_name="Stub", is_available=lambda: True,
