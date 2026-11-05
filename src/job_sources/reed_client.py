@@ -8,6 +8,10 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+class ReedFetchError(RuntimeError):
+    """A Reed search failed rather than returning an empty result."""
+
+
 def _ensure_env_loaded() -> None:
     """Load .env from project root if REED_API_KEY is not already in environment."""
     if os.getenv("REED_API_KEY"):
@@ -44,7 +48,7 @@ def fetch_reed_jobs(keyword: str, location: str, max_results: int = 50, *, skip:
     api_key = os.getenv("REED_API_KEY")
     if not api_key:
         logger.error("REED_API_KEY not found in environment variables.")
-        return []
+        raise ReedFetchError("Reed API key is not set")
 
     url = "https://www.reed.co.uk/api/1.0/search"
     # Reed API uses HTTP Basic Auth: api_key as username, empty password
@@ -56,6 +60,7 @@ def fetch_reed_jobs(keyword: str, location: str, max_results: int = 50, *, skip:
         "distanceFromLocation": 25,  # miles; Reed API param is distanceFromLocation (not distance)
     }
 
+    response = None
     try:
         response = requests.get(url, params=params, auth=(api_key, ""), timeout=10)
         
@@ -65,28 +70,34 @@ def fetch_reed_jobs(keyword: str, location: str, max_results: int = 50, *, skip:
         
         if response.status_code == 429:
             logger.warning("Reed API rate limit exceeded (429). Returning empty list.")
-            return []
+            raise ReedFetchError("Reed rate limit reached (HTTP 429)")
         
         response.raise_for_status()
         data = response.json()
 
         # Reed API returns {"results": [...], "totalResults": N}
-        if isinstance(data, dict):
-            return data.get("results", [])
+        if isinstance(data, dict) and isinstance(data.get("results"), list):
+            return data["results"]
         # Fallback: older callers that somehow got a plain list
         if isinstance(data, list):
             return data
-        return []
+        raise ReedFetchError("Reed returned an unexpected response")
 
+    except (json.JSONDecodeError, requests.exceptions.JSONDecodeError) as e:
+        logger.error("Failed to decode JSON response from Reed.")
+        raise ReedFetchError("Reed returned invalid JSON") from e
     except requests.exceptions.HTTPError as e:
         logger.error(f"HTTP error occurred while fetching from Reed: {e}")
-        return []
+        status = e.response.status_code if e.response is not None else getattr(response, "status_code", None)
+        message = f"Reed returned HTTP {status}"
+        if status in (401, 403):
+            message += ": check the API key"
+        raise ReedFetchError(message) from e
     except requests.exceptions.RequestException as e:
         logger.error(f"Request error occurred while fetching from Reed: {e}")
-        return []
-    except json.JSONDecodeError:
-        logger.error("Failed to decode JSON response from Reed.")
-        return []
+        if isinstance(e, requests.exceptions.Timeout):
+            raise ReedFetchError("Reed request timed out") from e
+        raise ReedFetchError(f"Reed request failed ({type(e).__name__})") from e
 
 def fetch_reed_job_detail(job_id: str) -> Dict[str, Any] | None:
     """Fetch the full detail for a single Reed job by its numeric job ID.
