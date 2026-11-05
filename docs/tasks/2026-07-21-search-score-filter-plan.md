@@ -1,6 +1,18 @@
 # Plan — Search / Score / Filter improvements (2026-07-21)
 
 <!-- STATUS -->
+> **Current implementation status — 2026-10-25: ⚠️ Implemented; qualification PARTIAL.**
+> P2-09: initial HTML rendering succeeds before binding + successor + seen commit. More uses bound prepared response transactions; JSON serialization succeeds before payload + successor + seen commit. Replays freeze cards and next cursors; valid partial keyword pages retain failed-term cursors, while failed preparation consumes no state. Unknown/expired/evicted or changed-bound searches require a visible restart. Legacy low-level helpers retain their earlier contract. Historical NOT-approved planning text below does not describe the implementation status or approve further work.
+> **Current references:** `commit_initial_search`, `prepare_page`, `handle_source_search`, `handle_source_search_more`; `GET /search/{source}` and `/more`; `tests/test_search_replay.py`, `tests/test_search_replay_browser.py`.
+> **Evidence:** final current regression 645 passed/75 deselected; earlier P2-12 owned-loopback 86 passed including 15 mandatory Chromium cases. Clean projection 106 repeats 86 + 20; totals are not additive. Full evidence/limitations: [P2 ledger](p2-remediation-2026-10-23.md).
+> **Limits:** independent advisory review is separate; strict Gate 3 remains PARTIAL because raw reviewer startup includes generic skill instructions. Remote CI/Python 3.10/native browser OS egress/live providers/production are UNVERIFIED. Five P1 designs remain approval-pending.
+
+**Historical status record (superseded only where the current note differs):**
+
+> **2026-10-04 repair status: ⚠️ Implemented; independent verification partial/pending.** Initial/More share per-term normalized ordered queries and cursor vectors; failed terms retain their requested cursor for retry, including beside short/empty successful terms.
+> **Repair functions:** `_prepare_keyword_search`, `_run_multi_keyword_search`, `handle_source_search_more`. **Routes:** `GET /search/{source}`, `GET /search/{source}/more`.
+> **Verification:** Producer synthetic checks are recorded in [the audit evidence](audit-remediation-2026-10-04.md); live provider/browser/real-data behavior is not certified. Issue 16 remains pending.
+
 **Implementation status: ✅ Implemented and pagination-complete 2026-08-10.**
 All four slices are built; later-page relevance bucketing and independent
 multi-keyword cursor continuation close the former pagination follow-ups.

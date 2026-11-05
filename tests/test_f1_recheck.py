@@ -18,18 +18,26 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from contextlib import contextmanager
+from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
+from types import SimpleNamespace
+from test_cv_review_record import record_for
+from src.job_hunt_cv_review import write_review_record
+from src.job_hunt_profile import load_candidate_profile
+from src import ui_handlers
 from src.job_hunt_config import TailoringPolicy
-from src.job_hunt_models import JobAnalysis, ScoreBreakdown, ScoreComponent
+from src.job_hunt_models import JobAnalysis, JobPosting, ScoreBreakdown, ScoreComponent
 from src.job_hunt_storage import (
     job_analysis_from_dict,
     job_analysis_to_dict,
     load_job_analysis,
     save_job_analysis,
+    save_reviewed_job,
 )
 from src.job_hunt_tailoring import EmptyTailoredCVError, load_latest_tailored_cv
 from src.ui_render import render_keyword_match_panel
@@ -49,6 +57,13 @@ def _write_cv(policy: TailoringPolicy, name: str, text: str) -> None:
     (policy.output_dir / name).write_text(text, encoding="utf-8")
 
 
+def _pass_review(policy, profile_id, body):
+    profile = SimpleNamespace(candidate_id=profile_id, master_cv_text="Synthetic master CV", master_cv_ref=None,
+                              years_experience=5, skills=[], target_roles=[], industries=[])
+    write_review_record(policy.output_dir, "reed-1", record_for(profile, body, job_id="reed-1"))
+    return profile
+
+
 def test_loader_returns_none_when_no_tailored_file(tmp_path: Path) -> None:
     assert load_latest_tailored_cv("reed-1", policy=_policy(tmp_path)) is None
 
@@ -57,7 +72,8 @@ def test_loader_prefers_ai_reviewed_over_tailor_output(tmp_path: Path) -> None:
     policy = _policy(tmp_path)
     _write_cv(policy, "reed-1.md", "<!-- profile_id: cand-001 -->\nplain tailor output\n")
     _write_cv(policy, "reed-1_ai_reviewed.md", "<!-- ai_reviewed: true | profile_id: cand-001 -->\nAI reviewed body\n")
-    assert load_latest_tailored_cv("reed-1", policy=policy) == "AI reviewed body"
+    profile = _pass_review(policy, "cand-001", "AI reviewed body")
+    assert load_latest_tailored_cv("reed-1", policy=policy, profile=profile, base_dir=tmp_path) == "AI reviewed body"
 
 
 def test_loader_strips_only_first_metadata_comment_line(tmp_path: Path) -> None:
@@ -99,6 +115,50 @@ def test_loader_profile_id_fail_closed(tmp_path: Path) -> None:
     # absent header → None (fail-closed)
     _write_cv(policy, "nohdr.md", "no metadata line\nbody\n")
     assert load_latest_tailored_cv("nohdr", expected_profile_id="cand-001", policy=policy) is None
+
+
+@pytest.mark.parametrize("ai_text", [
+    "<!-- ai_reviewed: true | profile_id: cand-A -->\nProfile A private text",
+    "<!-- ai_reviewed: true | profile_id: cand-A -->\n   ",
+    "Headerless profile A text",
+    "profile_id: cand-B\nHeaderless text is not trusted metadata",
+    "<!-- ai_reviewed: true -->\nMissing profile identity",
+])
+def test_loader_mismatched_ai_falls_back_to_matching_ordinary(tmp_path: Path, ai_text: str) -> None:
+    policy = _policy(tmp_path)
+    _write_cv(policy, "reed-1_ai_reviewed.md", ai_text)
+    _write_cv(policy, "reed-1.md", "<!-- profile_id: cand-B -->\nProfile B ordinary CV")
+
+    assert load_latest_tailored_cv("reed-1", expected_profile_id="cand-B", policy=policy) == "Profile B ordinary CV"
+
+
+def test_loader_matching_ai_remains_preferred(tmp_path: Path) -> None:
+    policy = _policy(tmp_path)
+    _write_cv(policy, "reed-1_ai_reviewed.md", "<!-- profile_id: cand-B -->\nProfile B AI CV")
+    _write_cv(policy, "reed-1.md", "<!-- profile_id: cand-B -->\nProfile B ordinary CV")
+
+    profile = _pass_review(policy, "cand-B", "Profile B AI CV")
+    assert load_latest_tailored_cv("reed-1", expected_profile_id="cand-B", policy=policy, profile=profile, base_dir=tmp_path) == "Profile B AI CV"
+
+
+@pytest.mark.parametrize("ordinary_text", [
+    "<!-- profile_id: cand-A -->\nProfile A ordinary CV",
+    "profile_id: cand-B\nHeaderless ordinary CV",
+])
+def test_loader_no_matching_candidate_returns_none(tmp_path: Path, ordinary_text: str) -> None:
+    policy = _policy(tmp_path)
+    _write_cv(policy, "reed-1_ai_reviewed.md", "<!-- profile_id: cand-A -->\nProfile A AI CV")
+    _write_cv(policy, "reed-1.md", ordinary_text)
+
+    assert load_latest_tailored_cv("reed-1", expected_profile_id="cand-B", policy=policy) is None
+
+
+def test_loader_empty_ai_without_record_falls_back(tmp_path: Path) -> None:
+    policy = _policy(tmp_path)
+    _write_cv(policy, "reed-1_ai_reviewed.md", "<!-- profile_id: cand-B -->\n   ")
+    _write_cv(policy, "reed-1.md", "<!-- profile_id: cand-B -->\nProfile B ordinary CV")
+
+    assert load_latest_tailored_cv("reed-1", expected_profile_id="cand-B", policy=policy) == "Profile B ordinary CV"
 
 
 # ────────────────────────── storage roundtrip (H2) ──────────────────────────
@@ -198,6 +258,103 @@ def _write_profile(tmp_path: Path) -> Path:
     return profile_path
 
 
+def _ats_identity_case(tmp_path: Path, profile_id: str, *, baseline: int | None = 25):
+    profile_path = _write_profile(tmp_path)
+    payload = json.loads(profile_path.read_text())
+    payload["candidate_id"] = profile_id
+    profile_path.write_text(json.dumps(payload), encoding="utf-8")
+    config = UIServerConfig(profile_path=profile_path, state_root=tmp_path / "state", report_dir=tmp_path / "reports")
+    save_reviewed_job(JobPosting(
+        job_id="job-1", job_title="Analyst", company="Synthetic", description_raw="Needs SQL and Python",
+        source_type="copied_text", source_ref="synthetic", required_skills=["SQL"], preferred_skills=["Python"],
+        location="London", work_mode=None, employment_type=None,
+    ), config.state_root)
+    analysis = _analysis(
+        keyword_match_baseline_rate=baseline, keywords_required_missing=["SQL"],
+        keywords_preferred_missing=["Python"], keywords_overused=["Legacy"],
+    )
+    analysis_path = save_job_analysis(analysis, config.state_root)
+    return config, analysis_path
+
+
+@pytest.mark.parametrize("profile_id", ["cand-A", "cand-B"])
+@pytest.mark.parametrize("baseline", [None, 25])
+def test_ats_handler_scores_only_active_profile_cv(tmp_path: Path, monkeypatch, profile_id: str, baseline: int | None) -> None:
+    monkeypatch.chdir(tmp_path)
+    config, _ = _ats_identity_case(tmp_path, profile_id, baseline=baseline)
+    policy = _policy(tmp_path)
+    ai_text = "SQL evidence for profile A"
+    ordinary_text = "SQL and Python evidence for profile B"
+    _write_cv(policy, "job-1_ai_reviewed.md", f"<!-- profile_id: cand-A -->\n{ai_text}")
+    _write_cv(policy, "job-1.md", f"<!-- profile_id: cand-B -->\n{ordinary_text}")
+    active_profile = load_candidate_profile(config.profile_path)
+    ai_profile = dataclasses.replace(active_profile, candidate_id="cand-A")
+    from src.job_hunt_cv_review import resolve_master_cv_text
+    write_review_record(policy.output_dir, "job-1", record_for(ai_profile, ai_text, cv_text=resolve_master_cv_text(ai_profile, config.profile_path.parent)))
+    responder = mock.Mock()
+
+    with mock.patch.object(ui_handlers, "load_latest_tailored_cv", wraps=load_latest_tailored_cv) as loader:
+        with mock.patch.object(ui_handlers, "compute_keyword_match", wraps=ui_handlers.compute_keyword_match) as score:
+            ui_handlers.handle_ats_recheck(None, config, responder, "job-1")
+
+    loader.assert_called_once_with("job-1", expected_profile_id=profile_id, profile=active_profile, base_dir=config.profile_path.parent)
+    assert score.call_args.args[0] == (ai_text if profile_id == "cand-A" else ordinary_text)
+    response = responder.send_json.call_args.args[0]
+    assert response["ok"] is True
+    assert response["baseline"] == (40 if baseline is None else baseline)
+    saved = load_job_analysis("job-1", config.state_root)
+    assert saved.keyword_match_source == "tailored"
+    assert saved.keyword_match_baseline_rate == response["baseline"]
+    assert saved.keyword_match_rate == response["rate"]
+
+
+@pytest.mark.parametrize("profile_id", ["cand-A", "cand-B"])
+@pytest.mark.parametrize("candidate", ["mismatched", "headerless", "empty", "missing"])
+def test_ats_handler_without_matching_cv_preserves_keyword_group(
+    tmp_path: Path, monkeypatch, profile_id: str, candidate: str
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    config, analysis_path = _ats_identity_case(tmp_path, profile_id)
+    before = analysis_path.read_bytes()
+    policy = _policy(tmp_path)
+    if candidate == "mismatched":
+        _write_cv(policy, "job-1_ai_reviewed.md", "<!-- profile_id: cand-other -->\nOther profile SQL")
+        _write_cv(policy, "job-1.md", "<!-- profile_id: cand-other -->\nOther profile ordinary SQL")
+    elif candidate == "headerless":
+        _write_cv(policy, "job-1.md", f"profile_id: {profile_id}\nHeaderless SQL")
+    elif candidate == "empty":
+        _write_cv(policy, "job-1.md", f"<!-- profile_id: {profile_id} -->\n   ")
+    responder = mock.Mock()
+
+    with mock.patch.object(ui_handlers, "compute_keyword_match") as score:
+        with mock.patch.object(ui_handlers, "save_job_analysis") as save:
+            ui_handlers.handle_ats_recheck(None, config, responder, "job-1")
+
+    assert responder.send_json.call_args.kwargs["status"] == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert responder.send_json.call_args.args[0]["ok"] is False
+    assert analysis_path.read_bytes() == before
+    score.assert_not_called()
+    save.assert_not_called()
+
+
+def test_ats_handler_invalid_profile_fails_before_cv_read(tmp_path: Path) -> None:
+    config, analysis_path = _ats_identity_case(tmp_path, "cand-A")
+    before = analysis_path.read_bytes()
+    payload = json.loads(config.profile_path.read_text())
+    payload["candidate_id"] = ""
+    config.profile_path.write_text(json.dumps(payload), encoding="utf-8")
+    responder = mock.Mock()
+
+    with mock.patch.object(ui_handlers, "load_latest_tailored_cv") as loader:
+        with mock.patch.object(ui_handlers, "save_job_analysis") as save:
+            ui_handlers.handle_ats_recheck(None, config, responder, "job-1")
+
+    assert responder.send_json.call_args.kwargs["status"] == HTTPStatus.INTERNAL_SERVER_ERROR
+    loader.assert_not_called()
+    save.assert_not_called()
+    assert analysis_path.read_bytes() == before
+
+
 @contextmanager
 def _running_ui_server(tmp_path: Path):
     config = UIServerConfig(
@@ -218,7 +375,8 @@ def _running_ui_server(tmp_path: Path):
 
 def _post(url: str, form: dict | None = None) -> tuple[int, str]:
     data = urllib.parse.urlencode(form or {}).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST")
+    origin = urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], "", "", ""))
+    req = urllib.request.Request(url, data=data, method="POST", headers={"Origin": origin})
     try:
         with urllib.request.urlopen(req) as r:
             return r.status, r.read().decode("utf-8")

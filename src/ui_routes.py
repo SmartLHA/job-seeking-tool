@@ -24,8 +24,8 @@ from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
 
-# Global request-body limit for every UI POST. The local UI accepts form and JSON
-# payloads only; 1 MiB leaves ample room for CV text while bounding memory use.
+# Default request-body limit for UI forms and JSON; CV multipart uploads have a
+# separate bounded allowance for the file and multipart overhead.
 MAX_REQUEST_BODY_BYTES = 1_048_576
 
 
@@ -33,7 +33,9 @@ class _IPv6ThreadingHTTPServer(ThreadingHTTPServer):
     address_family = socket.AF_INET6
 
 
-from src.ui_state import UIServerConfig
+from src.ui_state import UIServerConfig, _MAX_CV_SIZE_BYTES
+
+MAX_CV_UPLOAD_BODY_BYTES = _MAX_CV_SIZE_BYTES + 65_536
 from src.ui_utils import job_id_from_request_path
 from src.ui_render import render_page
 from src.job_hunt_profile import load_candidate_profile
@@ -47,6 +49,7 @@ from src.ui_handlers import (
     handle_save_profile,
     handle_set_scoring_preset,
     handle_job_explain,
+    handle_job_explain_check,
     handle_job_salary_benchmark,
     handle_qualitative_assess,
     handle_evaluate_form,
@@ -60,6 +63,8 @@ from src.ui_handlers import (
     handle_decision_override,
     handle_add_gap_skills,
     handle_ai_review_cv,
+    handle_ai_review_cv_approve,
+    handle_ai_review_cv_revise,
     handle_ats_recheck,
     handle_get_jobs,
     handle_get_board,
@@ -89,6 +94,8 @@ from src.ui_handlers import (
     handle_jobs_hide,
     handle_jobs_unhide,
     handle_jobs_hidden_list,
+    handle_set_market_position,
+    handle_clear_market_position,
 )
 
 # Source registration (startup side effect). Adding a source = one import line.
@@ -246,6 +253,8 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:  # noqa: N802
             try:
                 self._do_GET_inner()
+            except RequestValidationError as exc:
+                UIResponder(self).send_json({"ok": False, "error": exc.message}, status=exc.status)
             except Exception as exc:
                 logger.exception("Unhandled error in do_GET: %s", exc)
                 try:
@@ -261,6 +270,7 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
                     pass
 
         def _do_GET_inner(self) -> None:
+            _validate_local_host(self)
             req = _parse_request(self)
             responder = UIResponder(self)
             parsed = urlparse(self.path)
@@ -309,9 +319,9 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
                 profile_id = req.query.get("profile_id", config.profile_path.stem)
                 render_profile(req, config, responder, profile_id, flash=req.query.get("flash"))
                 return
-            explain_match = re.match(r"^/job/([^/]+)/explain$", parsed.path)
+            explain_match = re.match(r"^/job/([^/]+)/(?:explain|explain-check)$", parsed.path)
             if explain_match:
-                handle_job_explain(req, config, responder, explain_match.group(1))
+                responder.send_bytes(HTTPStatus.METHOD_NOT_ALLOWED, b"Use POST.", "text/plain", {"Allow": "POST"})
                 return
             salary_match = re.match(r"^/job/([^/]+)/salary-benchmark$", parsed.path)
             if salary_match:
@@ -357,10 +367,19 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
                     pass
 
         def _do_POST_inner(self) -> None:
+            _validate_local_host(self)
             _validate_browser_origin(self)
             req = _parse_request(self)
             responder = UIResponder(self)
             parsed = urlparse(self.path)
+            check_match = re.match(r"^/job/([^/]+)/explain-check$", parsed.path)
+            if check_match:
+                handle_job_explain_check(req, config, responder, check_match.group(1))
+                return
+            explain_match = re.match(r"^/job/([^/]+)/explain$", parsed.path)
+            if explain_match:
+                handle_job_explain(req, config, responder, explain_match.group(1))
+                return
             decision_match = re.match(r"^/job/([^/]+)/decision$", parsed.path)
             if decision_match:
                 handle_decision_override(req, config, responder, decision_match.group(1))
@@ -368,6 +387,14 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             add_gap_match = re.match(r"^/job/([^/]+)/add-gap-skills$", parsed.path)
             if add_gap_match:
                 handle_add_gap_skills(req, config, responder, add_gap_match.group(1))
+                return
+            ai_cv_approve_match = re.match(r"^/job/([^/]+)/ai-review-cv/approve$", parsed.path)
+            if ai_cv_approve_match:
+                handle_ai_review_cv_approve(req, config, responder, ai_cv_approve_match.group(1))
+                return
+            ai_cv_revise_match = re.match(r"^/job/([^/]+)/ai-review-cv/revise$", parsed.path)
+            if ai_cv_revise_match:
+                handle_ai_review_cv_revise(req, config, responder, ai_cv_revise_match.group(1))
                 return
             ai_cv_match = re.match(r"^/job/([^/]+)/ai-review-cv$", parsed.path)
             if ai_cv_match:
@@ -380,6 +407,14 @@ def _build_handler(config: UIServerConfig) -> type[BaseHTTPRequestHandler]:
             qualitative_match = re.match(r"^/job/([^/]+)/qualitative-assess$", parsed.path)
             if qualitative_match:
                 handle_qualitative_assess(req, config, responder, qualitative_match.group(1))
+                return
+            market_clear_match = re.match(r"^/job/([^/]+)/market-position/clear$", parsed.path)
+            if market_clear_match:
+                handle_clear_market_position(req, config, responder, market_clear_match.group(1))
+                return
+            market_position_match = re.match(r"^/job/([^/]+)/market-position$", parsed.path)
+            if market_position_match:
+                handle_set_market_position(req, config, responder, market_position_match.group(1))
                 return
             if parsed.path == "/jobs/batch-evaluate":
                 handle_batch_evaluate(req, config, responder)
@@ -533,69 +568,66 @@ class RequestValidationError(ValueError):
         self.message = message
 
 
-def _validate_browser_origin(handler: Any) -> None:
-    """Reject cross-origin browser POSTs while allowing headerless local clients."""
-    browser_sources = [
-        source
-        for header_name in ("Origin", "Referer")
-        if (source := handler.headers.get(header_name))
-    ]
-    if not browser_sources:
-        return
+def _header_values(handler: Any, name: str) -> list[str]:
+    return handler.headers.get_all(name, [])
 
-    host = handler.headers.get("Host")
-    if not host:
-        raise RequestValidationError(
-            HTTPStatus.FORBIDDEN,
-            "Cross-origin requests are not allowed.",
-        )
-    host_url = urlparse(f"//{host}")
+
+def _validate_local_host(handler: Any) -> tuple[str, int]:
+    """Validate the single authority against this local listener before dispatch."""
+    values = _header_values(handler, "Host")
     try:
-        host_port = host_url.port or 80
+        if len(values) != 1:
+            raise ValueError("single Host required")
+        raw = values[0]
+        if not re.fullmatch(r"(?:\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+)(?::[0-9]+)?", raw):
+            raise ValueError("invalid Host")
+        authority = urlparse("//" + raw)
+        hostname = authority.hostname
+        port = authority.port if authority.port is not None else 80
         listener_port = int(handler.server.server_address[1])
-        hostname = host_url.hostname
-        is_loopback = hostname is not None and (
-            hostname.lower() == "localhost"
-            or ipaddress.ip_address(hostname).is_loopback
-        )
+        if (not hostname or authority.username is not None or authority.password is not None
+                or authority.path or authority.query or authority.fragment
+                or any(c in raw for c in "/?#\\")
+                or raw.endswith(":") or port != listener_port):
+            raise ValueError("invalid authority")
+        if hostname.lower() != "localhost" and not ipaddress.ip_address(hostname).is_loopback:
+            raise ValueError("not loopback")
+        # IPv6 authorities must use brackets; urlparse rejects invalid ports/brackets.
+        if ":" in hostname and not raw.startswith("["):
+            raise ValueError("unbracketed IPv6")
+        return hostname.lower(), port
     except (TypeError, ValueError):
-        is_loopback = False
-        host_port = listener_port = None
-        hostname = None
-    if (
-        not is_loopback
-        or host_port != listener_port
-        or host_url.username is not None
-        or host_url.password is not None
-        or host_url.path
-        or host_url.query
-        or host_url.fragment
-    ):
-        raise RequestValidationError(
-            HTTPStatus.FORBIDDEN,
-            "Cross-origin requests are not allowed.",
-        )
+        raise RequestValidationError(HTTPStatus.FORBIDDEN, "Cross-origin requests are not allowed.") from None
 
-    for source in browser_sources:
-        source_url = urlparse(source)
+
+def _validate_browser_origin(handler: Any) -> None:
+    """Require each supplied browser source to match the HTTP listener origin."""
+    hostname, listener_port = _validate_local_host(handler)
+    sources = []
+    for name in ("Origin", "Referer"):
+        values = _header_values(handler, name)
+        if len(values) > 1:
+            raise RequestValidationError(HTTPStatus.FORBIDDEN, "Cross-origin requests are not allowed.")
+        sources.extend((name, value) for value in values)
+    valid = bool(sources)
+    for name, source in sources:
         try:
-            source_port = source_url.port or (80 if source_url.scheme == "http" else 443)
+            parsed = urlparse(source)
+            port = parsed.port if parsed.port is not None else 80
+            valid = valid and (bool(re.fullmatch(r"(?:\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+)(?::[0-9]+)?", parsed.netloc))
+                and parsed.scheme == "http" and parsed.hostname == hostname
+                and port == listener_port and parsed.username is None and parsed.password is None
+                and not any(c.isspace() or ord(c) < 32 for c in source)
+                and "\\" not in source
+                and (name != "Origin" or source == "http://" + parsed.netloc))
         except ValueError:
-            source_port = None
-        if (
-            source_url.scheme != "http"
-            or source_url.hostname is None
-            or source_url.hostname.lower() != hostname.lower()
-            or source_port != listener_port
-        ):
-            raise RequestValidationError(
-                HTTPStatus.FORBIDDEN,
-                "Cross-origin requests are not allowed.",
-            )
+            valid = False
+    if not valid:
+        raise RequestValidationError(HTTPStatus.FORBIDDEN, "Cross-origin requests are not allowed.")
 
 
-def _content_length(headers: Any) -> int:
-    """Validate Content-Length and enforce MAX_REQUEST_BODY_BYTES before reading."""
+def _content_length(headers: Any, max_bytes: int = MAX_REQUEST_BODY_BYTES) -> int:
+    """Validate Content-Length and enforce the selected limit before reading."""
     raw_length = headers.get("Content-Length")
     if raw_length is None:
         return 0
@@ -605,10 +637,10 @@ def _content_length(headers: Any) -> int:
             "Invalid Content-Length header.",
         )
     length = int(raw_length)
-    if length > MAX_REQUEST_BODY_BYTES:
+    if length > max_bytes:
         raise RequestValidationError(
             HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
-            f"Request body exceeds the {MAX_REQUEST_BODY_BYTES}-byte limit.",
+            f"Request body exceeds the {max_bytes}-byte limit.",
         )
     return length
 
@@ -620,7 +652,11 @@ def _parse_request(handler) -> "UIRequest":
     content_type = headers.get("Content-Type", "") or ""
     raw_body = b""
     if handler.command == "POST":
-        length = _content_length(headers)
+        max_bytes = MAX_REQUEST_BODY_BYTES
+        if (parsed.path == "/profile/parse-cv"
+                and content_type.split(";", 1)[0].strip() == "multipart/form-data"):
+            max_bytes = MAX_CV_UPLOAD_BODY_BYTES
+        length = _content_length(headers, max_bytes)
         if length:
             raw_body = handler.rfile.read(length)
     form: dict = {}

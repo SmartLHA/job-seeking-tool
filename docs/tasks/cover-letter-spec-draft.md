@@ -1,5 +1,11 @@
 # Cover Letter Generator — Design Spec v2
 
+<!-- STATUS -->
+> **2026-10-04 repair status: ⚠️ Implemented; independent verification partial/pending.** Profile/job-isolated letter save/load and matching-only ZIP, without legacy fallback.
+> **Repair functions:** `save_cover_letter`, `load_cover_letter(..., profile_id=...)`, `build_package`. **Routes:** `POST /cover-letter`, `GET /job/{id}/export.zip`.
+> **Verification:** Producer synthetic checks are recorded in [the audit evidence](audit-remediation-2026-10-04.md); live provider/browser/real-data behavior is not certified. Issue 16 remains pending.
+<!-- /STATUS -->
+
 **Status:** ✅ IMPLEMENTED and hardened 2026-07-27 — focused regression coverage green
 **Updated:** 2026-07-27 — safe output naming and local-path non-disclosure reconciled with the live route
 **Prior version:** v1 described a single `why_company_text` input only
@@ -79,7 +85,7 @@ Handler calls:
 4. `load_candidate_profile(...)` → `CandidateProfile`
 5. `load_master_cv(...)` → `str`
 6. `generate_cover_letter_text(profile, master_cv, job, analysis, why_company_text, tone=, length=, points=)`
-7. Save output to `output/cover_letters/<job_id>.txt` only when `job_id` matches the safe ID allow-list (`A–Z`, `a–z`, `0–9`, `.`, `_`, `-`; excluding `.` and `..`).
+7. Save output to `output/cover_letters/<profile_id>/<job_id>.txt` only when both `profile_id` and `job_id` match the safe ID allow-list (`A–Z`, `a–z`, `0–9`, `.`, `_`, `-`; excluding `.` and `..`).
 8. Return response JSON with the output **filename only** in `saved_path`; never expose an absolute local path.
 
 `effective_decision()` is imported from `src/job_hunt_models.py`. Both `apply` and `review` decisions are allowed — only `skip` is blocked.

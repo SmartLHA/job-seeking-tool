@@ -1,7 +1,7 @@
 """Tests for untested LLM and parsing wrapper functions.
 
 Coverage targets:
-- ai_review_cv_with_llm (L442 in job_hunt_llm.py)
+- ai_rewrite_cv (L470 in job_hunt_llm.py)
 - extract_cv_skills_with_llm (L524 in job_hunt_llm.py)
 - extract_skills_from_cv (L552 in job_hunt_parsing.py)
 - generate_cover_letter_text (L453 in job_hunt_tailoring.py)
@@ -21,7 +21,7 @@ from src.job_hunt_models import (
     ScoreBreakdown,
     ScoreComponent,
 )
-from src.job_hunt_llm import ai_review_cv_with_llm, extract_cv_skills_with_llm
+from src.job_hunt_llm import ai_rewrite_cv, extract_cv_skills_with_llm
 from src.job_hunt_parsing import extract_skills_from_cv
 from src.job_hunt_tailoring import generate_cover_letter_text
 
@@ -39,7 +39,7 @@ def _build_score_breakdown() -> ScoreBreakdown:
 
 
 class TestAiReviewCvWithLlm:
-    """Tests for ai_review_cv_with_llm."""
+    """Tests for ai_rewrite_cv."""
 
     def _make_profile(self) -> CandidateProfile:
         return CandidateProfile(
@@ -102,7 +102,7 @@ class TestAiReviewCvWithLlm:
                 "gemini-pro",
                 None,
             )
-            result, error, model = ai_review_cv_with_llm(cv_text, profile, job, analysis)
+            result, error, model = ai_rewrite_cv(cv_text, profile, job, analysis)
 
         assert result is not None
         assert error is None
@@ -119,7 +119,7 @@ class TestAiReviewCvWithLlm:
 
         with mock.patch("src.job_hunt_llm._call_gemini_reasoning") as mock_call:
             mock_call.return_value = (None, "LLM connection error", None, None)
-            result, error, model = ai_review_cv_with_llm(cv_text, profile, job, analysis)
+            result, error, model = ai_rewrite_cv(cv_text, profile, job, analysis)
 
         assert result is None
         assert error is not None
@@ -135,7 +135,7 @@ class TestAiReviewCvWithLlm:
 
         with mock.patch("src.job_hunt_llm._call_gemini_reasoning") as mock_call:
             mock_call.return_value = ("This is not JSON", None, "gemini-pro", None)
-            result, error, model = ai_review_cv_with_llm(cv_text, profile, job, analysis)
+            result, error, model = ai_rewrite_cv(cv_text, profile, job, analysis)
 
         assert result is None
         assert error is not None
@@ -156,7 +156,7 @@ class TestAiReviewCvWithLlm:
                 "gemini-pro",
                 None,
             )
-            result, error, model = ai_review_cv_with_llm(cv_text, profile, job, analysis)
+            result, error, model = ai_rewrite_cv(cv_text, profile, job, analysis)
 
         assert result is None
         assert "reviewed_cv" in error
@@ -179,7 +179,7 @@ class TestAiReviewCvWithLlm:
                 "gemini-pro",
                 None,
             )
-            result, error, model = ai_review_cv_with_llm(cv_text, profile, job, analysis)
+            result, error, model = ai_rewrite_cv(cv_text, profile, job, analysis)
 
         assert result is not None
         assert result["changes"] == []
@@ -203,7 +203,7 @@ class TestAiReviewCvWithLlm:
                 "gemini-pro",
                 None,
             )
-            result, error, model = ai_review_cv_with_llm(cv_text, profile, job, analysis)
+            result, error, model = ai_rewrite_cv(cv_text, profile, job, analysis)
 
         # Verify the call was made (truncation happens internally)
         assert mock_call.called
@@ -297,7 +297,7 @@ class TestExtractSkillsFromCv:
 
         with mock.patch("src.job_hunt_llm.extract_cv_skills_with_llm") as mock_llm:
             mock_llm.return_value = (["SQL", "Python"], None)
-            skills, warning = extract_skills_from_cv(cv_text)
+            skills, warning = extract_skills_from_cv(cv_text, use_cloud=True)
 
         assert skills == ["SQL", "Python"]
         assert warning is None
@@ -312,7 +312,7 @@ class TestExtractSkillsFromCv:
             # Mock the keyword extraction
             with mock.patch("src.job_hunt_parsing._extract_skills") as mock_keyword:
                 mock_keyword.return_value = ["SQL", "Python"]
-                skills, warning = extract_skills_from_cv(cv_text)
+                skills, warning = extract_skills_from_cv(cv_text, use_cloud=True)
 
         assert skills is not None  # Fallback worked
         assert warning is not None
@@ -324,7 +324,7 @@ class TestExtractSkillsFromCv:
 
         with mock.patch("src.job_hunt_llm.extract_cv_skills_with_llm") as mock_llm:
             mock_llm.return_value = (["Skill1", "Skill2"], None)
-            skills, warning = extract_skills_from_cv(cv_text)
+            skills, warning = extract_skills_from_cv(cv_text, use_cloud=True)
 
         assert warning is None
 
@@ -336,7 +336,7 @@ class TestExtractSkillsFromCv:
             mock_llm.return_value = (None, "Error")
             with mock.patch("src.job_hunt_parsing._extract_skills") as mock_keyword:
                 mock_keyword.return_value = []
-                skills, warning = extract_skills_from_cv(cv_text)
+                skills, warning = extract_skills_from_cv(cv_text, use_cloud=True)
 
         assert isinstance(skills, list)
         assert skills is not None

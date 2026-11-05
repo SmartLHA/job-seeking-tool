@@ -72,7 +72,7 @@ Three ways in:
 
 User actions:
 - Persist an override → `POST /job/<id>/decision` (effective-decision handling).
-- Optional Gemini explanation / CV review → `POST /job/<id>/ai-review-cv`, `GET /job/<id>/explain` (advisory, never changes score/decision).
+- Optional Gemini explanation / AI CV review (Gemini rewrite, OpenAI blind check with Gemini fallback, consent names both) → `POST /job/<id>/ai-review-cv`, `GET /job/<id>/explain` (advisory, never changes score/decision).
 - Add missing skills to profile → `POST /job/<id>/add-gap-skills`.
 
 **B. Batch / Review queue**

@@ -1,0 +1,27 @@
+{
+  "id": "clean-rephrase",
+  "description": "clean rephrase",
+  "original_cv": "Summary\n- Helped teams document business needs.",
+  "rewrite": "Summary\n- Assisted teams documenting business needs.",
+  "profile": {
+    "years_experience": 5,
+    "skills": [],
+    "target_roles": [
+      "Programme Director"
+    ],
+    "industries": [
+      "Technology"
+    ]
+  },
+  "job_skills": [],
+  "labels": {
+    "expected_overall": "PASS",
+    "expected_l0": [],
+    "expected_items": [
+      {
+        "statement": "- Assisted teams documenting business needs.",
+        "expected": "SUPPORTED"
+      }
+    ]
+  }
+}

@@ -1,6 +1,18 @@
 # Design: Absorbing career-ops Scoring & Batch Evaluation (PLAN ONLY — not approved)
 
 <!-- STATUS -->
+> **Current implementation status — 2026-10-25: ⚠️ Implemented; qualification PARTIAL.**
+> P2-10 and its follow-up: UTC leases and paired qualitative/queue ownership guard publication, cancellation, archive and grade backfill. Readers require accepted completed generations and fail closed on malformed managed metadata/index failure. Standalone queue transitions remain compatible only with unmanaged work. A live qualitative owner causes waiting without retry charge, including at the retry cap. Deployed old writers must be quiesced before ownership migration; cross-store crash atomicity is not claimed. Historical draft/unapproved wording below is superseded only for these implemented slices.
+> **Current references:** `src/job_hunt_qualitative_state.py`, `process_eval_queue_once`, `handle_qualitative_assess`; qualitative/batch routes; `tests/test_qualitative_ownership.py`.
+> **Evidence:** final current regression 645 passed/75 deselected; earlier P2-12 owned-loopback 86 passed including 15 mandatory Chromium cases. Clean projection 106 repeats 86 + 20; totals are not additive. Full evidence/limitations: [P2 ledger](p2-remediation-2026-10-23.md).
+> **Limits:** independent advisory review is separate; strict Gate 3 remains PARTIAL because raw reviewer startup includes generic skill instructions. Remote CI/Python 3.10/native browser OS egress/live providers/production are UNVERIFIED. Five P1 designs remain approval-pending.
+
+**Historical status record (superseded only where the current note differs):**
+
+> **2026-10-04 repair status: ⚠️ Implemented; independent verification partial/pending.** Batch cancellation blocks claim/retry/quota/stale requeue and adds a pre-provider checkpoint; existing implemented slices remain unchanged. In-flight calls cannot be undone.
+> **Repair functions:** `cancel_eval_batch`, `claim_eval_queue_row`, `process_eval_queue_once`. **Routes:** `POST /batch/{batch_id}/cancel`.
+> **Verification:** Producer synthetic checks are recorded in [the audit evidence](audit-remediation-2026-10-04.md); live provider/browser/real-data behavior is not certified. Issue 16 remains pending.
+
 > **Implementation status:** ✅ Implemented 2026-07-09 (slices 1-3 of 4)
 > **Divergences from spec:** comp-vs-market dimension excluded (§1 — no market-data source); career-ops' "posting legitimacy" is implemented as "posting quality signals" naming (§1); the score-only grade rule in §5 was AMENDED mid-session to add a decision-aware cap (Codex HIGH — a purely score-banded grade could show "A" beside a Skip); slice-4 "polish" items (cancel, retry caps, stale-running reset, digest-worker coexistence) were pulled forward into slice 3 rather than deferred; bulk URL/JD paste batch input (also slice-4 scope) remains deferred — v1 batch input is review-queue selection only (§10.4), tracked as `CAREER-F1` in `PROJECT_TODO.md`.
 > **Key functions:** `build_qualitative_prompt()`, `parse_and_validate()`, `run_qualitative_assessment_pipeline()` (`job_hunt_qualitative.py`); `normalize_grounding_text()`, `quote_in_text()` (`text_grounding.py`); `derive_base_grade()`, `derive_grade()`, `apply_grade_to_assessment()` (`job_hunt_qualitative.py`); `claim_qualitative_assessment()`, `finish_qualitative_assessment()`, `reserve_llm_rpd_attempt()`, `enqueue_eval_batch()`, `claim_eval_queue_row()`, `finish_eval_queue_row()`, `cancel_eval_batch()` (`job_hunt_index.py`); `process_eval_queue_once()` (`job_hunt_scheduler.py`); `handle_qualitative_assess()`, `handle_batch_assess()`, `handle_get_batch()`, `handle_cancel_batch()` (`ui_handlers.py`)

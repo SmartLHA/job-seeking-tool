@@ -15,7 +15,9 @@ from src.job_hunt_profile import load_candidate_profile, load_master_cv, resolve
 from src.job_hunt_reporting import build_evaluated_job_report_row, export_report_csv, export_report_json
 from src.job_hunt_reviewed_input import reviewed_job_from_dict
 from src.job_hunt_storage import (
+    StorageError,
     ensure_storage_layout,
+    load_job_analysis,
     save_job_analysis,
     save_raw_input,
     save_reviewed_job,
@@ -123,7 +125,24 @@ def run_local_evaluation_flow_from_payload(
     # named weight preset is currently persisted (falls back to Balanced —
     # i.e. today's DEFAULT_SCORING_POLICY weights — if none was ever chosen).
     _scoring_policy = get_active_scoring_policy(state_root=layout.root)
-    analysis = evaluate_reviewed_job(profile, reviewed_job, scoring_policy=_scoring_policy)
+    # Market-aware salary (2026-09-22, revision 2): this path is used for a brand
+    # new job AND for "Re-evaluate" on an existing one (same job_id resubmitted) —
+    # carry the STICKY market_snapshot from any prior analysis forward unchanged.
+    _previous_analysis = None
+    _market_snapshot = None
+    try:
+        _previous_analysis = load_job_analysis(reviewed_job.job_id, layout.root)
+        _market_snapshot = _previous_analysis.market_snapshot
+    except (FileNotFoundError, StorageError):
+        pass
+    analysis = evaluate_reviewed_job(
+        profile, reviewed_job, scoring_policy=_scoring_policy, market_snapshot=_market_snapshot,
+    )
+    if _previous_analysis is not None:
+        analysis = dataclasses.replace(
+            analysis, user_decision=_previous_analysis.user_decision,
+            user_decision_note=_previous_analysis.user_decision_note,
+        )
     stored_analysis_path = save_job_analysis(analysis, layout.root)
 
     report_row = build_evaluated_job_report_row(reviewed_job, analysis)

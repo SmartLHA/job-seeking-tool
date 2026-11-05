@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from browser_support import playwright_sync, launch_chromium, loopback_page
 
 from src import ui_render
 
@@ -149,12 +150,7 @@ def test_dom_wiring_never_uses_innerhtml():
 
 
 def _playwright():
-    try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import sync_playwright
-    except ModuleNotFoundError:
-        pytest.skip("Playwright is not installed")
-    return sync_playwright, PlaywrightError
+    return playwright_sync()
 
 
 class _StubApp:
@@ -229,12 +225,10 @@ class _StubApp:
 
 
 def _launch(pw, PlaywrightError):
-    try:
-        return pw.chromium.launch(headless=True)
-    except PlaywrightError as exc:
-        pytest.skip(f"Chromium unavailable: {exc}")
+    return launch_chromium(pw)
 
 
+@pytest.mark.required_browser
 def test_bulk_browser_three_items_one_failing_and_stop():
     sync_playwright, PlaywrightError = _playwright()
     app = _StubApp()
@@ -244,7 +238,7 @@ def test_bulk_browser_three_items_one_failing_and_stop():
             browser = _launch(pw, PlaywrightError)
             try:
                 errors: list[str] = []
-                page = browser.new_page()
+                page = loopback_page(browser, app.base)
                 page.on("pageerror", lambda e: errors.append(str(e)))
                 page.goto(f"{app.base}/")
                 page.click('[data-add-job-tab="bulk"]')
@@ -269,7 +263,7 @@ def test_bulk_browser_three_items_one_failing_and_stop():
                 assert errors == []
 
                 # Stop halts the loop: the in-flight item finishes, the rest are not run.
-                page2 = browser.new_page()
+                page2 = loopback_page(browser, app2.base)
                 page2.goto(f"{app2.base}/")
                 page2.click('[data-add-job-tab="bulk"]')
                 page2.fill("#bulk-input", "https://x.example/alpha\nhttps://x.example/gamma\nhttps://x.example/alpha2")
@@ -287,6 +281,7 @@ def test_bulk_browser_three_items_one_failing_and_stop():
         app2.close()
 
 
+@pytest.mark.required_browser
 def test_bulk_browser_same_title_different_postings_and_readd():
     sync_playwright, PlaywrightError = _playwright()
     app = _StubApp()
@@ -294,7 +289,7 @@ def test_bulk_browser_same_title_different_postings_and_readd():
         with sync_playwright() as pw:
             browser = _launch(pw, PlaywrightError)
             try:
-                page = browser.new_page()
+                page = loopback_page(browser, app.base)
                 page.goto(f"{app.base}/")
                 page.click('[data-add-job-tab="bulk"]')
                 # two DIFFERENT postings, same title+company slug
@@ -321,19 +316,17 @@ def test_bulk_browser_same_title_different_postings_and_readd():
         app.close()
 
 
+@pytest.mark.required_browser
 def test_bulk_browser_real_endpoints_text_blocks_and_not_a_url(tmp_path):
     """No stubs: two pasted JD texts go through the real /prefill + /job-submit."""
     sync_playwright, PlaywrightError = _playwright()
-    from tests.test_ui import _running_ui_server
+    from test_ui import _running_ui_server
 
     with _running_ui_server(tmp_path) as (base_url, config):
         with sync_playwright() as pw:
+            browser = launch_chromium(pw)
             try:
-                browser = pw.chromium.launch(headless=True)
-            except PlaywrightError as exc:
-                pytest.skip(f"Chromium unavailable: {exc}")
-            try:
-                page = browser.new_page()
+                page = loopback_page(browser, base_url)
                 page.goto(f"{base_url}/?tab=add_job")
                 page.click('[data-add-job-tab="bulk"]')
                 page.fill("#bulk-input", "Job title: Business Analyst\nCompany: Example Ltd\nLocation: Chester\n"

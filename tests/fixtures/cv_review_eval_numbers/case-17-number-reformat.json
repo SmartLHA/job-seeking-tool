@@ -1,0 +1,27 @@
+{
+  "id": "number-reformat",
+  "description": "number reformat",
+  "original_cv": "Summary\n- Supported five analysts.",
+  "rewrite": "Summary\n- Supported 5 analysts.",
+  "profile": {
+    "years_experience": 5,
+    "skills": [],
+    "target_roles": [
+      "Programme Director"
+    ],
+    "industries": [
+      "Technology"
+    ]
+  },
+  "job_skills": [],
+  "labels": {
+    "expected_overall": "PASS",
+    "expected_l0": [],
+    "expected_items": [
+      {
+        "statement": "- Supported 5 analysts.",
+        "expected": "SUPPORTED"
+      }
+    ]
+  }
+}

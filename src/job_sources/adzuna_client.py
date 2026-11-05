@@ -64,10 +64,14 @@ def fetch_adzuna_jobs(keyword: str, location: str, max_results: int = 50, *, ski
         return data.get("results", []) if isinstance(data, dict) else []
 
     except requests.exceptions.HTTPError as e:
-        logger.error(f"HTTP error occurred while fetching from Adzuna: {e}")
+        status = getattr(e.response, "status_code", None)
+        if type(status) is int and 100 <= status <= 599:
+            logger.error("HTTP error occurred while fetching from Adzuna (status %s).", status)
+        else:
+            logger.error("HTTP error occurred while fetching from Adzuna.")
         return []
     except requests.exceptions.RequestException as e:
-        logger.error(f"Request error occurred while fetching from Adzuna: {e}")
+        logger.error("Request error occurred while fetching from Adzuna (%s).", type(e).__name__)
         return []
     except json.JSONDecodeError:
         logger.error("Failed to decode JSON response from Adzuna.")
@@ -95,9 +99,14 @@ def save_raw_response(content: str, source: str):
     except Exception as e:
         logger.warning(f"Failed to save raw response for {source}: {e}")
 
-# ── Salary histogram (Feature B, 2026-09-22) ─────────────────────────────────
-# Advisory market context only. Docs: https://developer.adzuna.com/docs/histogram
-# Terms: personal research use; show "Source: Adzuna"; do not redistribute.
+# ── Salary histogram (Feature B, 2026-09-22; revision 2, 2026-09-22) ─────────
+# The fetch/cache functions below stay advisory-only market context. Docs:
+# https://developer.adzuna.com/docs/histogram . Terms: personal research use;
+# show "Source: Adzuna"; do not redistribute (and never export it — see
+# src/job_hunt_export.py). What CAN move the score is the separate, explicit
+# "Save market position" action in src/job_hunt_salary_benchmark.py
+# (apply_market_score_effect) — it reads only a previously-saved snapshot, never
+# this client, and only when market_score_effect_enabled() is on.
 # SECURITY: the request URL/params carry app_key. Never log or return them; error
 # text below is built only from fixed strings, exception class names and status codes.
 
@@ -208,6 +217,30 @@ def _parse_histogram(data: Any) -> Optional[List[Tuple[int, int]]]:
     except (TypeError, ValueError):
         return None
     return sorted(buckets)
+
+
+def read_cached_salary_histogram(
+    what: str,
+    *,
+    location: Optional[str] = None,
+    cache_dir: Optional[Path] = None,
+    now: Optional[Callable[[], datetime]] = None,
+) -> Optional[SalaryHistogramResult]:
+    """Read a still-fresh cached histogram WITHOUT any network call or budget use.
+
+    Market-aware salary (2026-09-22, revision 2): used ONLY by the explicit
+    "Save market position" route, which must recompute from a CACHED benchmark
+    (the same cache the salary-benchmark panel writes) and never trigger a fetch
+    itself. Returns None when there is no cache entry, it is malformed, or it has
+    expired past SALARY_CACHE_TTL_SECONDS — same freshness rule as the fetch path.
+    """
+    clock = now or _utc_now
+    cache = Path(cache_dir) if cache_dir is not None else DEFAULT_SALARY_CACHE_DIR
+    what_n = _norm_what(what)
+    if not what_n:
+        return None
+    cpath = _cache_path(cache, what_n, location)
+    return _read_cache(cpath, clock())
 
 
 def fetch_adzuna_salary_histogram(

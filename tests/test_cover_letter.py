@@ -374,3 +374,76 @@ def test_generate_cover_letter_rejects_invalid_length() -> None:
 def test_save_cover_letter_rejects_unsafe_job_id(job_id: str) -> None:
     with pytest.raises(ValueError, match="invalid"):
         save_cover_letter(job_id, "Letter body", "cand-001")
+
+
+def test_profile_scoped_letters_coexist_and_legacy_is_untouched(tmp_path):
+    from src.job_hunt_cover_letter import cover_letter_dir, load_cover_letter
+    directory = cover_letter_dir(tmp_path)
+    directory.mkdir()
+    legacy = directory / 'same-job.txt'
+    legacy_bytes = b'Legacy private letter\xff\x00'
+    legacy.write_bytes(legacy_bytes)
+    assert load_cover_letter('same-job', tmp_path, profile_id='profile-B') is None
+    assert load_cover_letter('same-job', tmp_path) is None
+    assert load_cover_letter('same-job', tmp_path, profile_id='') is None
+    a = save_cover_letter('same-job', 'Letter A', 'profile-A', tmp_path)
+    assert load_cover_letter('same-job', tmp_path, profile_id='profile-B') is None
+    b = save_cover_letter('same-job', 'Letter B', 'profile-B', tmp_path)
+    assert a != b
+    assert a.read_text() == 'Letter A' and b.read_text() == 'Letter B'
+    assert load_cover_letter('same-job', tmp_path, profile_id='profile-A') == 'Letter A'
+    assert load_cover_letter('same-job', tmp_path, profile_id='profile-B') == 'Letter B'
+    assert legacy.read_bytes() == legacy_bytes
+
+
+@pytest.mark.parametrize('bad', ['', '.', '..', '../outside', 'a/b', 'a\\b', '/absolute',
+                                 'a b', 'id\n', 'x%00', 'x\x00', 'x' * 129, None])
+@pytest.mark.parametrize('field', ['profile', 'job'])
+def test_letter_identity_validation_precedes_file_access(tmp_path, bad, field):
+    from src.job_hunt_cover_letter import load_cover_letter
+    job_id, profile_id = (bad, 'profile-A') if field == 'job' else ('job-1', bad)
+    with pytest.raises(ValueError):
+        save_cover_letter(job_id, 'Synthetic letter', profile_id, tmp_path)
+    if field == 'profile' and bad in ('', None):
+        assert load_cover_letter(job_id, tmp_path, profile_id=bad) is None
+    else:
+        with pytest.raises(ValueError):
+            load_cover_letter(job_id, tmp_path, profile_id=profile_id)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize('link_kind', ['base', 'root', 'profile', 'file', 'internal-file', 'internal-profile'])
+def test_letter_symlinks_rejected_for_read_and_write(tmp_path, link_kind):
+    from src.job_hunt_cover_letter import load_cover_letter
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    target = outside / 'target.txt'
+    target.write_text('Synthetic private target')
+    base = tmp_path / 'output'
+    root = base / 'cover_letters'
+    if link_kind == 'base':
+        base.symlink_to(outside, target_is_directory=True)
+    elif link_kind == 'root':
+        base.mkdir()
+        root.symlink_to(outside, target_is_directory=True)
+    else:
+        root.mkdir(parents=True)
+        if link_kind in ('profile', 'internal-profile'):
+            dest = outside
+            if link_kind == 'internal-profile':
+                dest = root / 'profile-B'
+                dest.mkdir()
+                (dest / 'job-1.txt').write_text('Synthetic other-profile letter')
+            (root / 'profile-A').symlink_to(dest, target_is_directory=True)
+        else:
+            profile = root / 'profile-A'
+            profile.mkdir()
+            if link_kind == 'internal-file':
+                target = profile / 'other-job.txt'
+                target.write_text('Synthetic other-job letter')
+            (profile / 'job-1.txt').symlink_to(target)
+    with pytest.raises(ValueError):
+        save_cover_letter('job-1', 'New letter', 'profile-A', base)
+    with pytest.raises(ValueError):
+        load_cover_letter('job-1', base, profile_id='profile-A')
+    assert target.read_text() in ('Synthetic private target', 'Synthetic other-job letter')

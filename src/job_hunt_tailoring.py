@@ -7,7 +7,12 @@ from src.job_hunt_config import DEFAULT_TAILORING_POLICY, TailoringPolicy
 from src.job_hunt_models import CandidateProfile, JobAnalysis, JobPosting, TailoredCVResult
 
 from src.job_hunt_cover_letter import generate_cover_letter
+from src.job_hunt_cv_storage import write_cv_text
 from src.text_grounding import quote_in_text
+from src.job_hunt_cv_review import (
+    build_review_source, canonical_cv_body, compute_binding, read_review_record,
+    resolve_master_cv_text,
+)
 
 
 class TailoringValidationError(ValueError):
@@ -41,11 +46,13 @@ def load_latest_tailored_cv(
     job_id: str,
     *,
     expected_profile_id: str | None = None,
+    profile=None,
+    base_dir=None,
     policy: TailoringPolicy = DEFAULT_TAILORING_POLICY,
 ) -> str | None:
     """Return the most-tailored saved CV text for a job, or None if none exists.
 
-    Prefers ``{job_id}_ai_reviewed.md`` over ``{job_id}.md``; strips only a single
+    Prefers a currently bound PASS or approved AI rewrite; strips only a single
     leading HTML-comment metadata line. Returns the CV body (stripped).
 
     Path safety: ``job_id`` must match a strict allow-list (no '/', no '.'/'..');
@@ -56,10 +63,14 @@ def load_latest_tailored_cv(
     header-stripping (distinct from "no file", which returns None).
 
     When ``expected_profile_id`` is given, the loader fails closed: an absent,
-    unparsable, or mismatched ``profile_id`` header returns None.
+    unparsable, or mismatched ``profile_id`` header skips that candidate. Returns
+    None when neither candidate matches the expected profile.
     """
     if not isinstance(job_id, str) or not _SAFE_JOB_ID.match(job_id) or job_id in (".", ".."):
         raise ValueError("invalid job_id")
+
+    if job_id.lower().endswith("_ai_reviewed"):
+        return None
 
     base = policy.output_dir.resolve()
     for name in (f"{job_id}_ai_reviewed.md", f"{job_id}.md"):
@@ -69,16 +80,39 @@ def load_latest_tailored_cv(
             continue
         if not path.exists():
             continue
-        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-        first = lines[0].strip() if lines else ""
-        if first.startswith("<!--") and first.endswith("-->"):
-            body = "".join(lines[1:])           # drop ONLY the first metadata line
-        else:
-            body = "".join(lines)               # no header → keep full text
+        is_ai = name == f"{job_id}_ai_reviewed.md"
+        if is_ai and profile is None:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            if is_ai:
+                continue
+            raise
+        first = text.splitlines()[0].strip() if text.splitlines() else ""
+        has_header = first.startswith("<!--") and first.endswith("-->")
         if expected_profile_id is not None:
-            if _parse_profile_id(first) != expected_profile_id:   # fail-closed
-                return None
-        body = body.strip()
+            if not has_header or _parse_profile_id(first) != expected_profile_id:
+                continue
+        body = canonical_cv_body(text)
+        if is_ai:
+            record = read_review_record(base, job_id)
+            if record is None:
+                continue
+            try:
+                cv_text = resolve_master_cv_text(profile, base_dir)
+                evidence, context = build_review_source(profile, cv_text)
+                binding = compute_binding(profile, cv_text, evidence, context, body, job_id)
+            except Exception:
+                continue
+            if record['binding'] != binding:
+                continue
+            approval = record['approval']
+            approved = (approval is not None
+                        and approval['generation_id'] == record['generation_id']
+                        and approval['rewrite_sha256'] == binding['rewrite_sha256'])
+            if record['verdict'] != 'PASS' and not approved:
+                continue
         if not body:
             raise EmptyTailoredCVError("tailored CV is empty")
         return body
@@ -409,12 +443,8 @@ def save_tailored_cv(
     if not isinstance(markdown_content, str) or not markdown_content.strip():
         raise ValueError("cv_text must be a non-empty string")
 
-    output_dir = policy.output_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
-    destination = output_dir / f"{normalized_job_id}.md"
     content = f"<!-- profile_id: {profile_id.strip()} -->\n{markdown_content.strip()}\n"
-    destination.write_text(content, encoding="utf-8")
-    return destination
+    return write_cv_text(policy.output_dir, f"{normalized_job_id}.md", content)
 
 
 def _extract_bullet_lines(text: str, section_heading: str) -> list[str]:

@@ -18,18 +18,20 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from itertools import islice
 from pathlib import Path
 from typing import Any, Callable
 
 from src.job_hunt_index import (
+    finish_digest_initialization,
     claim_batch,
     claim_eval_queue_row,
     clear_llm_queue,
     finish_eval_queue_row,
     incr_rpd_counter,
     is_eval_batch_cancel_requested,
+    is_eval_queue_row_cancelled,
     is_already_indexed,
     list_digest_jobs_for_reeval,
     open_db,
@@ -42,7 +44,6 @@ from src.job_hunt_index import (
     reset_stale_llm_processing,
     resurface_digest_job,
     rpd_used_today,
-    set_digest_meta,
     set_llm_status,
     source_job_id_from_ui_result,
     upsert_job,
@@ -60,7 +61,7 @@ from src.job_hunt_storage import (
     save_reviewed_job,
 )
 from src.job_sources.source_registry import get_source
-from src.ui_utils import reviewed_job_payload_from_ui_result
+from src.ui_utils import reviewed_job_payload_from_ui_result, skill_extraction_method_from_warning
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,10 @@ _SKIP_REASONS = {
     "missing_description_raw",
     "adapter_error",
     "evaluation_error",
+    "linkedin_detail_invalid_id",
+    "linkedin_detail_blocked",
+    "linkedin_detail_failed",
+    "linkedin_detail_empty",
 }
 
 
@@ -167,6 +172,20 @@ def _run_digest_pipeline_locked(
     # currently persisted, computed once per run (not per-job).
     _scoring_policy = get_active_scoring_policy(state_root=state_root)
 
+    def finish_initialization(source_id: str, sjid: str, search_id: str) -> None:
+        nonlocal newly_queued, jobs_llm_queued
+        try:
+            queued = finish_digest_initialization(
+                db_path, source_id=source_id, source_job_id=sjid, saved_search_id=search_id,
+                allow_queue=profile.digest_llm_enabled and newly_queued < profile.digest_max_llm_per_run,
+                threshold=profile.digest_threshold,
+            )
+            newly_queued += queued
+            jobs_llm_queued += queued
+        except Exception as exc:
+            errors.append(f"{search_id}/{source_id}/{sjid}: digest-meta/queue failed: {exc}")
+            logger.warning("digest: meta/queue failed (%s/%s): %s", source_id, sjid, exc)
+
     for ss in saved_searches:
         if not getattr(ss, "enabled", True):
             continue
@@ -186,6 +205,9 @@ def _run_digest_pipeline_locked(
             continue
 
         searches_run += 1
+        # One bounded cache per saved search prevents repeated detail requests for
+        # duplicate cards, including failures. A later run gets a fresh attempt.
+        detail_cache: dict[str, tuple[str, str | None]] = {}
         # islice so a huge/lazy adapter generator isn't fully materialised.
         for result in islice(results, profile.digest_max_per_source):
             jobs_fetched += 1
@@ -207,22 +229,39 @@ def _run_digest_pipeline_locked(
                              title=title, url=url)
                 jobs_skipped += 1
                 continue
-            if not str(result.get("description_raw") or "").strip():
+            has_description = bool(str(result.get("description_raw") or "").strip())
+            # LinkedIn cards need deduplication before their lazy detail request.
+            # Other sources retain their existing blank-description skip policy.
+            if (has_description or source_id == "linkedin") and is_already_indexed(db_path, source_id, sjid):
+                jobs_already_seen += 1
+                finish_initialization(source_id, sjid, ss.search_id)
+                continue
+            if not has_description and source_id == "linkedin":
+                if sjid not in detail_cache:
+                    from src.job_sources.linkedin_source import enrich_digest_result
+                    enriched, reason = enrich_digest_result(result)
+                    detail_cache[sjid] = (enriched.get("description_raw", ""), reason)
+                description, reason = detail_cache[sjid]
+                if reason:
+                    _log_skipped(state_root, run_date, source=source_id,
+                                 saved_search_id=ss.search_id, reason=reason, title=title, url=url)
+                    jobs_skipped += 1
+                    continue
+                result = {**result, "description_raw": description}
+                has_description = bool(description.strip())
+            if not has_description:
                 _log_skipped(state_root, run_date, source=source_id,
                              saved_search_id=ss.search_id, reason="missing_description_raw",
                              title=title, url=url)
                 jobs_skipped += 1
                 continue
-            if is_already_indexed(db_path, source_id, sjid):
-                jobs_already_seen += 1               # expected — silent, not a skip
-                continue
-
             # --- Convert + deterministic evaluate (failure here = a skip) ---
             try:
                 payload = reviewed_job_payload_from_ui_result(result, source_id=source_id)
                 required, preferred, _warn = extract_skills_from_text(payload["description_raw"])
                 payload["required_skills"] = required
                 payload["preferred_skills"] = preferred
+                payload["skill_extraction_method"] = skill_extraction_method_from_warning(_warn)  # Slice 1c
                 job = reviewed_job_from_dict(payload)
                 analysis = evaluate_reviewed_job(profile, job, scoring_policy=_scoring_policy)
             except Exception as exc:
@@ -258,6 +297,12 @@ def _run_digest_pipeline_locked(
                     "updated_at": run_date,
                     "salary_min": job.salary_min_gbp,
                     "salary_max": job.salary_max_gbp,
+                    "digest_init_search_id": ss.search_id,
+                    "digest_init_date": run_date,
+                    "digest_init_queue_requested": (
+                        profile.digest_llm_enabled and analysis.match_score is not None
+                        and analysis.match_score >= profile.digest_threshold
+                    ),
                 })
             except Exception as exc:
                 errors.append(f"{ss.search_id}/{job.job_id}: persist/index failed: {exc}")
@@ -265,21 +310,9 @@ def _run_digest_pipeline_locked(
                 continue
             jobs_new += 1
 
-            # --- Digest metadata + LLM queue. Best-effort: a failure is an ERROR,
-            # never un-counts the indexed job. One GLOBAL cap (across searches). ---
-            try:
-                set_digest_meta(db_path, job.job_id, digest_date=run_date,
-                                saved_search_id=ss.search_id)
-                score = analysis.match_score
-                if (profile.digest_llm_enabled and score is not None
-                        and score >= profile.digest_threshold
-                        and newly_queued < profile.digest_max_llm_per_run):
-                    set_llm_status(db_path, job.job_id, "pending")
-                    newly_queued += 1
-                    jobs_llm_queued += 1
-            except Exception as exc:
-                errors.append(f"{ss.search_id}/{job.job_id}: digest-meta/queue failed: {exc}")
-                logger.warning("digest: meta/queue failed (%s): %s", job.job_id, exc)
+            # Metadata, initial queueing and marker completion commit together.
+            # Failed initialization retains its marker for an identical search.
+            finish_initialization(source_id, sjid, ss.search_id)
 
     return DigestRunResult(
         started_at=started_at,
@@ -342,6 +375,7 @@ def reevaluate_digest_jobs(*, config: Any, profile: Any, db_path: Path) -> Reeva
 
 
 def _reevaluate_digest_jobs_locked(*, config: Any, profile: Any, db_path: Path) -> ReevalResult:
+    from src.job_hunt_storage import load_analysis_llm_fields
     started_at = datetime.now().isoformat(timespec="seconds")
     run_date = datetime.now().date().isoformat()
     threshold = profile.digest_threshold
@@ -368,20 +402,48 @@ def _reevaluate_digest_jobs_locked(*, config: Any, profile: Any, db_path: Path) 
         except (FileNotFoundError, StorageError):
             missing += 1
             continue
+        # Market-aware salary (2026-09-22, revision 2): the STICKY market_snapshot
+        # is never recomputed by this pipeline — carry the existing one forward.
+        _previous_analysis = None
+        _market_snapshot = None
         try:
-            analysis = evaluate_reviewed_job(profile, reviewed, scoring_policy=_scoring_policy)
+            _previous_analysis = load_job_analysis(job_id, config.state_root)
+            _market_snapshot = _previous_analysis.market_snapshot
+        except (FileNotFoundError, StorageError):
+            pass
+        _preserved_llm_fields = {}
+        try:
+            _preserved_llm_fields = load_analysis_llm_fields(job_id, config.state_root)
+        except (FileNotFoundError, StorageError):
+            pass
+        try:
+            analysis = evaluate_reviewed_job(
+                profile, reviewed, scoring_policy=_scoring_policy, market_snapshot=_market_snapshot,
+            )
         except Exception as exc:
             errored += 1
             errors.append(f"{job_id}: re-score failed: {exc}")
             logger.warning("reeval: re-score failed for %s: %s", job_id, exc)
             continue
 
+        if _previous_analysis is not None:
+            analysis = dataclasses.replace(
+                analysis, user_decision=_previous_analysis.user_decision,
+                user_decision_note=_previous_analysis.user_decision_note,
+            )
+        # Keep typed AI fields coherent with the complete raw group that will be
+        # serialized. Future llm_* keys survive without a model/schema change.
+        _typed_llm_names = {field.name for field in dataclasses.fields(analysis) if field.name.startswith("llm_")}
+        analysis = dataclasses.replace(analysis, **{
+            key: value for key, value in _preserved_llm_fields.items() if key in _typed_llm_names
+        })
+
         new_score = analysis.match_score
 
         # --- Persist JSON, then index-write. A failure here is an error (the score
         # is computed; the row just isn't updated yet — a later run retries). ---
         try:
-            save_job_analysis(analysis, config.state_root)
+            save_job_analysis(analysis, config.state_root, preserved_llm_fields=_preserved_llm_fields)
             upsert_job(db_path, {
                 "job_id": job_id,
                 "job_title": reviewed.job_title,
@@ -683,98 +745,72 @@ class EvalQueuePollResult:
 
 
 def process_eval_queue_once(
-    *,
-    config: Any,
-    profile: Any,
-    db_path: Path,
-    now: Callable[[], datetime] = datetime.now,
+    *, config: Any, profile: Any, db_path: Path,
+    now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     sleep: Callable[[float], None] = time.sleep,
     backoff_seconds: float = _EVAL_429_BACKOFF_SECONDS,
 ) -> EvalQueuePollResult:
-    """Process at most one qualitative eval_queue row."""
-    from src.job_hunt_index import claim_qualitative_assessment, finish_qualitative_assessment, get_qualitative_index_row
+    """Process one owned qualitative attempt, atomically with its queue row."""
+    from src.job_hunt_index import claim_qualitative_assessment
     from src.job_hunt_llm import RateLimited
     from src.job_hunt_qualitative import PROMPT_VERSION, run_qualitative_assessment_pipeline
+    from src.job_hunt_qualitative_state import defer_queue, transition, QualitativeOwnershipStopped
 
-    reset_stale_eval_queue_running(db_path, now=now(), older_than_minutes=_STALE_PROCESSING_MIN)
-    ready_iso = now().isoformat(timespec="seconds")
-    row = claim_eval_queue_row(db_path, now=ready_iso)
+    reset_stale_eval_queue_running(db_path, clock=now, older_than_minutes=_STALE_PROCESSING_MIN)
+    row = claim_eval_queue_row(db_path, clock=now)
     if row is None:
         return EvalQueuePollResult()
-
-    row_id = int(row["id"])
-    batch_id = row["batch_id"]
     job_id = row["job_ref"]
-    token = row["claim_token"]
-    retries = int(row["retries"] or 0)
-    force = bool(row.get("force"))
-    errors: list[str] = []
-
-    existing_qrow = get_qualitative_index_row(db_path, job_id)
-    claim = claim_qualitative_assessment(
-        db_path,
-        job_id,
-        now=ready_iso,
-        force=force or bool(existing_qrow and existing_qrow.get("status") == "error"),
-        model=None,
-        prompt_version=PROMPT_VERSION,
-    )
+    # Error rows may retry; force never overrides either live claim.
+    claim = claim_qualitative_assessment(db_path, job_id, clock=now, force=bool(row.get("force")), retry_errors=True,
+        model=None, prompt_version=PROMPT_VERSION, queue=row)
     if not claim.get("claimed"):
-        qrow = claim.get("row") or {}
-        if qrow.get("status") == "done":
-            finish_eval_queue_row(db_path, row_id, token, status="done", now=now().isoformat(timespec="seconds"))
-            return EvalQueuePollResult(processed=1)
-        msg = "qualitative assessment already in flight"
-        finish_eval_queue_row(db_path, row_id, token, status="error", now=now().isoformat(timespec="seconds"), error_text=msg)
-        return EvalQueuePollResult(failed=1, errors=[f"{job_id}: {msg}"])
+        outcome = claim.get("outcome")
+        if outcome == "cancelled":
+            return EvalQueuePollResult(cancelled=1)
+        if outcome == "lost":
+            return EvalQueuePollResult()
+        outcome = defer_queue(db_path, row, clock=now, done=outcome == "done")
+        return EvalQueuePollResult(processed=int(outcome == "done"), cancelled=int(outcome == "cancelled"),
+                                   requeued=int(outcome == "pending"))
+    owner = claim["owner"]
+    retries = int(row["retries"] or 0)
+
+    def finish(mode, message=None, new_retries=None):
+        return transition(db_path, owner, mode=mode, error=message, state_root=config.state_root,
+                          retries=new_retries, clock=now)
+
+    def outcome_result(outcome, *, message=None):
+        errors = [f"{job_id}: {message}"] if message and outcome not in {"lost", "cancelled"} else []
+        return EvalQueuePollResult(processed=int(outcome == "done"), failed=int(outcome == "error"),
+            cancelled=int(outcome == "cancelled"), requeued=int(outcome == "retry"),
+            quota_paused=outcome == "quota", errors=errors)
 
     try:
-        result = run_qualitative_assessment_pipeline(
-            job_id=job_id,
-            profile=profile,
-            state_root=config.state_root,
-            db_path=db_path,
-            before_persist=lambda: not is_eval_batch_cancel_requested(db_path, batch_id),
-        )
+        result = run_qualitative_assessment_pipeline(job_id=job_id, profile=profile,
+            state_root=config.state_root, db_path=db_path, owner=owner, clock=now)
+    except QualitativeOwnershipStopped as exc:
+        return outcome_result(exc.outcome)
     except LLMQuotaExhausted as exc:
-        msg = str(exc) or "daily LLM quota exhausted - try tomorrow"
-        release_qualitative_assessment_claim(db_path, job_id, previous_row=existing_qrow)
-        return_eval_queue_row_to_pending(db_path, row_id, token, error_text=msg)
-        pause_eval_batch_for_quota(db_path, batch_id, now=now().isoformat(timespec="seconds"), error_text=msg)
-        return EvalQueuePollResult(quota_paused=True, errors=[f"{job_id}: {msg}"])
+        message = str(exc) or "daily LLM quota exhausted - try tomorrow"
+        return outcome_result(finish("quota", message), message=message)
     except RateLimited as exc:
-        msg = str(exc) or "Gemini rate limited (429)"
+        message = str(exc) or "Gemini rate limited (429)"
         new_retries = retries + 1
-        if new_retries >= _EVAL_MAX_ATTEMPTS:
-            finish_qualitative_assessment(db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=msg)
-            finish_eval_queue_row(
-                db_path, row_id, token, status="error", now=now().isoformat(timespec="seconds"),
-                error_text=msg, retries=new_retries,
-            )
-            return EvalQueuePollResult(failed=1, errors=[f"{job_id}: {msg}"])
-        requeue_eval_queue_row(
-            db_path, row_id, token, now=now().isoformat(timespec="seconds"),
-            retries=new_retries, error_text=msg,
-        )
-        finish_qualitative_assessment(db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=msg)
-        sleep(backoff_seconds)
-        return EvalQueuePollResult(requeued=1, errors=[f"{job_id}: {msg}"])
+        outcome = finish("error" if new_retries >= _EVAL_MAX_ATTEMPTS else "retry", message, new_retries)
+        if outcome == "retry":
+            sleep(backoff_seconds)
+        return outcome_result(outcome, message=message)
     except Exception as exc:
-        msg = str(exc) or exc.__class__.__name__
-        finish_qualitative_assessment(db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=msg)
-        finish_eval_queue_row(db_path, row_id, token, status="error", now=now().isoformat(timespec="seconds"), error_text=msg)
-        return EvalQueuePollResult(failed=1, errors=[f"{job_id}: {msg}"])
-
-    if not result.ok and result.error == "cancelled before persist":
-        finish_eval_queue_row(db_path, row_id, token, status="cancelled", now=now().isoformat(timespec="seconds"))
-        return EvalQueuePollResult(cancelled=1)
+        message = str(exc) or exc.__class__.__name__
+        return outcome_result(finish("error", message), message=message)
     if result.ok:
-        finish_eval_queue_row(db_path, row_id, token, status="done", now=now().isoformat(timespec="seconds"))
+        # The publication transaction already completed the owned queue row.
         return EvalQueuePollResult(processed=1)
-    msg = result.error or "qualitative assessment failed"
-    finish_eval_queue_row(db_path, row_id, token, status="error", now=now().isoformat(timespec="seconds"), error_text=msg)
-    errors.append(f"{job_id}: {msg}")
-    return EvalQueuePollResult(failed=1, errors=errors)
+    if result.outcome in {"cancelled", "lost"}:
+        return outcome_result(result.outcome)
+    message = result.error or "qualitative assessment failed"
+    return outcome_result(finish("error", message), message=message)
 
 
 class LLMQueueWorker:
@@ -794,7 +830,7 @@ class LLMQueueWorker:
         try:
             reset_stale_llm_processing(self._db_path, now=datetime.now(),
                                        older_than_minutes=_STALE_PROCESSING_MIN)
-            reset_stale_eval_queue_running(self._db_path, now=datetime.now(),
+            reset_stale_eval_queue_running(self._db_path, clock=lambda: datetime.now(timezone.utc),
                                            older_than_minutes=_STALE_PROCESSING_MIN)
         except Exception as exc:  # pragma: no cover
             logger.warning("llm worker: startup stale-reset failed: %s", exc)

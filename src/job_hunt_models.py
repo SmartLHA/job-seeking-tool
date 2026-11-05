@@ -52,7 +52,7 @@ class CandidateProfile:
     # Daily Digest (D3) preferences. All defaulted so existing profiles load
     # unchanged. Validated/ranged in candidate_profile_from_dict (job_hunt_profile).
     digest_enabled: bool = True
-    digest_threshold: int = 70               # surface jobs scoring >= this (0–100)
+    digest_threshold: int = 70               # digest jobs scoring >= this are queued for AI analysis and, on re-evaluate, resurfaced as unread (0–100); does not filter the feed
     digest_run_time: str = "07:00"           # HH:MM 24-hour, local time
     digest_max_per_source: int = 50          # cap results fetched per saved search
     digest_llm_enabled: bool = True
@@ -74,6 +74,14 @@ class CandidateProfile:
 # Job posting models capture the reviewed structured job record that scoring will
 # consume. Unknowns are allowed because MVP input may start from copied text or a
 # simple URL and should preserve uncertainty instead of guessing.
+# Slice 1c (2026-10-19): which extractor prefilled required/preferred skills.
+# "llm" = Gemini (job_hunt_llm.extract_skills_with_llm); "keyword" = local
+# KNOWN_SKILLS keyword scan (Gemini fallback, or the paste/URL prefill parser).
+# None = unknown (records saved before this field, or skills typed by hand).
+# Skills edited by hand after a prefill keep the prefill method.
+SKILL_EXTRACTION_METHODS: tuple[str, ...] = ("llm", "keyword")
+
+
 @dataclass(slots=True)
 class JobPosting:
     job_id: str
@@ -99,8 +107,13 @@ class JobPosting:
     # a stripped string. The dedup key (with lower(source)); URL/source_ref are
     # display metadata only. Optional + default None so existing records load unchanged.
     source_job_id: str | None = None
+    skill_extraction_method: str | None = None  # Slice 1c; see SKILL_EXTRACTION_METHODS
 
     def __post_init__(self) -> None:
+        if self.skill_extraction_method is not None and self.skill_extraction_method not in SKILL_EXTRACTION_METHODS:
+            raise ValueError(
+                f"skill_extraction_method must be one of {SKILL_EXTRACTION_METHODS} or None"
+            )
         required_text_fields = {
             "job_id": self.job_id,
             "job_title": self.job_title,
@@ -242,6 +255,16 @@ class JobAnalysis:
     llm_recommended_action: str | None = None
     llm_model: str | None = None          # model that produced it (chain may fall back)
     llm_generated_at: str | None = None   # ISO datetime
+    # Market-aware salary (2026-09-22, revision 2). STICKY: set ONLY by the explicit
+    # "Save market position" user action (POST /job/{id}/market-position); NEVER
+    # recomputed by scoring, decision, re-evaluation, batch, or any pipeline — those
+    # paths must carry the existing value through unchanged. See
+    # src/job_hunt_salary_benchmark.py build_market_snapshot() for the shape.
+    market_snapshot: dict | None = None
+    # Set by evaluate_reviewed_job() from apply_market_score_effect() — None unless
+    # the optional score effect (market_score_effect_enabled(), OFF by default) is
+    # on AND market_snapshot says "bottom". The signed points applied (e.g. -5.0).
+    market_adjustment: float | None = None
 
     def __post_init__(self) -> None:
         if not self.job_id.strip():

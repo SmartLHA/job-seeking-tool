@@ -28,8 +28,8 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 """
 
-# Daily Digest D2 — ten new columns added by idempotent migration (never in the
-# base CREATE so existing DBs upgrade in place). See backlog-01 design §3.1/§3.2.
+# Digest and queue columns are added by idempotent migration so existing DBs
+# upgrade in place. See backlog-01 design §3.1/§3.2.
 _MIGRATION_COLUMNS: list[tuple[str, str]] = [
     ("source_job_id",       "TEXT"),                 # dedup key (with lower(source)); C1
     ("apply_url",           "TEXT"),                 # apply/advert URL — display only, NEVER dedup
@@ -41,6 +41,9 @@ _MIGRATION_COLUMNS: list[tuple[str, str]] = [
     ("llm_next_attempt_at", "TEXT"),                 # ISO datetime backoff gate; NULL = ready
     ("llm_claimed_at",      "TEXT"),                 # ISO datetime a worker claimed the row
     ("llm_claim_token",     "TEXT"),                 # per-claim UUID; only the claimer processes it
+    ("digest_init_search_id", "TEXT"),              # non-NULL only during incomplete digest ingestion
+    ("digest_init_date", "TEXT"),                   # original first-seen date for that ingestion
+    ("digest_init_queue_requested", "INTEGER"),     # original eligibility; NULL when initialization is done
 ]
 
 # Daily-digest indexes (§3.1a). Partial UNIQUE is the dedup invariant guard; the
@@ -71,7 +74,11 @@ CREATE TABLE IF NOT EXISTS qualitative_index (
     model            TEXT,
     prompt_version   TEXT,
     error_text       TEXT,
-    created_at       TEXT
+    created_at       TEXT,
+    claim_token      TEXT,
+    lease_until      TEXT,
+    generation       TEXT,
+    completed_generation TEXT
 );
 """
 
@@ -87,7 +94,8 @@ CREATE TABLE IF NOT EXISTS eval_queue (
     error_text   TEXT,
     created_at   TEXT,
     started_at   TEXT,
-    finished_at  TEXT
+    finished_at  TEXT,
+    lease_until  TEXT
 );
 """
 
@@ -101,6 +109,7 @@ CREATE TABLE IF NOT EXISTS eval_batch (
 
 _EVAL_QUEUE_MIGRATION_COLUMNS: list[tuple[str, str]] = [
     ("force", "INTEGER NOT NULL DEFAULT 0"),
+    ("lease_until", "TEXT"),
 ]
 
 _EVAL_QUEUE_INDEX_SQL: list[str] = [
@@ -166,6 +175,19 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     conn.execute(_QUALITATIVE_INDEX_SQL)
     conn.execute(_EVAL_QUEUE_SQL)
     conn.execute(_EVAL_BATCH_SQL)
+    existing_qualitative = {row[1] for row in conn.execute("PRAGMA table_info(qualitative_index)")}
+    for col_name in ("claim_token", "lease_until", "generation", "completed_generation"):
+        if col_name not in existing_qualitative:
+            try:
+                conn.execute(f"ALTER TABLE qualitative_index ADD COLUMN {col_name} TEXT")
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
+    # Upgrade requires quiescing old-version writers. A legacy running row has
+    # no provable live owner and becomes retryable; no old token is restored.
+    conn.execute("""UPDATE qualitative_index SET status='pending',claim_token=NULL,lease_until=NULL,
+        error_text='interrupted legacy qualitative claim; retry required'
+        WHERE status='running' AND (claim_token IS NULL OR lease_until IS NULL)""")
     existing_eval = {row[1] for row in conn.execute("PRAGMA table_info(eval_queue)")}
     for col_name, col_type in _EVAL_QUEUE_MIGRATION_COLUMNS:
         if col_name not in existing_eval:
@@ -185,11 +207,13 @@ _UPSERT_SQL = """
     INSERT INTO jobs
         (job_id, job_title, company, location, source, source_job_id, apply_url,
          match_score, decision, user_decision, ats_score,
-         tailoring_ready, status, updated_at, salary_min, salary_max)
+         tailoring_ready, status, updated_at, salary_min, salary_max,
+         digest_init_search_id, digest_init_date, digest_init_queue_requested)
     VALUES
         (:job_id, :job_title, :company, :location, :source, :source_job_id, :apply_url,
          :match_score, :decision, :user_decision, :ats_score,
-         :tailoring_ready, :status, :updated_at, :salary_min, :salary_max)
+         :tailoring_ready, :status, :updated_at, :salary_min, :salary_max,
+         :digest_init_search_id, :digest_init_date, :digest_init_queue_requested)
     ON CONFLICT(job_id) DO UPDATE SET
         job_title       = excluded.job_title,
         company         = excluded.company,
@@ -209,6 +233,7 @@ _UPSERT_SQL = """
     -- Deliberately NOT in the SET list, so preserved unchanged on conflict (C6):
     --   digest_date, digest_seen, saved_search_id,
     --   llm_status, llm_attempts, llm_next_attempt_at, llm_claimed_at, llm_claim_token
+    --   digest_init_search_id, digest_init_date, digest_init_queue_requested
 """
 
 
@@ -256,6 +281,12 @@ def upsert_job(db_path: Path, row: dict[str, Any]) -> None:
         "updated_at": row.get("updated_at"),
         "salary_min": row.get("salary_min"),
         "salary_max": row.get("salary_max"),
+        "digest_init_search_id": row.get("digest_init_search_id"),
+        "digest_init_date": row.get("digest_init_date"),
+        "digest_init_queue_requested": (
+            None if row.get("digest_init_queue_requested") is None
+            else int(bool(row["digest_init_queue_requested"]))
+        ),
     }
 
     conn = open_db(db_path)
@@ -504,6 +535,64 @@ def set_digest_meta(
         conn.close()
 
 
+def finish_digest_initialization(
+    db_path: Path,
+    *,
+    source_id: str,
+    source_job_id: str,
+    saved_search_id: str,
+    allow_queue: bool,
+    threshold: float,
+) -> int:
+    """Complete only the marked ingestion for this source/search in one SQL commit.
+
+    The DB supplies the profile/state namespace. The source, provider ID and
+    saved-search marker must all match. Ordinary indexed rows and intentionally
+    unqueued, completed initializations have no marker and remain untouched.
+    Returns the number of actual NULL-to-pending queue transitions (0 or 1).
+    JSON persistence preceding the initial index insert is not crash-atomic.
+    """
+    conn = open_db(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT * FROM jobs WHERE source = ? AND source_job_id = ? AND digest_init_search_id = ?",
+            ((source_id or "").lower(), _norm_source_job_id(source_job_id), saved_search_id),
+        ).fetchone()
+        if row is None:
+            return 0
+        conn.execute(
+            """UPDATE jobs SET digest_date = COALESCE(digest_date, digest_init_date),
+                   saved_search_id = COALESCE(saved_search_id, digest_init_search_id)
+               WHERE job_id = ?""",
+            (row["job_id"],),
+        )
+        queued = 0
+        if (row["digest_init_queue_requested"] and allow_queue
+                and row["match_score"] is not None and row["match_score"] >= threshold):
+            cursor = conn.execute(
+                """UPDATE jobs SET llm_status = 'pending', llm_claimed_at = NULL, llm_claim_token = NULL
+                   WHERE job_id = ? AND llm_status IS NULL
+                     AND COALESCE(user_decision, '') != 'skip'
+                     AND status NOT IN ('rejected', 'withdrawn')""",
+                (row["job_id"],),
+            )
+            queued = cursor.rowcount
+        # Disabled/capped/manual omission is a completed initialization too.
+        conn.execute(
+            """UPDATE jobs SET digest_init_search_id = NULL, digest_init_date = NULL,
+                   digest_init_queue_requested = NULL WHERE job_id = ?""",
+            (row["job_id"],),
+        )
+        conn.commit()
+        return queued
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 _VALID_LLM_STATUS = {"pending", "done", "failed", "skipped"}
 
 
@@ -668,70 +757,13 @@ def reserve_llm_rpd_attempt(db_path: Path, date: str, daily_cap: int | None = No
 
 
 def claim_qualitative_assessment(
-    db_path: Path,
-    job_ref: str,
-    *,
-    now: str,
-    force: bool = False,
-    model: str | None = None,
-    prompt_version: str | None = None,
+    db_path: Path, job_ref: str, *, now: str | None = None, force: bool = False,
+    model: str | None = None, prompt_version: str | None = None, clock=None, queue=None, retry_errors=False,
 ) -> dict[str, Any]:
-    """Atomic qualitative assessment compare-and-set.
-
-    Returns ``{"claimed": True, "row": row}`` only for the request that owns the
-    Gemini call. Existing pending/running rows are returned as in-flight; done and
-    error rows are returned unless ``force`` is requested. Force never overrides a
-    running row.
-    """
-    conn = open_db(db_path)
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        existing = conn.execute(
-            "SELECT * FROM qualitative_index WHERE job_ref = ?",
-            (job_ref,),
-        ).fetchone()
-        if existing is not None:
-            status = existing["status"]
-            if status in {"pending", "running"}:
-                conn.commit()
-                return {"claimed": False, "row": dict(existing), "in_flight": True}
-            if not force:
-                conn.commit()
-                return {"claimed": False, "row": dict(existing), "in_flight": False}
-            conn.execute(
-                """UPDATE qualitative_index
-                      SET status = 'running',
-                          grade = NULL,
-                          culture_flag = NULL,
-                          legitimacy_tier = NULL,
-                          model = ?,
-                          prompt_version = ?,
-                          error_text = NULL,
-                          created_at = ?
-                    WHERE job_ref = ?
-                      AND status NOT IN ('pending', 'running')""",
-                (model, prompt_version, now, job_ref),
-            )
-        else:
-            conn.execute(
-                """INSERT INTO qualitative_index
-                    (job_ref, status, grade, culture_flag, legitimacy_tier,
-                     model, prompt_version, error_text, created_at)
-                   VALUES (?, 'running', NULL, NULL, NULL, ?, ?, NULL, ?)""",
-                (job_ref, model, prompt_version, now),
-            )
-        row = conn.execute(
-            "SELECT * FROM qualitative_index WHERE job_ref = ?",
-            (job_ref,),
-        ).fetchone()
-        conn.commit()
-        return {"claimed": True, "row": dict(row), "in_flight": True}
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
+    """Acquire a live qualitative owner; force never steals an active lease."""
+    from src.job_hunt_qualitative_state import acquire, clock_for
+    return acquire(db_path, job_ref, force=force, model=model, prompt_version=prompt_version,
+                   clock=clock_for(clock=clock, now=now), queue=queue, retry_errors=retry_errors)
 
 def finish_qualitative_assessment(
     db_path: Path,
@@ -758,7 +790,7 @@ def finish_qualitative_assessment(
                       model = COALESCE(?, model),
                       prompt_version = COALESCE(?, prompt_version),
                       error_text = ?
-                WHERE job_ref = ?""",
+                WHERE job_ref = ? AND generation IS NULL""",
             (status, grade, culture_flag, legitimacy_tier, model, prompt_version, error_text, job_ref),
         )
         conn.commit()
@@ -777,7 +809,7 @@ def release_qualitative_assessment_claim(
     try:
         if previous_row is None:
             conn.execute(
-                "DELETE FROM qualitative_index WHERE job_ref = ? AND status = 'running'",
+                "DELETE FROM qualitative_index WHERE job_ref = ? AND status = 'running' AND generation IS NULL",
                 (job_ref,),
             )
         else:
@@ -791,7 +823,7 @@ def release_qualitative_assessment_claim(
                           prompt_version = ?,
                           error_text = ?,
                           created_at = ?
-                    WHERE job_ref = ? AND status = 'running'""",
+                    WHERE job_ref = ? AND status = 'running' AND generation IS NULL""",
                 (
                     previous_row.get("status"),
                     previous_row.get("grade"),
@@ -813,7 +845,7 @@ def update_qualitative_grade(db_path: Path, job_ref: str, grade: str | None) -> 
     conn = open_db(db_path)
     try:
         conn.execute(
-            "UPDATE qualitative_index SET grade = ? WHERE job_ref = ?",
+            "UPDATE qualitative_index SET grade = ? WHERE job_ref = ? AND generation IS NULL AND status='done'",
             (grade, job_ref),
         )
         conn.commit()
@@ -882,15 +914,31 @@ def enqueue_eval_batch(
         conn.close()
 
 
-def claim_eval_queue_row(db_path: Path, *, now: str) -> dict[str, Any] | None:
+_EVAL_BATCH_CANCELLED_SQL = """EXISTS (
+    SELECT 1 FROM eval_batch b
+    WHERE b.batch_id = eval_queue.batch_id AND b.cancel_requested_at IS NOT NULL
+)"""
+
+
+def claim_eval_queue_row(db_path: Path, *, now: str | None = None, clock=None) -> dict[str, Any] | None:
     """Atomically claim the oldest pending eval_queue row."""
+    from src.job_hunt_qualitative_state import clock_for, _utc, LEASE_SECONDS
     token = str(uuid.uuid4())
     conn = open_db(db_path)
     try:
         conn.execute("BEGIN IMMEDIATE")
+        stamp = _utc(clock_for(clock=clock, now=now)())
+        now = stamp.isoformat(timespec="microseconds")
+        lease = (stamp + timedelta(seconds=LEASE_SECONDS)).isoformat(timespec="microseconds")
+        # Reconcile legacy pending rows left behind by older retry code.
+        conn.execute(
+            f"""UPDATE eval_queue SET status = 'cancelled', claim_token = NULL,
+                finished_at = ?, error_text = NULL
+                WHERE status = 'pending' AND {_EVAL_BATCH_CANCELLED_SQL}""", (now,),
+        )
         row = conn.execute(
-            """SELECT id FROM eval_queue
-                WHERE status = 'pending'
+            f"""SELECT id FROM eval_queue
+                WHERE status = 'pending' AND NOT {_EVAL_BATCH_CANCELLED_SQL}
                 ORDER BY created_at ASC, id ASC
                 LIMIT 1"""
         ).fetchone()
@@ -899,9 +947,9 @@ def claim_eval_queue_row(db_path: Path, *, now: str) -> dict[str, Any] | None:
             return None
         conn.execute(
             """UPDATE eval_queue
-                  SET status = 'running', claim_token = ?, started_at = ?, error_text = NULL
+                  SET status = 'running', claim_token = ?, started_at = ?, lease_until = ?, error_text = NULL
                 WHERE id = ? AND status = 'pending'""",
-            (token, now, row["id"]),
+            (token, now, lease, row["id"]),
         )
         claimed = conn.execute(
             "SELECT * FROM eval_queue WHERE id = ? AND claim_token = ? AND status = 'running'",
@@ -917,96 +965,33 @@ def claim_eval_queue_row(db_path: Path, *, now: str) -> dict[str, Any] | None:
 
 
 def finish_eval_queue_row(
-    db_path: Path,
-    row_id: int,
-    claim_token: str,
-    *,
-    status: str,
-    now: str,
-    error_text: str | None = None,
-    retries: int | None = None,
+    db_path: Path, row_id: int, claim_token: str, *, status: str, now: str,
+    error_text: str | None = None, retries: int | None = None,
 ) -> bool:
-    """Finish a running queue row using its claim token."""
+    """Finish a standalone live token-owned queue row."""
     if status not in {"done", "error", "cancelled"}:
         raise ValueError(f"invalid eval_queue finish status: {status!r}")
-    sets = ["status = :status", "claim_token = NULL", "finished_at = :now", "error_text = :error_text"]
-    params: dict[str, Any] = {
-        "id": int(row_id),
-        "claim_token": claim_token,
-        "status": status,
-        "now": now,
-        "error_text": error_text,
-    }
-    if retries is not None:
-        sets.append("retries = :retries")
-        params["retries"] = int(retries)
-    conn = open_db(db_path)
-    try:
-        cur = conn.execute(
-            f"UPDATE eval_queue SET {', '.join(sets)} "
-            "WHERE id = :id AND claim_token = :claim_token AND status = 'running'",
-            params,
-        )
-        conn.commit()
-        return cur.rowcount == 1
-    finally:
-        conn.close()
+    from src.job_hunt_qualitative_state import queue_transition, clock_for
+    return queue_transition(db_path, row_id, claim_token, status=status, clock=clock_for(now=now),
+                            error=error_text, retries=retries)
 
 
 def requeue_eval_queue_row(
-    db_path: Path,
-    row_id: int,
-    claim_token: str,
-    *,
-    now: str,
-    retries: int,
+    db_path: Path, row_id: int, claim_token: str, *, now: str, retries: int,
     error_text: str | None = None,
 ) -> bool:
-    """Return a running row to pending after a retryable 429/backoff."""
-    conn = open_db(db_path)
-    try:
-        cur = conn.execute(
-            """UPDATE eval_queue
-                  SET status = 'pending',
-                      claim_token = NULL,
-                      retries = ?,
-                      error_text = ?,
-                      started_at = NULL,
-                      finished_at = NULL
-                WHERE id = ? AND claim_token = ? AND status = 'running'""",
-            (int(retries), error_text, int(row_id), claim_token),
-        )
-        conn.commit()
-        return cur.rowcount == 1
-    finally:
-        conn.close()
+    from src.job_hunt_qualitative_state import queue_transition, clock_for
+    return queue_transition(db_path, row_id, claim_token, status="pending", clock=clock_for(now=now),
+                            error=error_text, retries=retries)
 
 
 def return_eval_queue_row_to_pending(
-    db_path: Path,
-    row_id: int,
-    claim_token: str,
-    *,
-    error_text: str | None = None,
+    db_path: Path, row_id: int, claim_token: str, *, error_text: str | None = None,
+    now: str | None = None, clock=None,
 ) -> bool:
-    """Return a running row to pending without changing its retry count."""
-    conn = open_db(db_path)
-    try:
-        cur = conn.execute(
-            """UPDATE eval_queue
-                  SET status = 'pending',
-                      claim_token = NULL,
-                      error_text = ?,
-                      started_at = NULL,
-                      finished_at = NULL
-                WHERE id = ? AND claim_token = ? AND status = 'running'""",
-            (error_text, int(row_id), claim_token),
-        )
-        conn.commit()
-        return cur.rowcount == 1
-    finally:
-        conn.close()
-
+    from src.job_hunt_qualitative_state import queue_transition, clock_for
+    return queue_transition(db_path, row_id, claim_token, status="pending",
+                            clock=clock_for(clock=clock, now=now), error=error_text)
 
 def cancel_eval_batch(db_path: Path, batch_id: str, *, now: str) -> int:
     """Cancel pending rows and record batch intent for running rows."""
@@ -1052,50 +1037,53 @@ def is_eval_batch_cancel_requested(db_path: Path, batch_id: str) -> bool:
 
 
 def reset_stale_eval_queue_running(
-    db_path: Path,
-    *,
-    now: datetime,
-    older_than_minutes: int = 30,
-    max_retries: int = 5,
+    db_path: Path, *, now: datetime | None = None, older_than_minutes: int = 30,
+    max_retries: int = 5, clock=None,
 ) -> int:
-    """Crash recovery for eval_queue rows stuck in running."""
-    cutoff = (now - timedelta(minutes=older_than_minutes)).isoformat(timespec="seconds")
-    conn = open_db(db_path)
-    try:
-        cur = conn.execute(
-            """UPDATE eval_queue
-                  SET status = CASE WHEN retries + 1 >= ? THEN 'error' ELSE 'pending' END,
-                      retries = retries + 1,
-                      error_text = CASE WHEN retries + 1 >= ? THEN 'stale running row exceeded retry cap' ELSE error_text END,
-                      claim_token = NULL,
-                      started_at = CASE WHEN retries + 1 >= ? THEN started_at ELSE NULL END,
-                      finished_at = CASE WHEN retries + 1 >= ? THEN ? ELSE NULL END
-                WHERE status = 'running'
-                  AND (started_at IS NULL OR started_at <= ?)""",
-            (int(max_retries), int(max_retries), int(max_retries), int(max_retries),
-             now.isoformat(timespec="seconds"), cutoff),
-        )
-        conn.commit()
-        return cur.rowcount
-    finally:
-        conn.close()
+    """Recover expired leases; renewal takes precedence over original start time."""
+    from src.job_hunt_qualitative_state import guard, clock_for, _utc, _active
+    # Naive fixed legacy reset timestamps historically represented UTC.
+    if now is not None and now.tzinfo is None:
+        now = _utc(now.isoformat())
+    with guard(db_path, clock=clock_for(clock=clock, now=now)) as (conn, stamp):
+        cutoff = stamp - timedelta(minutes=older_than_minutes)
+        rows = conn.execute("SELECT * FROM eval_queue WHERE status='running'").fetchall()
+        changed = 0
+        for row in rows:
+            if row["lease_until"]:
+                expired = not _active(row, stamp)
+            else:
+                try:
+                    expired = not row["started_at"] or _utc(row["started_at"]) <= cutoff
+                except ValueError:
+                    expired = True
+            if not expired:
+                continue
+            cancelled = conn.execute("SELECT 1 FROM eval_batch WHERE batch_id=? AND cancel_requested_at IS NOT NULL",
+                                     (row["batch_id"],)).fetchone()
+            qualitative = conn.execute("SELECT * FROM qualitative_index WHERE job_ref=?", (row["job_ref"],)).fetchone()
+            waiting = bool(qualitative and qualitative["status"] == "running" and _active(qualitative, stamp))
+            # A mismatched queue lease is waiting on an existing provider owner,
+            # not another failed provider attempt, including at the retry cap.
+            retries = row["retries"] if cancelled or waiting else row["retries"] + 1
+            status = "cancelled" if cancelled else "pending" if waiting else "error" if retries >= max_retries else "pending"
+            conn.execute("""UPDATE eval_queue SET status=?,claim_token=NULL,lease_until=NULL,retries=?,
+                error_text=?,started_at=CASE WHEN ?='pending' THEN NULL ELSE started_at END,
+                finished_at=CASE WHEN ?='pending' THEN NULL ELSE ? END WHERE id=? AND status='running'""",
+                (status,retries,None if cancelled else 'qualitative assessment already in flight' if waiting else 'stale running row exceeded retry cap' if status=='error' else row["error_text"],
+                 status,status,stamp.isoformat(timespec="microseconds"),row["id"]))
+            changed += 1
+        return changed
 
-
-def pause_eval_batch_for_quota(db_path: Path, batch_id: str, *, now: str, error_text: str) -> int:
-    """Annotate pending/running rows so progress shows the batch is waiting on quota."""
-    conn = open_db(db_path)
-    try:
-        cur = conn.execute(
-            """UPDATE eval_queue
-                  SET error_text = ?
-                WHERE batch_id = ? AND status IN ('pending', 'running')""",
-            (error_text, batch_id),
-        )
-        conn.commit()
-        return cur.rowcount
-    finally:
-        conn.close()
-
+def pause_eval_batch_for_quota(db_path: Path, batch_id: str, *, now: str, error_text: str,
+                               owner=None, state_root=None) -> int:
+    """Compatibility entry point; unowned batch-only annotation is forbidden."""
+    if owner is None or owner.queue is None or owner.queue["batch_id"] != batch_id:
+        return 0
+    from src.job_hunt_qualitative_state import transition, clock_for
+    outcome = transition(db_path, owner, mode="quota", error=error_text, state_root=state_root,
+                         clock=clock_for(now=now))
+    return int(outcome == "quota")
 
 def get_eval_batch(db_path: Path, batch_id: str) -> list[dict[str, Any]]:
     conn = open_db(db_path)

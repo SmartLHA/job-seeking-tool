@@ -115,10 +115,8 @@ def test_single_search_collapses_duplicate_cards(tmp_path: Path, monkeypatch) ->
         status, body = _http_get(f"{base_url}/search/reed?{query}")
 
     assert status == 200
-    # Exactly 2 cards rendered (ids jrc-0, jrc-1), not 3 — the two "shared"-url
-    # jobs collapsed into one card. Each card div carries both id="jrc-N" and
-    # data-jst-id="jrc-N", so count the `id="jrc-N"` root-div marker only.
-    assert len(re.findall(r'\sid="jrc-\d+"', body)) == 2
+    # Exactly two selectable cards: the shared-URL jobs collapsed to one.
+    assert len(re.findall(r'<div class="jst-rc"', body)) == 2
     assert "reed.example/jobs/shared" in body
     assert "reed.example/jobs/other" in body
 

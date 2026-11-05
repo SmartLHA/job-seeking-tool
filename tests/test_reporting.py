@@ -183,3 +183,64 @@ def test_report_row_user_decision_none_when_not_overridden() -> None:
     flat = report_row_to_flat_dict(row)
     assert flat["engine_decision"] == "apply"
     assert flat["user_decision"] is None
+
+
+_CSV_TEXT_FIELDS = (
+    "job_id", "job_title", "company", "location", "work_mode", "employment_type",
+    "source_type", "source_ref", "confidence", "decision", "decision_reason",
+    "engine_decision", "user_decision", "outcome_status", "outcome_updated_at", "outcome_notes",
+)
+_CSV_LIST_FIELDS = (
+    "blockers", "risk_flags", "strengths", "missing_required_skills", "missing_preferred_skills",
+)
+
+
+def _read_csv_row(path):
+    with path.open(encoding="utf-8", newline="") as stream:
+        return next(csv.DictReader(stream))
+
+
+@pytest.mark.parametrize("operator", ["=", "+", "-", "@"])
+@pytest.mark.parametrize("prefix", ["", " ", "\t", "\r\n", "\x00", "\x1f", "\x7f", "\x85", "\xa0", "\ufeff", "\u200b", " \t\x00\ufeff"])
+def test_csv_formula_strings_are_escaped_in_every_text_column(tmp_path, operator, prefix):
+    from dataclasses import asdict, replace
+    value = prefix + operator + 'SUM(1,2),"quoted"\n中文'
+    row = build_evaluated_job_report_row(build_job(), build_analysis(), build_outcome())
+    changes = {name: value for name in _CSV_TEXT_FIELDS}
+    changes.update({name: [value, "second"] for name in _CSV_LIST_FIELDS})
+    row = replace(row, **changes, match_score=-12.5, tailoring_ready=False)
+    before = asdict(row)
+    flat_before = report_row_to_flat_dict(row)
+    exported = _read_csv_row(export_report_csv([row], tmp_path / "safe.csv"))
+    for field in _CSV_TEXT_FIELDS:
+        assert exported[field] == "'" + value
+    for field in _CSV_LIST_FIELDS:
+        assert exported[field] == "'" + value + "; second"
+    assert exported["match_score"] == "-12.5"
+    assert exported["tailoring_ready"] == "False"
+    assert asdict(row) == before and report_row_to_flat_dict(row) == flat_before
+    payload = json.loads(export_report_json([row], tmp_path / "original.json").read_text())
+    assert payload["rows"][0] == before
+
+
+@pytest.mark.parametrize("text", ["", "normal", "中文", 'Title, "quoted"\nnext line',
+    " normal\ttext", "\x00benign", "\t\r\n", "\ufeff中文", "'already literal", "text =1"])
+def test_csv_benign_text_is_preserved_exactly(tmp_path, text):
+    from dataclasses import replace
+    row = replace(build_evaluated_job_report_row(build_job(), build_analysis()),
+                  job_title=text, company=text, outcome_notes=text)
+    exported = _read_csv_row(export_report_csv([row], tmp_path / "benign.csv"))
+    assert exported["job_title"] == exported["company"] == exported["outcome_notes"] == text
+
+
+@pytest.mark.parametrize("number,flag", [(0, True), (-12.5, False), (82.5, None)])
+def test_csv_numeric_bool_and_missing_values_stay_scalar(tmp_path, number, flag):
+    from dataclasses import replace
+    row = replace(build_evaluated_job_report_row(build_job(), build_analysis()),
+                  match_score=number, tailoring_ready=flag)
+    flat = report_row_to_flat_dict(row)
+    assert flat["match_score"] == number and flat["tailoring_ready"] is flag
+    exported = _read_csv_row(export_report_csv([row], tmp_path / "scalar.csv"))
+    assert exported["match_score"] == str(number)
+    assert exported["tailoring_ready"] == ("" if flag is None else str(flag))
+    assert exported["user_decision"] == exported["outcome_notes"] == ""

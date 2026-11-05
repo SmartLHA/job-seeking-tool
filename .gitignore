@@ -75,3 +75,9 @@ poc/**/output/
 
 # Adzuna salary benchmark cache + daily call counter (Feature B)
 data/state/cache/
+
+# venv/scratch checkers and generated job data (found uncovered 2026-09-22)
+.venv-check/
+data/raw/
+data/state/analyses/
+data/state/reviewed_jobs/

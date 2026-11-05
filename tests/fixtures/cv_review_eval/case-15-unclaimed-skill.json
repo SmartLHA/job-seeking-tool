@@ -1,0 +1,34 @@
+{
+  "id": "unclaimed-skill",
+  "description": "unclaimed skill",
+  "original_cv": "Summary\n- Documented business needs.",
+  "rewrite": "Summary\n- Developed Kubernetes services.",
+  "profile": {
+    "years_experience": 5,
+    "skills": [],
+    "target_roles": [
+      "Programme Director"
+    ],
+    "industries": [
+      "Technology"
+    ]
+  },
+  "job_skills": [
+    "Kubernetes"
+  ],
+  "labels": {
+    "expected_overall": "BLOCKED",
+    "expected_l0": [
+      {
+        "rule": "L0-4",
+        "severity": "MAJOR"
+      }
+    ],
+    "expected_items": [
+      {
+        "statement": "- Developed Kubernetes services.",
+        "expected": "UNSUPPORTED"
+      }
+    ]
+  }
+}

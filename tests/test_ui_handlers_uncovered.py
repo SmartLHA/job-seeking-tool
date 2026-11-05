@@ -563,6 +563,12 @@ class TestHandleJobSubmit:
 class TestHandleAddGapSkills:
     """Tests for handle_add_gap_skills."""
 
+    @pytest.fixture(autouse=True)
+    def isolated_profile_root(self, tmp_path, monkeypatch):
+        # Gap updates synchronize canonical and startup profile files.
+        monkeypatch.setattr("src.ui_handlers._DATA_ROOT", tmp_path / "data")
+
+
     def test_handle_add_gap_skills_adds_new_skills(self, tmp_path: Path) -> None:
         config = UIServerConfig(
             profile_path=_setup_test_profile(tmp_path),
@@ -705,7 +711,11 @@ class TestHandleAiReviewCv:
         assert "cannot have CV reviewed" in responder.json_sent["error"]
         assert responder.last_status == HTTPStatus.FORBIDDEN
 
-    def test_handle_ai_review_cv_success_with_mock_llm(self, tmp_path: Path) -> None:
+    def test_handle_ai_review_cv_success_with_mock_llm(self, tmp_path: Path, monkeypatch) -> None:
+        from src import job_hunt_cv_review
+        monkeypatch.setattr(job_hunt_cv_review, "REVIEWER_MODELS", ("gemini-3.5-flash",))
+        # Handler writes to CWD-relative output/tailored_cvs/; keep that inside tmp_path.
+        monkeypatch.chdir(tmp_path)
         config = UIServerConfig(
             profile_path=_setup_test_profile(tmp_path),
             state_root=tmp_path / "state",
@@ -732,10 +742,10 @@ class TestHandleAiReviewCv:
         )
         save_job_analysis(analysis, config.state_root)
 
-        req = _make_request()
+        req = _make_request(json_body={"use_cloud": True})
         responder = MockResponder()
 
-        with mock.patch("src.job_hunt_llm.ai_review_cv_with_llm") as mock_review:
+        with mock.patch("src.job_hunt_cv_review.run_blind_review", return_value={"items": [], "reviewer_model": "synthetic-reviewer", "prompt_version": "cv-blind-review-v0"}), mock.patch("src.job_hunt_llm.ai_rewrite_cv") as mock_review:
             mock_review.return_value = (
                 {
                     "reviewed_cv": "Updated CV text",

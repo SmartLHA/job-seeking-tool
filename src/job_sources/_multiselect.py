@@ -21,7 +21,43 @@ existing source renderers emit them without any changes.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from html import escape
+
+
+def job_identity(source: str, result: dict) -> str | None:
+    """Safe stable UI key: canonical source + provider id, otherwise source + URL.
+
+    Display metadata, pagination offsets and request nonces are not identity.
+    This is exact UI identity only; backend fuzzy deduplication is unchanged.
+    """
+    raw_id = result.get("source_job_id")
+    job_id = str(raw_id if raw_id is not None else "").strip()
+    url = str(result.get("url") or "").strip()
+    if not job_id and not url:
+        return None
+    key = [source, "id" if job_id else "url", job_id or url]
+    return "jrc-" + hashlib.sha256(json.dumps(key, ensure_ascii=False).encode()).hexdigest()
+
+
+def identity_cards(source: str, results: list[dict]):
+    """One card per exact identity, in first-seen order with latest fields.
+
+    Anonymous rows remain visible but cannot enter selection. Their display IDs
+    use a separate namespace and an occurrence index, never a shortlist key.
+    """
+    cards = {}
+    for i, result in enumerate(results):
+        identity = job_identity(source, result)
+        display_id = identity or (
+            "jrd-" + hashlib.sha256(json.dumps([source, result], sort_keys=True, default=str).encode()).hexdigest()
+            + "-" + str(i)
+        )
+        cards[display_id] = (result, identity is not None)
+    for card_id, (result, identified) in cards.items():
+        yield card_id, result, identified
+
 
 _HIDDEN_OVERLAY = (
     '<div id="jst-hidden-overlay" style="display:none;position:fixed;inset:0;z-index:210;'
@@ -109,7 +145,7 @@ ACTION_BAR = (
     '<span id="jst-bc" style="font-family:var(--font-mono);font-size:22px;font-weight:700;color:var(--accent);">0</span>'
     '<div style="font-size:13px;font-weight:600;color:var(--ink-soft);">'
     '<div id="jst-bl">jobs shortlisted</div>'
-    '<div style="font-size:11.5px;color:var(--ink-faint);font-weight:400;">Review shortlisted jobs, then evaluate all at once</div>'
+    '<div style="font-size:11.5px;color:var(--ink-faint);font-weight:400;">Maximum 20 jobs. Review your shortlist, then evaluate all at once</div>'
     '</div></div>'
     '<div style="flex:1;"></div>'
     '<button onclick="jstClearAll()" style="padding:9px 16px;border-radius:var(--r-md);'
@@ -126,14 +162,15 @@ MULTISELECT_JS = (
     '(function(){'
     'window._jst_sel=window._jst_sel||new Set();'
     'window._jst_jobs=window._jst_jobs||{};'
-    'var _sel=window._jst_sel,_jobs=window._jst_jobs;'
+    'var _sel=window._jst_sel,_jobs=window._jst_jobs,_selectionLimit=20;'
+    'function _addSelection(id){if(_sel.has(id))return true;if(!_jobs[id]||_sel.size>=_selectionLimit)return false;_sel.add(id);return true;}'
     'function _reg(c){'
     'var id=c.dataset.jstId;if(!id)return;'
-    'if(!_jobs[id]){'
     '_jobs[id]={title:c.dataset.jstTitle,company:c.dataset.jstCompany,'
     'salary:c.dataset.jstSalary,location:c.dataset.jstLocation,formId:c.dataset.jstForm,'
     'source:c.dataset.jstSource||"",sjid:c.dataset.jstSjid||""};'
-    '}'
+    'var f=document.getElementById(c.dataset.jstForm);'
+    'if(f){var fields={};new FormData(f).forEach(function(v,k){fields[k]=v;});_jobs[id].fields=fields;}'
     'if(!c.querySelector(".jst-x")){'
     'c.style.position="relative";'
     'var xb=document.createElement("button");'
@@ -175,10 +212,11 @@ MULTISELECT_JS = (
     'var e=document.getElementById(eid);if(e)e.textContent=v;});'
     '}'
     'window.jstToggle=function(id){'
-    '_sel.has(id)?_sel.delete(id):_sel.add(id);_upd();'
+    'if(_sel.has(id))_sel.delete(id);else if(_jobs[id]&&!_addSelection(id))alert("Maximum 20 jobs. Deselect a job before adding another.");_upd();'
     '};'
     'window.jstSelectAll=function(){'
-    'Object.keys(_jobs).forEach(function(id){_sel.add(id);});_upd();'
+    'var skipped=0;Object.keys(_jobs).forEach(function(id){if(!_addSelection(id))skipped++;});_upd();'
+    'if(skipped)alert("Maximum 20 jobs. "+skipped+" additional job"+(skipped===1?" was":"s were")+" left unselected.");'
     '};'
     'window.jstClearAll=function(){_sel.clear();_upd();};'
     'window.jstToastHide=function(){'
@@ -335,7 +373,17 @@ MULTISELECT_JS = (
     'btn.disabled=true;btn.textContent="Loading\\u2026";'
     'fetch(url).then(function(r){return r.json();})'
     '.then(function(d){'
-    'if(!d.ok){btn.disabled=false;btn.textContent="Next page \\u2192";alert("Failed: "+(d.error||"Unknown"));return;}'
+    'if(!d.ok){'
+    'if(d.restart_required){'
+    'btn.disabled=true;btn.textContent="Search expired";'
+    'var prior=document.getElementById("jst-search-restart");if(prior)prior.remove();'
+    'var notice=document.createElement("p");notice.id="jst-search-restart";'
+    'notice.textContent=String(d.error||"Restart the search to continue.")+" ";'
+    'var restart=new URL(String(d.restart_url||""),window.location.origin);'
+    'if(restart.origin===window.location.origin&&restart.pathname.indexOf("/search/")===0){'
+    'var link=document.createElement("a");link.href=restart.href;link.textContent="Restart search";notice.appendChild(link);}'
+    'btn.parentElement.appendChild(notice);return;}'
+    'btn.disabled=false;btn.textContent="Next page \\u2192";alert("Failed: "+(d.error||"Unknown"));return;}'
     'var container=document.getElementById("jst-cards-container");'
     'var moreWrap=document.getElementById("jst-more-wrap");'
     'if(!container){btn.disabled=false;return;}'
@@ -378,41 +426,40 @@ MULTISELECT_JS = (
     '})'
     '.catch(function(err){btn.disabled=false;btn.textContent="Next page \\u2192";alert("Request failed: "+err.message);});'
     '};'
+    'var _batchInflight=false;'
+    'function _payload(id){var j=_jobs[id];if(!j)return null;var f=j.formId?document.getElementById(j.formId):null;'
+    ' var obj=null;if(f){obj={};new FormData(f).forEach(function(v,k){obj[k]=v;});}else if(j.fields){obj=Object.assign({},j.fields);}return obj;}'
+    'function _samePayload(a,b){if(!a||!b)return false;var ak=Object.keys(a).sort(),bk=Object.keys(b).sort();'
+    ' return JSON.stringify(ak)===JSON.stringify(bk)&&ak.every(function(k){return a[k]===b[k];});}'
+    'function _batchMessage(message,ids){_upd();jstShowStaging();var list=document.getElementById("jst-staging-list");'
+    ' if(!list)return;var note=document.createElement("p");note.textContent=message;list.appendChild(note);'
+    ' if(ids.length){var link=document.createElement("a");link.href="/review-queue?ids="+encodeURIComponent(ids.join(","));'
+    ' link.textContent="View evaluated jobs";list.appendChild(link);}var ov=document.getElementById("jst-overlay");if(ov)ov.style.display="flex";}'
     'window.jstEvaluateAll=function(){'
-    'if(_sel.size===0)return;'
-    'var jobs=[];'
-    '_sel.forEach(function(id){'
-    'var j=_jobs[id];if(!j)return;'
-    'var obj=null;'
-    'var f=j.formId?document.getElementById(j.formId):null;'
-    'if(f){var fd=new FormData(f);obj={};fd.forEach(function(v,k){obj[k]=v;});}'
-    'else if(j.fields){obj=j.fields;}'
-    'if(obj)jobs.push(obj);'
-    '});'
-    'if(!jobs.length){alert("No evaluable jobs found.");return;}'
-    'var btn=document.getElementById("jst-eval-all-btn");'
-    'var list=document.getElementById("jst-staging-list");'
-    'if(btn){btn.disabled=true;btn.textContent="Scoring\\u2026";}'
-    'if(list){list.innerHTML="<div style=\'text-align:center;padding:36px 20px;\'>'
-    '<div style=\'font-size:14px;font-weight:600;color:var(--ink-soft);\'>Evaluating "+jobs.length+" job"+(jobs.length===1?"":"s")+"...<\\/div>'
-    '<div style=\'font-size:12.5px;color:var(--ink-faint);margin-top:6px;\'>Fetching descriptions \xb7 scoring against your profile<\\/div>'
-    '<\\/div>";}'
-    'fetch("/jobs/batch-evaluate",{'
-    'method:"POST",'
-    'headers:{"Content-Type":"application/json"},'
-    'body:JSON.stringify({jobs:jobs})'
-    '}).then(function(r){return r.json();})'
-    '.then(function(d){'
-    'if(!d.ok){alert("Evaluation failed: "+(d.error||"Unknown error"));'
-    'if(btn){btn.disabled=false;btn.textContent="Evaluate all";}return;}'
-    'var ids=d.jobs.map(function(j){return j.job_id;}).join(",");'
-    'if(!ids){var em=(d.errors&&d.errors.length)?("\\n\\nReason: "+d.errors[0].error):"";'
-    'alert("No jobs were successfully evaluated."+em);'
-    'if(btn){btn.disabled=false;btn.textContent="Evaluate all";}return;}'
-    'window.location="/review-queue?ids="+encodeURIComponent(ids);'
-    '})'
-    '.catch(function(err){alert("Request failed: "+err.message);'
-    'if(btn){btn.disabled=false;btn.textContent="Evaluate all";}});'
+    ' if(_batchInflight||_sel.size===0)return;'
+    ' if(_sel.size>_selectionLimit){alert("Maximum 20 jobs. Deselect jobs before evaluating.");return;}var jobs=[],submitted=[];'
+    ' _sel.forEach(function(id){var obj=_payload(id);if(obj){var snapshot=Object.assign({},obj);jobs.push(snapshot);submitted.push({id:id,payload:snapshot});}});'
+    ' if(!jobs.length){alert("No evaluable jobs found.");return;}'
+    ' if(jobs.length>_selectionLimit){alert("Maximum 20 jobs. Deselect jobs before evaluating.");return;}'
+    ' _batchInflight=true;var btn=document.getElementById("jst-eval-all-btn");'
+    ' if(btn){btn.disabled=true;btn.textContent="Scoring…";}'
+    ' fetch("/jobs/batch-evaluate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({jobs:jobs})})'
+    ' .then(function(r){return r.json();}).then(function(d){'
+    ' if(!d||!d.ok){_batchMessage("Evaluation failed: "+String(d&&d.error||"Unknown error"),[]);return;}'
+    ' var successes=d.jobs,errors=d.errors,seen=new Set(),valid=Array.isArray(successes)&&Array.isArray(errors);'
+    ' function indexOK(row){if(!row||!Number.isInteger(row.index)||row.index<0||row.index>=submitted.length||seen.has(row.index))return false;seen.add(row.index);return true;}'
+    ' if(valid){successes.forEach(function(row){if(!indexOK(row)||typeof row.job_id!=="string"||!row.job_id.trim())valid=false;});'
+    ' errors.forEach(function(row){if(!indexOK(row))valid=false;});}'
+    ' if(!valid){_batchMessage("Invalid evaluation result mapping. Selections retained for retry.",[]);return;}'
+    ' var ids=[];successes.forEach(function(row){var snapshot=submitted[row.index];ids.push(row.job_id);'
+    ' if(_sel.has(snapshot.id)&&_samePayload(_payload(snapshot.id),snapshot.payload))_sel.delete(snapshot.id);});'
+    ' _upd();'
+    ' if(successes.length===submitted.length&&errors.length===0&&_sel.size===0){window.location="/review-queue?ids="+encodeURIComponent(ids.join(","));return;}'
+    ' var message=successes.length+" evaluated; "+(submitted.length-successes.length)+" not acknowledged; "+_sel.size+" selected for retry.";'
+    ' errors.forEach(function(row){message+="\\nJob "+(row.index+1)+": "+String(row.error||"Evaluation failed");});'
+    ' _batchMessage(message,ids);'
+    ' }).catch(function(err){_batchMessage("Request failed: "+String(err.message||err),[]);})'
+    ' .finally(function(){_batchInflight=false;if(btn)btn.disabled=false;});'
     '};'
     'fetch("/jobs/not-interested").then(function(r){return r.json();})'
     '.then(function(d){if(d&&d.ok)_setHidCount(d.count);}).catch(function(){});'

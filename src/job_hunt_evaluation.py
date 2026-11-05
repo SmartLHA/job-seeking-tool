@@ -14,6 +14,7 @@ from src.job_hunt_ats_scorer import score_cv
 from src.job_hunt_decision import decide_application
 from src.job_hunt_keyword_match import compute_keyword_match
 from src.job_hunt_models import Blocker, CandidateProfile, JobAnalysis, JobPosting, RiskFlag
+from src.job_hunt_salary_benchmark import apply_market_score_effect
 from src.job_hunt_scoring import score_job
 
 
@@ -49,14 +50,34 @@ def evaluate_reviewed_job(
     decision_policy: DecisionPolicy = DEFAULT_DECISION_POLICY,
     tailoring_policy: TailoringPolicy = DEFAULT_TAILORING_POLICY,
     review_selected_for_tailoring: bool = False,
+    market_snapshot: dict | None = None,
 ) -> JobAnalysis:
+    """Score + decide a reviewed job. ``market_snapshot`` is the STICKY value already
+    stored on a prior JobAnalysis (or None for a brand-new job) — this function never
+    computes it; the caller is responsible for carrying it forward across every
+    re-evaluation so it survives unchanged. See src/job_hunt_salary_benchmark.py.
+    """
     scoring_result = score_job(profile, job, policy=scoring_policy)
+
+    # Optional, OFF-by-default market-position score effect (revision 2, 2026-09-22).
+    # Applied ONCE, here, after score_job()'s own clamp to [0, 100] — this is the
+    # single choke point every evaluation path (single submit, /evaluate, batch,
+    # digest reevaluate_digest_jobs) routes through, so the effect is identical on
+    # all of them. Uses ONLY the already-stored snapshot; never network/cache.
+    adjusted_score, market_adjustment, market_reason = apply_market_score_effect(
+        scoring_result.match_score, market_snapshot,
+    )
+    breakdown = scoring_result.score_breakdown
+    if market_reason:
+        # Its own visible breakdown line — never folded into the salary component.
+        breakdown.notes = list(breakdown.notes) + [market_reason]
+
     blocker_list = list(blockers or [])
     sq_blockers, sq_flags = _source_quality_blockers_and_flags(job)
     blocker_list.extend(sq_blockers)
     combined_risk_flags = list(scoring_result.risk_flags) + sq_flags
     decision_result = decide_application(
-        match_score=scoring_result.match_score,
+        match_score=adjusted_score,
         blockers=blocker_list,
         risk_flags=combined_risk_flags,
         policy=decision_policy,
@@ -83,8 +104,8 @@ def evaluate_reviewed_job(
 
     return JobAnalysis(
         job_id=job.job_id,
-        match_score=scoring_result.match_score,
-        score_breakdown=scoring_result.score_breakdown,
+        match_score=adjusted_score,
+        score_breakdown=breakdown,
         blockers=blocker_list,
         strengths=scoring_result.strengths,
         missing_required_skills=scoring_result.missing_required_skills,
@@ -104,6 +125,9 @@ def evaluate_reviewed_job(
         # recaptures the baseline from the fresh master-CV rate.
         keyword_match_baseline_rate=keyword_match.match_rate,
         keyword_match_source="master",
+        # STICKY — carried forward exactly as passed in; never recomputed here.
+        market_snapshot=market_snapshot,
+        market_adjustment=market_adjustment,
     )
 
 

@@ -7,8 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from src.job_hunt_config import DEFAULT_DECISION_POLICY, GRADE_B_THRESHOLD, GRADE_D_THRESHOLD
 from src.job_hunt_models import CandidateProfile, Skill
 from src.text_grounding import normalize_grounding_text, quote_in_text
+from src.job_hunt_qualitative_state import utc_now
 
 PROMPT_VERSION = "qualitative-v1"
 
@@ -30,6 +32,7 @@ class QualitativeRunResult:
     model: str | None = None
     legitimacy_tier: str | None = None
     culture_flag: str | None = None
+    outcome: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,13 +53,13 @@ DECISION_GRADE_CAPS = {"apply": "A", "review": "B", "skip": "D"}
 
 def derive_base_grade(match_score: float) -> str:
     score = float(match_score)
-    if score >= 80:
+    if score >= DEFAULT_DECISION_POLICY.apply_threshold:
         return "A"
-    if score >= 72:
+    if score >= GRADE_B_THRESHOLD:
         return "B"
-    if score >= 65:
+    if score >= DEFAULT_DECISION_POLICY.review_threshold:
         return "C"
-    if score >= 50:
+    if score >= GRADE_D_THRESHOLD:
         return "D"
     return "F"
 
@@ -154,10 +157,14 @@ def run_qualitative_assessment_pipeline(
     profile: CandidateProfile,
     state_root: str | Path,
     db_path: Path,
+    owner,
+    clock: Callable[[], datetime] = utc_now,
     before_persist: Callable[[], bool] | None = None,
+    before_provider: Callable[[], bool] | None = None,
 ) -> QualitativeRunResult:
     """Run the shared qualitative Gemini pipeline for one already-claimed job."""
-    from src.job_hunt_index import LLMQuotaExhausted, finish_qualitative_assessment, reserve_llm_rpd_attempt, rpd_used_today
+    from src.job_hunt_index import LLMQuotaExhausted, reserve_llm_rpd_attempt, rpd_used_today
+    from src.job_hunt_qualitative_state import checkpoint, publish, transition, QualitativeOwnershipStopped
     from src.job_hunt_llm import RateLimited, _call_gemini_reasoning
     from src.job_hunt_models import effective_decision
     from src.job_hunt_scheduler import rpd_date_key
@@ -169,19 +176,32 @@ def run_qualitative_assessment_pipeline(
     allow_unknown_archetype = not target_roles
     last_error = ""
     model_used = None
-    date_key = rpd_date_key(datetime.now(timezone.utc))
+    def _ensure_owner():
+        outcome = checkpoint(db_path, owner, state_root=state_root, clock=clock)
+        if outcome != "active":
+            raise QualitativeOwnershipStopped(outcome)
+        if before_provider is not None and not before_provider():
+            outcome = transition(db_path, owner, mode="cancel", error="cancelled", state_root=state_root, clock=clock)
+            raise QualitativeOwnershipStopped(outcome)
+
+    _ensure_owner()
+    date_key = rpd_date_key(clock())
     daily_cap = getattr(profile, "digest_llm_rpd", None)
     if daily_cap is not None and rpd_used_today(db_path, date_key) >= daily_cap:
         raise LLMQuotaExhausted("daily LLM quota exhausted - try tomorrow")
 
     def _reserve(_model: str) -> None:
+        # Every fallback must check intent before reserving quota or calling out.
+        _ensure_owner()
         reserve_llm_rpd_attempt(
             db_path,
-            rpd_date_key(datetime.now(timezone.utc)),
+            rpd_date_key(clock()),
             getattr(profile, "digest_llm_rpd", None),
         )
 
     for attempt in range(2):
+        # Also guard validation retries and provider wrappers that ignore callbacks.
+        _ensure_owner()
         try:
             raw, error, model_used, all_rate_limited = _call_gemini_reasoning(
                 prompt,
@@ -205,7 +225,7 @@ def run_qualitative_assessment_pipeline(
                 continue
             break
 
-        created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        created_at = clock().astimezone(timezone.utc).isoformat(timespec="seconds")
         assessment = {
             **parsed,
             "job_id": job_id,
@@ -238,38 +258,60 @@ def run_qualitative_assessment_pipeline(
             culture_flag=culture_flag,
         )
         if before_persist is not None and not before_persist():
-            finish_qualitative_assessment(
-                db_path,
-                job_id,
-                status="error",
-                model=model_used,
-                prompt_version=PROMPT_VERSION,
-                error_text="cancelled before persist",
-            )
-            return QualitativeRunResult(ok=False, error="cancelled before persist", model=model_used)
-        save_qualitative_assessment(job_id, assessment, state_root)
-        finish_qualitative_assessment(
-            db_path,
-            job_id,
-            status="done",
-            grade=result.grade,
-            legitimacy_tier=result.legitimacy_tier,
-            culture_flag=result.culture_flag,
-            model=result.model,
-            prompt_version=PROMPT_VERSION,
-            error_text=None,
-        )
+            outcome = transition(db_path, owner, mode="cancel", error="cancelled", state_root=state_root, clock=clock)
+            return QualitativeRunResult(ok=False, error="cancelled before persist", model=model_used, outcome=outcome)
+        outcome = publish(db_path, owner, assessment, state_root=state_root, result=result, clock=clock)
+        if outcome != "done":
+            return QualitativeRunResult(ok=False, error="qualitative ownership " + outcome, model=model_used, outcome=outcome)
         return result
 
-    finish_qualitative_assessment(
-        db_path,
-        job_id,
-        status="error",
-        model=model_used,
-        prompt_version=PROMPT_VERSION,
-        error_text=last_error,
-    )
     return QualitativeRunResult(ok=False, error=last_error, model=model_used)
+
+
+# Slice 3 (2026-10-19): each 1-5 level has its own descriptor, replacing the
+# old 1/3/5 anchor points (Mike's standing rule: ranges, not anchors). Level 2
+# matters most: derive_grade caps the grade when culture_signals or red_flags
+# score <= 2, so 2 must mean a real, evidenced concern, not "slightly unsure".
+RUBRICS: dict[str, dict[int, str]] = {
+    "seniority_fit": {
+        1: "clearly mismatched: role is two or more levels too junior or too senior",
+        2: "noticeable mismatch: about one level off, or key seniority expectations not met",
+        3: "unclear or mixed: level not stated, or signals point both ways",
+        4: "good fit with minor gaps: level matches, one expectation stretches the candidate",
+        5: "strong fit: stated level, scope and responsibilities match the candidate",
+    },
+    "culture_signals": {
+        1: "clear unhealthy signals quoted in the JD (e.g. always-on, blame, chronic overtime)",
+        2: "some evidenced concerns that suggest poor fit; quote them",
+        3: "little or no evidence either way",
+        4: "some positive, specific signals (e.g. flexibility, learning, team practices)",
+        5: "strong, specific positive signals with concrete commitments",
+    },
+    "red_flags": {
+        1: "material red flags (e.g. unrealistic scope, pay far below role, vague employer)",
+        2: "at least one material warning sign that must be checked before applying",
+        3: "limited or unclear warning signs",
+        4: "minor issues only (e.g. generic wording, missing salary)",
+        5: "no meaningful red flags in the JD",
+    },
+    "role_archetype_alignment": {
+        1: "poor alignment: role is a different archetype from all target roles",
+        2: "weak alignment: overlaps a target archetype in a minority of duties",
+        3: "mixed or unclear: about half the duties match a target archetype",
+        4: "good alignment: most duties match a target archetype",
+        5: "strong alignment: duties and title match a target archetype",
+    },
+}
+
+
+def _render_rubrics() -> str:
+    lines = []
+    for dimension in DIMENSIONS:
+        levels = RUBRICS[dimension]
+        lines.append(f"- {dimension}:")
+        for level in range(1, 6):
+            lines.append(f"  {level} = {levels[level]}")
+    return "\n".join(lines)
 
 
 def build_qualitative_prompt(jd_text: str, profile: CandidateProfile) -> str:
@@ -312,11 +354,9 @@ UK BA/PM archetypes:
 - Hybrid BA-PM/Product Owner: mixes BA discovery with backlog ownership, prioritisation, roadmap and delivery coordination.
 - Business Change/Transformation: change impact, comms, adoption, process transformation, operating model change.
 
-Rubrics:
-- seniority_fit: 1 = clearly too junior/senior, 3 = unclear or partial match, 5 = strong seniority match.
-- culture_signals: 1 = evidence of poor fit or unhealthy signals, 3 = little/no evidence, 5 = strong positive signals.
-- red_flags: 1 = material red flags, 3 = limited/unclear warning signs, 5 = no meaningful red flags in the JD.
-- role_archetype_alignment: 1 = poor alignment with target roles, 3 = mixed/unclear, 5 = strong archetype match.
+Rubrics (every level is defined; pick the level whose description fits best,
+do not interpolate between levels):
+{_render_rubrics()}
 
 Rules:
 - {archetype_instruction}

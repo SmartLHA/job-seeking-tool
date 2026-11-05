@@ -100,6 +100,155 @@ def test_normal_search_parses_cards(tmp_path: Path) -> None:
     assert results[0]["filter_notes"] == "LinkedIn does not provide salary. Results may vary."
 
 
+def test_digest_enrichment_uses_real_detail_without_ui_side_effects() -> None:
+    card = {"source_job_id": "12345", "description_raw": "", "description_preview": "Card title only"}
+    original = dict(card)
+    cache_path = li._cache_db_path
+    with patch.object(li, "_fetch_description", return_value=" Real SQL detail ") as detail:
+        with patch.object(li, "select_handler") as select, patch.object(li, "extract_skills_from_text") as skills:
+            enriched, reason = li.enrich_digest_result(card)
+
+    detail.assert_called_once_with("12345", strict=True)
+    select.assert_not_called()
+    skills.assert_not_called()
+    assert reason is None and enriched["description_raw"] == "Real SQL detail"
+    assert card == original and enriched is not card and li._cache_db_path == cache_path
+
+
+@pytest.mark.parametrize("value, reason", [
+    (li.LinkedInBlockedError("Synthetic block"), "linkedin_detail_blocked"),
+    (RuntimeError("Synthetic failure"), "linkedin_detail_failed"),
+    ("", "linkedin_detail_empty"),
+    ("   ", "linkedin_detail_empty"),
+])
+def test_digest_enrichment_reports_unavailable_detail(value, reason) -> None:
+    card = {"source_job_id": "12345", "description_raw": "", "description_preview": "Never a substitute JD"}
+    options = {"side_effect": value} if isinstance(value, Exception) else {"return_value": value}
+    with patch.object(li, "_fetch_description", **options) as detail:
+        enriched, actual_reason = li.enrich_digest_result(card)
+    detail.assert_called_once_with("12345", strict=True)
+    assert actual_reason == reason and enriched["description_raw"] == ""
+
+
+@pytest.mark.parametrize("job_id", [None, "", "not-numeric"])
+def test_digest_enrichment_invalid_id_does_not_fetch(job_id) -> None:
+    with patch.object(li, "_fetch_description") as detail:
+        enriched, reason = li.enrich_digest_result({"source_job_id": job_id, "description_raw": ""})
+    assert reason == "linkedin_detail_invalid_id" and enriched["description_raw"] == ""
+    detail.assert_not_called()
+
+
+def test_digest_enrichment_existing_description_does_not_fetch() -> None:
+    card = {"source_job_id": "12345", "description_raw": "Existing real detail"}
+    with patch.object(li, "_fetch_description") as detail:
+        enriched, reason = li.enrich_digest_result(card)
+    assert enriched == card and enriched is not card and reason is None
+    detail.assert_not_called()
+
+
+def test_strict_detail_fetch_keeps_existing_html_enrichment_rules() -> None:
+    html = '<div class="show-more-less-html__markup"><p>Real SQL and Python detail</p></div>' + "x" * 6000
+    with patch("requests.get", return_value=_mock_response(text=html)) as get:
+        enriched, reason = li.enrich_digest_result({"source_job_id": "12345", "description_raw": ""})
+    assert reason is None and enriched["description_raw"] == "Real SQL and Python detail"
+    assert get.call_args.args[0] == "https://www.linkedin.com/jobs/view/12345/"
+    assert get.call_args.kwargs["timeout"] == (5, 10)
+
+
+def test_detail_block_remains_empty_for_select_and_distinct_for_digest() -> None:
+    with patch("requests.get", return_value=_mock_response(status_code=403, text="x" * 6000)):
+        assert li._fetch_description("12345") == ""
+        _, reason = li.enrich_digest_result({"source_job_id": "12345", "description_raw": ""})
+    assert reason == "linkedin_detail_blocked"
+
+
+def test_detail_request_failure_remains_empty_for_select_and_distinct_for_digest() -> None:
+    import requests
+
+    with patch("requests.get", side_effect=requests.exceptions.Timeout("Synthetic timeout")):
+        assert li._fetch_description("12345") == ""
+        _, reason = li.enrich_digest_result({"source_job_id": "12345", "description_raw": ""})
+    assert reason == "linkedin_detail_failed"
+
+
+def test_digest_detail_http_error_is_not_accepted_as_description() -> None:
+    import requests
+
+    response = _mock_response(status_code=500, text='<div class="description__text">Server error text</div>' + "x" * 6000)
+    response.raise_for_status.side_effect = requests.exceptions.HTTPError("Synthetic HTTP failure")
+    with patch("requests.get", return_value=response):
+        _, reason = li.enrich_digest_result({"source_job_id": "12345", "description_raw": ""})
+    assert reason == "linkedin_detail_failed"
+
+
+def _detail_http_response(status, *, padded, url="https://www.linkedin.com/jobs/view/12345/"):
+    import requests
+
+    response = requests.Response()
+    response.status_code = status
+    response.url = url
+    response.encoding = "utf-8"
+    response._content = (
+        '<div class="description__text">Synthetic detail</div>' + ("x" * 6000 if padded else "")
+    ).encode("utf-8")
+    return response
+
+
+@pytest.mark.parametrize("status,padded,url", [
+    (500, False, "https://www.linkedin.com/jobs/view/12345/"),
+    (500, True, "https://www.linkedin.com/jobs/view/12345/"),
+    (500, False, "https://www.linkedin.com/authwall"),
+    (500, True, "https://www.linkedin.com/login"),
+    (404, False, "https://www.linkedin.com/jobs/view/12345/"),
+    (404, True, "https://www.linkedin.com/jobs/view/12345/"),
+])
+def test_strict_detail_http_errors_precede_block_heuristics(status, padded, url):
+    import requests
+
+    response = _detail_http_response(status, padded=padded, url=url)
+    original = {"source_job_id": "12345", "description_raw": ""}
+    with patch("requests.get", return_value=response):
+        # Default selection deliberately retains its legacy handling.
+        expected_default = "Synthetic detail" if padded and "/jobs/view/" in url else ""
+        assert li._fetch_description("12345") == expected_default
+        with pytest.raises(requests.exceptions.HTTPError):
+            li._fetch_description("12345", strict=True)
+        enriched, reason = li.enrich_digest_result(original)
+    assert enriched == original
+    assert reason == "linkedin_detail_failed"
+
+
+@pytest.mark.parametrize("status", [401, 403, 429, 999])
+@pytest.mark.parametrize("padded", [False, True])
+def test_strict_detail_explicit_block_statuses_remain_blocked(status, padded):
+    response = _detail_http_response(status, padded=padded)
+    original = {"source_job_id": "12345", "description_raw": ""}
+    with patch("requests.get", return_value=response):
+        assert li._fetch_description("12345") == ""
+        with pytest.raises(li.LinkedInBlockedError):
+            li._fetch_description("12345", strict=True)
+        enriched, reason = li.enrich_digest_result(original)
+    assert enriched == original
+    assert reason == "linkedin_detail_blocked"
+
+
+@pytest.mark.parametrize("padded,url", [
+    (False, "https://www.linkedin.com/jobs/view/12345/"),
+    (True, "https://www.linkedin.com/authwall"),
+    (True, "https://www.linkedin.com/login"),
+])
+def test_strict_detail_successful_challenges_remain_blocked(padded, url):
+    response = _detail_http_response(200, padded=padded, url=url)
+    original = {"source_job_id": "12345", "description_raw": ""}
+    with patch("requests.get", return_value=response):
+        assert li._fetch_description("12345") == ""
+        with pytest.raises(li.LinkedInBlockedError):
+            li._fetch_description("12345", strict=True)
+        enriched, reason = li.enrich_digest_result(original)
+    assert enriched == original
+    assert reason == "linkedin_detail_blocked"
+
+
 # ── test 2: login wall page → LinkedInBlockedError ────────────────────────────
 
 def test_login_wall_raises_blocked_error() -> None:

@@ -1,0 +1,106 @@
+{
+  "id": "new-title",
+  "description": "new title",
+  "original_cv": "Experience\nAnalyst | Cedar Works\n2019 - 2022\n- Documented business needs.",
+  "rewrite": "Experience\nDirector | Cedar Works\n2019 - 2022\n- Documented business needs.",
+  "profile": {
+    "years_experience": 5,
+    "skills": [],
+    "target_roles": [
+      "Programme Director"
+    ],
+    "industries": [
+      "Technology"
+    ]
+  },
+  "job_skills": [],
+  "labels": {
+    "expected_overall": "BLOCKED",
+    "expected_l0": [
+      {
+        "rule": "L0-3",
+        "severity": "BLOCKER"
+      }
+    ],
+    "expected_items": [
+      {
+        "statement": "- Documented business needs.",
+        "expected": "UNSUPPORTED"
+      }
+    ]
+  },
+  "variants": [
+    {
+      "id": "new-title-company-title-date",
+      "description": "new title company title date",
+      "original_cv": "Experience\nCedar Works\nAnalyst\n2019 - 2022\n- Documented business needs.",
+      "rewrite": "Experience\nCedar Works\nDirector\n2019 - 2022\n- Documented business needs.",
+      "profile": {
+        "years_experience": 5,
+        "skills": [],
+        "target_roles": [
+          "Programme Director"
+        ],
+        "industries": [
+          "Technology"
+        ]
+      },
+      "job_skills": [],
+      "labels": {
+        "expected_overall": "BLOCKED",
+        "expected_l0": [
+          {
+            "rule": "L0-3",
+            "severity": "BLOCKER"
+          }
+        ],
+        "expected_items": [
+          {
+            "statement": "- Documented business needs.",
+            "expected": "UNSUPPORTED"
+          }
+        ]
+      }
+    },
+    {
+      "id": "new-title-company-date-title",
+      "description": "new title company date title",
+      "original_cv": "Experience\nCedar Works\n2019 - 2022\nAnalyst\n- Documented business needs.",
+      "rewrite": "Experience\nCedar Works\n2019 - 2022\nDirector\n- Documented business needs.",
+      "profile": {
+        "years_experience": 5,
+        "skills": [],
+        "target_roles": [
+          "Programme Director"
+        ],
+        "industries": [
+          "Technology"
+        ]
+      },
+      "job_skills": [],
+      "labels": {
+        "expected_overall": "BLOCKED",
+        "expected_l0": [
+          {
+            "rule": "L0-3",
+            "severity": "MAJOR"
+          },
+          {
+            "rule": "L0-2",
+            "severity": "MAJOR"
+          }
+        ],
+        "expected_items": [
+          {
+            "statement": "Director",
+            "expected": "UNSUPPORTED"
+          },
+          {
+            "statement": "- Documented business needs.",
+            "expected": "SUPPORTED"
+          }
+        ]
+      }
+    }
+  ]
+}

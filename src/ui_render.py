@@ -12,9 +12,282 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
-from src.ui_utils import escape, format_salary_range
+from src.ui_utils import (
+    SCORING_PRESET_LABELS,
+    escape,
+    format_salary_range,
+    format_score_display,
+    market_badge_display,
+)
 from src.ui_state import _HOME_TABS, _PAGE_UPDATED
 
+
+# AI Review CV page script (C3c). Plain string, not an f-string, so its braces are single.
+# Every server value reaches the page through textContent on created elements; no markup
+# is ever built from response text.
+_AI_CV_SCRIPT = r"""
+;(function(){
+var aiBtn=document.getElementById('ai-cv-btn');
+var aiConsent=document.getElementById('ai-cv-consent');
+var aiResult=document.getElementById('tailor-result');
+var aiScope=(aiConsent&&aiConsent.dataset&&aiConsent.dataset.consentScope)||'gemini';
+var aiProviders=aiScope==='gemini+openai'?'Google Gemini and OpenAI':'Google Gemini';
+if(!aiBtn||!aiResult)return;
+
+var AI_BADGES={
+  PASS:['PASS — this rewrite will be used for ATS recheck and export','apply'],
+  NEEDS_EDIT:['NEEDS EDIT — not used until you approve it','review'],
+  BLOCKED:['BLOCKED — not used until you approve it','skip'],
+  UNCHECKED:['Not checked — not approved','review']
+};
+var AI_APPROVED_TEXT='Approved — this rewrite will be used';
+var AI_CONFIRM_TEXT='This rewrite was BLOCKED by the check. Use it anyway?';
+var AI_FOOTER_TEXT='Advisory check by a second AI model. PASS does not prove every line is true.';
+var AI_BTN_STYLE='padding:8px 14px;margin:0 8px 0 0;border-radius:var(--r-md);font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink);';
+
+function aiEl(parent,tag,text,cls){
+  var n=document.createElement(tag);
+  if(text!==undefined&&text!==null)n.textContent=String(text);
+  if(cls)n.className=cls;
+  parent.appendChild(n);
+  return n;
+}
+function aiTone(name){
+  return 'color:var(--'+name+');background:var(--'+name+'-bg);border:1px solid var(--'+name+'-line);';
+}
+function aiMessage(text,isError){
+  aiResult.textContent='';
+  var p=aiEl(aiResult,'p',text);
+  p.style.cssText='font-size:13px;padding:8px 0;color:'+(isError?'var(--skip)':'var(--ink-faint)')+';';
+  return p;
+}
+function aiErrorText(code,action,network){
+  if(code==='consent_stale')return 'The AI services used for this check have changed. Reload the page and tick the box again.';
+  if(code==='consent_required')return 'Tick the box to send your CV to '+aiProviders+', then click '+(action==='Revise'?'Revise once with findings':'AI Review CV')+' again.';
+  if(code==='cv_too_long_for_ai_review')return 'Your CV is longer than 15,000 characters, so AI review cannot run on it.';
+  if(code==='stale')return 'This review is out of date. Run AI Review CV again.';
+  if(code==='busy')return 'Another AI review is running. Try again in a moment.';
+  if(code==='inputs_changed')return 'Your CV or profile changed since this review. Run AI Review CV again.';
+  if(code==='not_revisable')return 'This rewrite cannot be revised again.';
+  var detail=String(code||'Error');
+  if(action)return action+' failed: '+detail;
+  return network?'Request failed: '+detail:detail;
+}
+function aiIsApproved(d){
+  return !!(d.approval&&d.approval.generation_id===d.generation_id&&d.approval.rewrite_sha256===d.rewrite_sha256);
+}
+
+function aiRenderHeader(panel,d){
+  var header=aiEl(panel,'div');
+  header.style.cssText='display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;';
+  var title=aiEl(header,'span','AI-Reviewed CV');
+  title.style.cssText='font-weight:700;font-size:13.5px;color:var(--ink);flex:1;';
+  var via=aiEl(header,'span','· via Gemini ('+(d.model_used||'unknown')+')');
+  via.style.cssText='font-size:11px;color:var(--ink-faint);';
+  var copy=aiEl(header,'button','Copy');
+  copy.id='ai-cv-copy-btn';
+  copy.style.cssText='padding:4px 12px;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);color:var(--ink-soft);';
+  copy.addEventListener('click',function(){
+    var text=window._aiReviewedCvText;
+    if(!text)return;
+    navigator.clipboard.writeText(text).then(function(){
+      copy.textContent='Copied ✓';
+      copy.style.color='var(--apply)';
+      setTimeout(function(){copy.textContent='Copy';copy.style.color='';},1800);
+    }).catch(function(){
+      var msg=document.getElementById('ai-cv-copy-msg');
+      if(!msg){
+        msg=aiEl(header,'span');
+        msg.id='ai-cv-copy-msg';
+        msg.setAttribute('role','status');
+        msg.style.cssText='font-size:12px;color:var(--skip);margin-left:8px;';
+      }
+      msg.textContent='Copy failed — please select the text manually.';
+    });
+  });
+}
+
+function aiRenderBadge(panel,verdict,approved){
+  var info=approved?[AI_APPROVED_TEXT,'apply']:AI_BADGES[verdict];
+  var badge=aiEl(panel,'div',info[0],'ai-cv-badge');
+  badge.style.cssText='display:inline-block;margin:0 0 10px;padding:6px 12px;border-radius:var(--r-md);font-size:13px;font-weight:700;'+aiTone(info[1]);
+}
+
+function aiFindingRow(box,severity){
+  var row=aiEl(box,'div',undefined,'ai-cv-finding');
+  var tone=severity==='BLOCKER'?'skip':(severity==='MAJOR'?'review':'line');
+  row.style.cssText='margin-top:6px;padding:8px 10px;font-size:13px;line-height:1.5;background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--'+tone+');';
+  return row;
+}
+/* Lists unsupported review items and uncleared Layer 0 findings; returns the trimmed
+   statements so the rewrite view can flag the matching lines. */
+function aiRenderFindings(panel,review){
+  var flagged=[];
+  var items=(review.items||[]).filter(function(item){return item.verdict!=='SUPPORTED';});
+  var l0=(review.l0_findings||[]).filter(function(f){return !f.cleared_by;});
+  if(!items.length&&!l0.length)return flagged;
+  var box=aiEl(panel,'div',undefined,'ai-cv-findings');
+  box.style.cssText='margin:0 0 12px;';
+  var heading=aiEl(box,'strong','Findings');
+  heading.style.cssText='font-size:12px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-soft);';
+  items.forEach(function(item){
+    var row=aiFindingRow(box,item.severity);
+    flagged.push(String(item.text||'').trim());
+    aiEl(row,'div',item.text||'').style.fontWeight='600';
+    aiEl(row,'div','Verdict: '+(item.verdict||'UNCHECKED')+' · Severity: '+(item.severity||'—'));
+    aiEl(row,'div','Reason: '+(item.reason||'—'));
+    var removed=item.removed||[];
+    if(removed.length){
+      aiEl(row,'div','Original lines in this block:').style.color='var(--ink-soft)';
+      removed.forEach(function(line){aiEl(row,'div',line).style.paddingLeft='12px';});
+    }
+  });
+  l0.forEach(function(f){
+    var row=aiFindingRow(box,f.severity);
+    flagged.push(String(f.text||'').trim());
+    aiEl(row,'div','Rule: '+(f.rule||'—')+' · Severity: '+(f.severity||'—')).style.fontWeight='600';
+    aiEl(row,'div',f.text||'');
+    aiEl(row,'div',f.detail||'');
+  });
+  return flagged;
+}
+
+function aiRenderChanges(panel,changes){
+  if(!changes||!changes.length)return;
+  var box=aiEl(panel,'div');
+  box.style.cssText='margin-bottom:12px;padding:10px 12px;border-radius:var(--r-md);'+aiTone('apply');
+  var title=aiEl(box,'div','Changes made');
+  title.style.cssText='font-size:11.5px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--apply);margin-bottom:6px;';
+  var list=aiEl(box,'ul');
+  list.style.cssText='margin:0;padding-left:18px;font-size:13px;line-height:1.6;color:var(--ink-soft);';
+  changes.forEach(function(change){aiEl(list,'li',change);});
+}
+
+function aiRenderRewrite(panel,d,flagged){
+  var box=aiEl(panel,'div',undefined,'ai-cv-rewrite');
+  box.style.cssText='white-space:pre-wrap;word-break:break-word;font-size:13.5px;line-height:1.7;color:var(--ink);max-height:560px;overflow-y:auto;background:var(--surface-sunk,#f5f5f5);border:1px solid var(--line);border-radius:var(--r-md);padding:16px 18px;';
+  String(d.reviewed_cv||'').split('\n').forEach(function(line){
+    var row=aiEl(box,'div',undefined,'ai-cv-line');
+    row.style.minHeight='1.7em';
+    var trimmed=line.trim();
+    if(trimmed&&flagged.indexOf(trimmed)!==-1){
+      row.className='ai-cv-line ai-cv-flagged';
+      row.style.background='var(--review-bg)';
+      aiEl(row,'span','⚑ ','ai-cv-flag');
+    }
+    aiEl(row,'span',line);
+  });
+}
+
+/* Local time of a stored UTC ISO string, to the minute. */
+function aiWhen(iso){
+  var t=new Date(iso);
+  if(isNaN(t.getTime()))return String(iso||'');
+  var p=function(n){return (n<10?'0':'')+n;};
+  return t.getFullYear()+'-'+p(t.getMonth()+1)+'-'+p(t.getDate())+' '+p(t.getHours())+':'+p(t.getMinutes());
+}
+
+/* Draws one result. `notice` is an optional line shown under the buttons: an error line
+   in the error colour, or (when `info` is true) a plain information line. */
+function aiRender(d,notice,info){
+  aiResult.textContent='';
+  window._aiReviewedCvText=d.reviewed_cv||'';
+  var review=d.review||{};
+  var verdict=Object.prototype.hasOwnProperty.call(AI_BADGES,review.verdict)?review.verdict:'UNCHECKED';
+  var approved=aiIsApproved(d);
+  var panel=aiEl(aiResult,'div',undefined,'ai-cv-panel');
+  panel.style.cssText='background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:16px;';
+  aiRenderHeader(panel,d);
+  aiRenderBadge(panel,verdict,approved);
+  var flagged=aiRenderFindings(panel,review);
+  aiRenderChanges(panel,d.changes);
+  aiRenderRewrite(panel,d,flagged);
+  if(d.saved_path){
+    var saved=aiEl(panel,'p','Saved: '+d.saved_path);
+    saved.style.cssText='font-size:11.5px;color:var(--ink-faint);margin:10px 0 0;word-break:break-all;';
+  }
+  var actions=aiEl(panel,'div');
+  actions.style.cssText='margin-top:12px;';
+  var note=aiEl(panel,'p',notice||'','ai-cv-notice');
+  note.style.cssText='margin:8px 0 0;font-size:13px;color:'+(info?'var(--ink-soft)':'var(--skip)')+';';
+  if(verdict!=='PASS'&&!approved){
+    var approve=aiEl(actions,'button','Approve this rewrite');
+    approve.style.cssText=AI_BTN_STYLE;
+    approve.addEventListener('click',function(){
+      if(verdict==='BLOCKED'&&!window.confirm(AI_CONFIRM_TEXT))return;
+      approve.disabled=true;
+      note.textContent='';
+      aiSend('approve',{generation_id:d.generation_id,rewrite_sha256:d.rewrite_sha256}).then(function(res){
+        if(res.ok){
+          d.approval=(res.data&&res.data.approval)||{generation_id:d.generation_id,rewrite_sha256:d.rewrite_sha256};
+          aiRender(d);
+          return;
+        }
+        approve.disabled=false;
+        note.style.color='var(--skip)';
+        note.textContent=aiErrorText(res.data&&res.data.error,'Approve',false);
+      }).catch(function(err){
+        approve.disabled=false;
+        note.style.color='var(--skip)';
+        note.textContent=aiErrorText(err&&err.message,'Approve',true);
+      });
+    });
+  }
+  if((verdict==='BLOCKED'||verdict==='NEEDS_EDIT')&&d.revise_round===0){
+    var revise=aiEl(actions,'button','Revise once with findings');
+    revise.style.cssText=AI_BTN_STYLE;
+    revise.addEventListener('click',function(){
+      aiRun('revise',{use_cloud:!!(aiConsent&&aiConsent.checked),consent_scope:aiScope,generation_id:d.generation_id},'Revise',d);
+    });
+  }
+  var footer=aiEl(panel,'p',AI_FOOTER_TEXT);
+  footer.style.cssText='margin:10px 0 0;font-size:11.5px;color:var(--ink-faint);';
+}
+
+function aiSend(path,body){
+  return fetch('/job/'+aiBtn.dataset.jobId+'/ai-review-cv'+(path?'/'+path:''),{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)
+  }).then(function(r){return r.json().then(function(data){return {ok:r.ok,data:data};});});
+}
+/* A failed revise puts the previous result back (so the buttons stay usable) unless the
+   result itself is out of date. */
+function aiFail(code,action,previous,network){
+  var text=aiErrorText(code,action,network);
+  var outdated=['stale','inputs_changed','not_revisable'].indexOf(code)!==-1;
+  if(previous&&!outdated)aiRender(previous,text);
+  else aiMessage(text,true);
+}
+function aiRun(path,body,action,previous){
+  aiBtn.disabled=true;
+  aiBtn.textContent='Reviewing… (30–60 s)';
+  aiMessage(aiScope==='gemini+openai'?'Reviewing your CV against this job':'Gemini is reviewing your CV against this job — please wait…',false);
+  var request;
+  try{request=aiSend(path,body);}catch(err){request=Promise.reject(err);}
+  if(aiConsent)aiConsent.checked=false;
+  request.then(function(res){
+    if(res.ok){aiRender(res.data);return;}
+    aiFail(res.data&&res.data.error,action,previous,false);
+  }).catch(function(err){
+    if(aiConsent)aiConsent.checked=false;
+    aiFail(err&&err.message,action,previous,true);
+  }).finally(function(){
+    aiBtn.disabled=false;
+    aiBtn.textContent='AI Review CV';
+  });
+}
+aiBtn.addEventListener('click',function(){
+  aiRun('',{use_cloud:!!(aiConsent&&aiConsent.checked),consent_scope:aiScope},'',null);
+});
+/* A saved review embedded by the server (read-only; no cloud call is made here). */
+var aiSavedEl=document.getElementById('ai-cv-saved');
+if(aiSavedEl){
+  try{
+    var aiSaved=JSON.parse(aiSavedEl.textContent);
+    if(aiSaved&&typeof aiSaved==='object')aiRender(aiSaved,'Last AI review: '+aiWhen(aiSaved.created_at),true);
+  }catch(e){}
+}
+})();
+"""
 
 def _normalize_home_tab(tab: str | None) -> str:
     """Return a safe home tab, defaulting to the Reed-first search shell."""
@@ -92,7 +365,7 @@ _BOARD_CSS = """
 """
 
 
-def render_board_page(board: dict[str, Any], *, model_label: str = "") -> str:
+def render_board_page(board: dict[str, Any], *, model_label: str = "", consent_scope: str = "gemini") -> str:
     """Render the board payload as a read-only, accessible kanban page."""
     columns = board.get("columns") if isinstance(board, dict) else {}
     columns = columns if isinstance(columns, dict) else {}
@@ -156,7 +429,7 @@ def render_board_page(board: dict[str, Any], *, model_label: str = "") -> str:
 
     body = (
         '<div class="app-shell">'
-        f'{_render_sidebar("board")}'
+        f'{_render_sidebar("board", consent_scope=consent_scope)}'
         '<main class="main-content">'
         '<div class="content-inner board-page">'
         '<section class="panel">'
@@ -184,6 +457,7 @@ def render_home_page(
     profile_tab_html: str = "",
     evaluate_notice: str | None = None,
     model_label: str = "",
+    consent_scope: str = "gemini",
 ) -> str:
     tab = _normalize_home_tab(tab)
     error_html = f'<div class="panel error">{escape(error)}</div>' if error else ""
@@ -192,7 +466,7 @@ def render_home_page(
     evaluate_notice_html = f'<div class="panel flash success">{escape(evaluate_notice)}</div>' if evaluate_notice else ""
     profile_name_esc = escape(profile_name or "")
     target_roles = escape(", ".join(profile_target_roles) or "—")
-    sidebar = _render_sidebar(tab)
+    sidebar = _render_sidebar(tab, consent_scope=consent_scope)
     body = f"""
     <div class="app-shell">
       {sidebar}
@@ -245,6 +519,27 @@ class ReviewQueueViewModel:
     active_id: str
     ids_csv: str
     model_label: str = ""
+    # Decision-policy thresholds, passed in by ui_handlers from
+    # DEFAULT_DECISION_POLICY (ui_render stays free of domain imports).
+    # Defaults are pinned to the policy by tests/test_decision_boundaries.py.
+    apply_threshold: float = 80.0
+    review_threshold: float = 65.0
+
+
+def score_tone(score: float | None, apply_threshold: float = 80.0, review_threshold: float = 65.0) -> str:
+    """Colour token for a 0-100 match score, using the decision policy bands.
+
+    Kept in step with decide_application(): >= apply_threshold -> apply,
+    >= review_threshold -> review, else skip. Not for dimension subscores
+    (see _subscore_bar), which are a different scale.
+    """
+    if score is None:
+        return "var(--ink-faint)"
+    if score >= apply_threshold:
+        return "var(--apply)"
+    if score >= review_threshold:
+        return "var(--review)"
+    return "var(--skip)"
 
 
 def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
@@ -271,16 +566,14 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
         )
 
     def _score_color(score: float | None) -> str:
-        if score is None:
-            return "var(--ink-faint)"
-        return "var(--apply)" if score >= 75 else ("var(--review)" if score >= 50 else "var(--skip)")
+        return score_tone(score, vm.apply_threshold, vm.review_threshold)
 
     queue_rows = []
     for j in jobs_info:
         jid = escape(j["job_id"])
         active = j["job_id"] == active_id
         score = j["score"]
-        score_str = str(int(score)) if score is not None else "–"
+        score_str = format_score_display(score) if score is not None else "–"
         sc = _score_color(score)
         border_color = "var(--accent)" if active else "var(--line)"
         bg_color = "var(--surface-2)" if active else "transparent"
@@ -298,7 +591,7 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
             f'<div style="display:grid;grid-template-columns:24px 1fr;gap:8px;align-items:start;">'
             f'<input type="checkbox" name="job_id" value="{jid}" aria-label="Select {title_esc}" '
             f'style="margin-top:14px;width:16px;height:16px;">'
-            f'<button type="button" onclick="rqSwitch({chr(39)}{jid}{chr(39)})" '
+            f'<button type="button" data-rq-job-id="{jid}" '
             f'id="rq-row-{jid}" '
             f'style="text-align:left;padding:12px 13px;border-radius:var(--r-md);width:100%;'
             f'min-width:0;overflow:hidden;'
@@ -318,22 +611,29 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
         )
 
     rows_html = "\n".join(queue_rows)
-    active_id_esc = escape(active_id)
+    active_id_url = escape(quote(active_id, safe=""))
     n_str = str(n)
 
     # JS: switch active job by updating iframe src and sidebar highlight
     rq_js = (
         '<script>(function(){'
-        'window.rqSwitch=function(jobId){'
+        'function switchJob(jobId){'
         'var iframe=document.getElementById("rq-iframe");'
-        'if(iframe)iframe.src="/job/"+encodeURIComponent(jobId)+"?embed=1";'
-        'document.querySelectorAll("[id^=\\"rq-row-\\"]").forEach(function(el){'
-        'var sel=el.id==="rq-row-"+jobId;'
+        "var encodedId=encodeURIComponent(jobId).replace(/[!'()*]/g,function(c){"
+        'return "%"+c.charCodeAt(0).toString(16).toUpperCase();});'
+        'if(iframe)iframe.src="/job/"+encodedId+"?embed=1";'
+        'document.querySelectorAll("button[data-rq-job-id]").forEach(function(el){'
+        'var sel=el.dataset.rqJobId===jobId;'
         'el.style.borderColor=sel?"var(--accent)":"var(--line)";'
         'el.style.background=sel?"var(--surface-2)":"transparent";'
         'el.style.boxShadow=sel?"var(--shadow-sm)":"none";'
         '});'
-        '};'
+        '}'
+        'var list=document.querySelector(".rq-list");'
+        'if(list)list.addEventListener("click",function(event){'
+        'var row=event.target.closest("button[data-rq-job-id]");'
+        'if(row&&list.contains(row))switchJob(row.dataset.rqJobId);'
+        '});'
         '})();</script>'
     )
 
@@ -393,7 +693,7 @@ def render_review_queue_page(vm: "ReviewQueueViewModel") -> str:
           </div>
           </form>
         </div>
-        <iframe id="rq-iframe" class="rq-frame" src="/job/{active_id_esc}?embed=1"
+        <iframe id="rq-iframe" class="rq-frame" src="/job/{active_id_url}?embed=1"
                 title="Job detail"></iframe>
       </div>
     </div>
@@ -857,7 +1157,13 @@ def _render_add_job_form_fields(values: dict[str, str]) -> str:
             return f'<label>{label_span}<textarea name="{escape(name)}" placeholder="{escape(placeholder)}">{value}</textarea></label>'
         return f'<label>{label_span}<input name="{escape(name)}" value="{value}" placeholder="{escape(placeholder)}"></label>'
 
+    # Slice 1c: always present so the paste/URL prefill JSON can fill it by name.
+    skill_method_hidden = (
+        f'<input type="hidden" name="skill_extraction_method" '
+        f'value="{escape(values.get("skill_extraction_method", ""))}">'
+    )
     return f"""
+      {skill_method_hidden}
       <div class="grid two-col">
         {field('job_id', 'Job id (leave blank to auto-generate)')}
         {field('input_method', 'Input method', placeholder='url or copied_text')}
@@ -898,9 +1204,14 @@ def render_input_form(values: dict[str, str]) -> str:
     # Daily Digest D2: carry the stable provider id so the manual flow persists it
     # (dedup key on rebuild). Display-only source_ref/url are separate fields above.
     source_job_id_hidden = f'<input type="hidden" name="source_job_id" value="{escape(values.get("source_job_id", ""))}">' if values.get("source_job_id") else ""
+    skill_method_hidden = (
+        f'<input type="hidden" name="skill_extraction_method" '
+        f'value="{escape(values.get("skill_extraction_method", ""))}">'
+    )
     return f"""
       {source_snapshot_hidden}
       {source_job_id_hidden}
+      {skill_method_hidden}
       <section class="panel subtle" id="prefill-panel">
         <h3>Quick prefill</h3>
         <div class="tab-row" role="tablist" aria-label="Prefill method tabs">
@@ -1017,10 +1328,31 @@ class JobPageViewModel:
     qualitative_assessment: dict | None
     qualitative_index: dict | None
     qualitative_grade: dict | None
+    market_snapshot: dict | None
+    market_adjustment: object | None
     flash: str | None
     flash_kind: str
     embed: bool
     model_label: str
+    consent_scope: str = "gemini"
+    skill_extraction_method: str | None = None  # Slice 1c
+    ai_cv_saved: dict | None = None  # saved AI CV review in POST-success shape (current record only)
+    ai_cv_stale: bool = False  # a saved AI CV review exists but no longer matches the CV/profile
+
+
+SKILL_METHOD_LABELS = {
+    "llm": "Skills prefilled by Gemini",
+    "keyword": "Skills prefilled by keyword fallback (Gemini not used)",
+}
+
+
+def skill_method_note(method: str | None) -> str:
+    """Slice 1c: small note under Required skills on the job page."""
+    text = SKILL_METHOD_LABELS.get(method or "", "Skills source not recorded")
+    return (
+        f'<div data-skill-method="{escape(method or "unknown")}" '
+        f'style="font-size:11px;color:var(--ink-faint);margin-top:4px;">{escape(text)}</div>'
+    )
 
 
 # F1 v2 — keyword-match panel as a standalone, full-wrapper renderer. Used by BOTH
@@ -1182,16 +1514,37 @@ _SALARY_BENCHMARK_JS = """<script>/* salary-benchmark */
 (function(){
 var root=document.getElementById("sb-panel");if(!root)return;
 var btn=document.getElementById("sb-btn"),out=document.getElementById("sb-out");
-var url="/job/"+encodeURIComponent(root.getAttribute("data-job-id"))+"/salary-benchmark";
+var saveWrap=document.getElementById("sb-save-wrap");
+var jobId=root.getAttribute("data-job-id");
+var url="/job/"+encodeURIComponent(jobId)+"/salary-benchmark";
 function money(n){return "\\u00a3"+Math.round(n).toLocaleString("en-GB");}
 function line(text){var d=document.createElement("div");d.textContent=text;d.style.margin="3px 0";return d;}
 function show(nodes,isError){out.textContent="";out.style.color=isError?"var(--skip)":"var(--ink-soft)";
 nodes.forEach(function(n){out.appendChild(n);});}
 function pct(p){return p===null||p===undefined?"n/a":Math.round(p)+"th percentile";}
+function showSaveButton(){
+if(!saveWrap)return;
+saveWrap.textContent="";
+var b=document.createElement("button");b.type="button";b.id="sb-save-btn";
+b.textContent="Save market position to this job";
+b.style.cssText="margin-top:8px;padding:4px 13px;font-size:12px;cursor:pointer;border:1px solid var(--line);"+
+"background:var(--surface);color:var(--ink-soft);border-radius:var(--r-md);font-weight:600;font-family:inherit;";
+b.addEventListener("click",function(){
+b.disabled=true;b.textContent="Saving...";
+fetch("/job/"+encodeURIComponent(jobId)+"/market-position",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})
+.then(function(r){return r.json().then(function(d){return {ok:r.ok,body:d};});})
+.then(function(res){
+if(res.ok&&res.body&&res.body.ok){window.location.reload();}
+else{b.disabled=false;b.textContent="Save failed"+((res.body&&res.body.error)?(": "+res.body.error):"")+" \\u2013 retry";}
+})
+.catch(function(){b.disabled=false;b.textContent="Could not reach the server \\u2013 retry";});
+});
+saveWrap.appendChild(b);
+}
 function render(d){
 if(d.status==="unavailable"){show([line("Adzuna is not configured (missing credentials).")],true);return;}
 if(d.status==="error"){show([line("Could not fetch salary data: "+(d.error||"unknown error"))],true);return;}
-if(d.status==="no_data"||!d.summary){show([line("No Adzuna data for this title ("+d.query+").")],false);return;}
+if(d.status==="no_data"||!d.summary){show([line("No Adzuna data for this title ("+d.query+").")],false);showSaveButton();return;}
 var s=d.summary,rows=[];
 rows.push(line("Title searched: "+d.query+" (UK-wide)"));
 rows.push(line("Sample size: "+s.total+" advertised vacancies"));
@@ -1202,19 +1555,51 @@ rows.push(line(d.floor===null?"Your salary floor: not set":"Your salary floor ("
 var meta=line("As of "+(d.fetched_at||"").slice(0,10)+(d.cached?" (cached, refreshes daily)":"")+". Source: ");
 var a=document.createElement("a");a.href="https://www.adzuna.co.uk";a.target="_blank";a.rel="noopener noreferrer";a.textContent="Adzuna";
 meta.appendChild(a);meta.style.color="var(--ink-faint)";meta.style.fontSize="11.5px";rows.push(meta);
-show(rows,false);}
+show(rows,false);
+showSaveButton();
+}
 btn.addEventListener("click",function(){
 btn.disabled=true;show([line("Checking...")],false);
+if(saveWrap)saveWrap.textContent="";
 fetch(url).then(function(r){return r.json();}).then(render)
 .catch(function(){show([line("Could not reach the server.")],true);})
 .then(function(){btn.disabled=false;btn.textContent="Check again";});});
+var clearBtn=document.getElementById("sb-clear-btn");
+if(clearBtn){
+clearBtn.addEventListener("click",function(){
+clearBtn.disabled=true;clearBtn.textContent="Removing...";
+fetch("/job/"+encodeURIComponent(jobId)+"/market-position/clear",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})
+.then(function(r){return r.json();})
+.then(function(d){if(d&&d.ok){window.location.reload();}else{clearBtn.disabled=false;clearBtn.textContent="Remove failed \\u2013 retry";}})
+.catch(function(){clearBtn.disabled=false;clearBtn.textContent="Could not reach the server \\u2013 retry";});
+});
+}
 })();
 </script>"""
 
 
-def render_salary_benchmark_panel(job_id: str) -> str:
-    """Advisory 'Salary benchmark' panel; fetches lazily via GET /job/{id}/salary-benchmark."""
+def render_salary_benchmark_panel(job_id: str, market_snapshot: dict | None = None) -> str:
+    """Advisory 'Salary benchmark' panel; fetches lazily via GET /job/{id}/salary-benchmark.
+
+    Market-aware salary (2026-09-22, revision 2): shows the STICKY saved position
+    (if any) plus "Save market position" / "Remove market position" actions that
+    hit POST /job/{id}/market-position(/clear) — an explicit user action only,
+    never triggered by this panel's own advisory fetch.
+    """
     job_id_esc = escape(job_id)
+    saved_html = ""
+    if market_snapshot is not None:
+        badge_text = market_badge_display(market_snapshot) or "Saved, but not enough data to classify a position."
+        saved_html = (
+            '<div style="margin-bottom:10px;padding:8px 10px;background:var(--surface-sunk);'
+            'border:1px solid var(--line);border-radius:var(--r-md);display:flex;align-items:center;'
+            'justify-content:space-between;gap:10px;flex-wrap:wrap;">'
+            f'<span style="font-size:12.5px;color:var(--ink-soft);">Saved: {escape(badge_text)}</span>'
+            '<button id="sb-clear-btn" type="button" style="padding:3px 10px;font-size:11.5px;cursor:pointer;'
+            'border:1px solid var(--line);background:transparent;color:var(--ink-faint);'
+            'border-radius:var(--r-md);font-weight:600;font-family:inherit;">Remove market position</button>'
+            '</div>'
+        )
     parts = [
         '<div id="sb-panel" data-job-id="', job_id_esc, '" style="margin-top:16px;background:var(--surface);',
         'border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--pad);box-shadow:var(--shadow-sm);">',
@@ -1224,8 +1609,11 @@ def render_salary_benchmark_panel(job_id: str) -> str:
         '<button id="sb-btn" type="button" style="padding:4px 13px;font-size:12px;cursor:pointer;',
         'border:1px solid var(--accent);background:transparent;color:var(--accent);',
         'border-radius:var(--r-md);font-weight:600;font-family:inherit;">Check market salary</button></div>',
+        saved_html,
         '<div id="sb-out" style="font-size:13px;line-height:1.6;color:var(--ink-soft);"></div>',
-        '<div style="font-size:11px;color:var(--ink-faint);margin-top:6px;">Advisory only; does not affect the score. ',
+        '<div id="sb-save-wrap"></div>',
+        '<div style="font-size:11px;color:var(--ink-faint);margin-top:6px;">Advisory only; does not affect the score ',
+        'unless a market position is explicitly saved AND the optional market-adjustment setting is on. ',
         'Advertised salaries, may include estimates. Source: Adzuna.</div>',
         '</div>',
         _SALARY_BENCHMARK_JS,
@@ -1353,6 +1741,24 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:100px;'
             f'font-size:11.5px;font-weight:600;{ff}color:var(--ink-soft);background:var(--surface-sunk);'
             f'border:1px solid var(--line);white-space:nowrap;">{escape(text)}</span>'
+        )
+
+    def _market_badge_html() -> str:
+        """Market-aware salary (2026-09-22, revision 2): the always-on reminder
+        badge. Amber for "bottom", neutral for "typical"/"top"; nothing for
+        "unknown" or no saved snapshot at all."""
+        text = market_badge_display(vm.market_snapshot)
+        if not text:
+            return ""
+        is_bottom = isinstance(vm.market_snapshot, dict) and vm.market_snapshot.get("position") == "bottom"
+        if is_bottom:
+            c, bg, line = "var(--skip)", "var(--skip-bg)", "var(--skip-line)"
+        else:
+            c, bg, line = "var(--ink-soft)", "var(--surface-sunk)", "var(--line)"
+        return (
+            f'<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:100px;'
+            f'font-size:11.5px;font-weight:700;color:{c};background:{bg};border:1px solid {line};white-space:nowrap;">'
+            f'{escape(text)}</span>'
         )
 
     def _grade_badge() -> str:
@@ -1519,6 +1925,22 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         )
         grade_badge = _grade_badge()
         grade_warning = _grade_warning_banner()
+        # Market-aware salary (2026-09-22, revision 2): a "Below market" note next to
+        # the decision reason when the saved snapshot says "bottom" — informational
+        # only; it does NOT imply the score was adjusted (that's market_adjustment).
+        below_market_html = ""
+        if isinstance(vm.market_snapshot, dict) and vm.market_snapshot.get("position") == "bottom":
+            below_market_html = (
+                f'<p style="margin:8px 0 0;font-size:13px;color:var(--skip);font-weight:600;line-height:1.5;">'
+                f'&#9888; Below market: {escape(market_badge_display(vm.market_snapshot) or "")}</p>'
+            )
+        market_adjustment_html = ""
+        if vm.market_adjustment is not None:
+            market_adjustment_html = (
+                f'<p style="margin:8px 0 0;font-size:12.5px;color:var(--ink-faint);line-height:1.5;">'
+                f'Score includes a market adjustment of {vm.market_adjustment:+.0f} points '
+                f'(bottom quarter of market, Adzuna).</p>'
+            )
 
         verdict_card_html = (
             f'<div style="margin-top:22px;background:var(--surface);border:1px solid var(--line);'
@@ -1548,6 +1970,8 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'</div>'
             f'</div>'
             f'<p style="margin:12px 0 0;font-size:13px;color:var(--ink-faint);line-height:1.5;">{escape(vm.decision_reason)}</p>'
+            f'{below_market_html}'
+            f'{market_adjustment_html}'
             f'</div>'
             f'</div>'
             # subscores
@@ -1679,40 +2103,80 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'font-style:italic;margin-top:2px;padding-top:8px;border-top:1px solid var(--line);">'
             f'</div>'
 
+            f'<div id="ai-check-status" style="font-size:12px;color:var(--ink-faint);" aria-live="polite"></div>'
+            f'<button id="ai-check-again" style="display:none" onclick="_aiCheck(_aiToken)">Check again</button>'
+            f'<div id="ai-check-footer" style="display:none;font-size:11px;color:var(--ink-faint);">Local check, advisory only. No label does not mean verified.</div>'
             f'<script>/* AI Analysis */'
-            f'function _aiShow(id){{["ai-idle","ai-loading","ai-error","ai-result"].forEach(function(x){{'
-            f'document.getElementById(x).style.display=x===id?"":"none";}});}}'
-            f'function runAiAnalysis(){{'
-            f'var btn=document.getElementById("ai-explain-btn");'
-            f'btn.disabled=true;btn.textContent="Analysing…";'
-            f'document.getElementById("ai-badge").style.display="none";'
-            f'_aiShow("ai-loading");'
-            f'fetch("/job/{job_id_esc}/explain")'
-            f'.then(function(r){{return r.json();}})'
-            f'.then(function(d){{'
-            f'if(d.ok&&d.fit){{'
-            f'document.getElementById("ai-fit").textContent=d.fit;'
-            f'document.getElementById("ai-risk").textContent=d.risk||"";'
-            f'document.getElementById("ai-action").textContent=d.action||"";'
-            f'var badge=document.getElementById("ai-badge");'
-            f'var modelLabel=d.model_used||"unknown";'
-            f'var hasThinking=(modelLabel==="gemini-3-flash-preview"||modelLabel==="gemini-2.5-flash");'
-            f'badge.textContent="\xb7 via Gemini ("+(hasThinking?modelLabel+" \xb7 high reasoning":modelLabel)+")";'
-            f'badge.style.display="block";'
-            f'_aiShow("ai-result");'
-            f'btn.textContent="Re-run";'
-            f'}}else{{'
-            f'document.getElementById("ai-error").textContent=d.error||"LLM unavailable";'
-            f'_aiShow("ai-error");'
-            f'btn.textContent="Retry";'
+            f'var _aiToken=null,_aiRun=0,_aiCheckRun=0,_aiStatements=Object.create(null);'
+            f'function _aiShow(id){{["ai-idle","ai-loading","ai-error","ai-result"].forEach(function(x){{document.getElementById(x).style.display=x===id?"":"none";}});}}'
+            f'function _aiClearCheck(){{'
+            f'_aiToken=null;Object.keys(_aiStatements).forEach(function(id){{_aiStatements[id].label.textContent="";}});'
+            f'_aiStatements=Object.create(null);'
+            f'document.getElementById("ai-check-status").textContent="";'
+            f'document.getElementById("ai-check-again").style.display="none";'
+            f'document.getElementById("ai-check-footer").style.display="none";'
             f'}}'
-            f'btn.disabled=false;'
-            f'}})'
-            f'.catch(function(){{'
-            f'document.getElementById("ai-error").textContent="Could not reach the AI service.";'
-            f'_aiShow("ai-error");'
-            f'btn.textContent="Retry";btn.disabled=false;'
+            f'function _aiRender(d){{'
+            f'["fit","risk","action"].forEach(function(section){{document.getElementById("ai-"+section).textContent="";}});'
+            f'if(!Array.isArray(d.statements)){{'
+            f'["fit","risk","action"].forEach(function(section){{document.getElementById("ai-"+section).textContent=d[section]||"";}});return;'
+            f'}}'
+            f'd.statements.forEach(function(s){{'
+            f'if(["fit","risk","action"].indexOf(s.section)<0)return;'
+            f'var row=document.createElement("div"),label=document.createElement("div");'
+            f'row.id=s.id;row.textContent=s.text;label.style.fontSize="12px";label.style.color="var(--ink-faint)";'
+            f'if(s.section==="action")label.textContent="advice - not checked";'
+            f'row.appendChild(label);document.getElementById("ai-"+s.section).appendChild(row);'
+            f'_aiStatements[s.id]={{label:label,section:s.section}};'
             f'}});'
+            f'if(d.check_token){{_aiToken=d.check_token;document.getElementById("ai-check-footer").style.display="";_aiCheck(_aiToken);}}'
+            f'}}'
+            f'function _aiCheck(token){{'
+            f'if(!token||token!==_aiToken)return;var checkRun=++_aiCheckRun;'
+            f'var status=document.getElementById("ai-check-status"),again=document.getElementById("ai-check-again");'
+            f'again.style.display="none";status.textContent="Checking against the information Gemini was given (local model)...";'
+            f'fetch("/job/{job_id_esc}/explain-check",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify({{check_token:token}})}})'
+            f'.then(function(r){{if(r.ok===false)throw new Error("check failed");return r.json();}})'
+            f'.then(function(d){{'
+            f'if(token!==_aiToken||checkRun!==_aiCheckRun)return;'
+            f'if(!d.ok)throw new Error("check failed");status.textContent="";'
+            f'if(d.state==="busy"){{again.style.display="";return;}}'
+            f'if(d.state==="stale"){{'
+            f'Object.keys(_aiStatements).forEach(function(id){{_aiStatements[id].label.textContent="not checked (re-run)";}});return;'
+            f'}}'
+            f'if(d.state!=="done"&&d.state!=="partial")throw new Error("check failed");'
+            f'Object.keys(d.results||{{}}).forEach(function(id){{'
+            f'var item=_aiStatements[id],result=d.results[id];if(!item)return;'
+            f'var label=item.label;label.style.color="var(--ink-faint)";'
+            f'if(item.section==="action"){{label.textContent="advice - not checked";}}'
+            f'else if(result.verdict==="could_not_confirm"){{label.textContent="⚠ Local check could not confirm this from the information given to Gemini - may be wrong";label.style.color="var(--skip)";}}'
+            f'else if(result.verdict==="not_checked"){{label.textContent="not checked ("+result.reason+")";}}'
+            f'else if(result.verdict==="ok"){{label.textContent="";}}'
+            f'}});'
+            f'var n=0,m=0,k=0;'
+            f'Object.keys(_aiStatements).forEach(function(id){{'
+            f'if(_aiStatements[id].section==="action")return;'
+            f'var res=(d.results||{{}})[id],verdict=res&&res.verdict;'
+            f'if(verdict==="ok"){{n++;}}else if(verdict==="could_not_confirm"){{n++;m++;}}else{{k++;}}'
+            f'}});'
+            f'status.textContent=d.state==="done"'
+            f'?"Local check done: "+n+(n===1?" sentence":" sentences")+" checked, "+m+" could not be confirmed"'
+            f':"Local check stopped early: "+n+" checked, "+m+" could not be confirmed, "+k+" not checked";'
+            f'}}).catch(function(){{if(token===_aiToken&&checkRun===_aiCheckRun){{status.textContent="Local check unavailable";}}}});'
+            f'}}'
+            f'function runAiAnalysis(){{'
+            f'var run=++_aiRun;_aiClearCheck();'
+            f'var btn=document.getElementById("ai-explain-btn");btn.disabled=true;btn.textContent="Analysing…";'
+            f'document.getElementById("ai-badge").style.display="none";_aiShow("ai-loading");'
+            f'fetch("/job/{job_id_esc}/explain",{{method:"POST"}}).then(function(r){{return r.json();}}).then(function(d){{'
+            f'if(run!==_aiRun)return;'
+            f'if(d.ok&&d.fit){{_aiRender(d);'
+            f'var badge=document.getElementById("ai-badge"),modelLabel=d.model_used||"unknown";'
+            f'var hasThinking=(modelLabel==="gemini-3-flash-preview"||modelLabel==="gemini-2.5-flash");'
+            f'badge.textContent="· via Gemini ("+(hasThinking?modelLabel+" · high reasoning":modelLabel)+")";'
+            f'badge.style.display="block";_aiShow("ai-result");btn.textContent="Re-run";'
+            f'}}else{{document.getElementById("ai-error").textContent=d.error||"LLM unavailable";_aiShow("ai-error");btn.textContent="Retry";}}btn.disabled=false;'
+            f'}}).catch(function(){{if(run!==_aiRun)return;document.getElementById("ai-error").textContent="Could not reach the AI service.";_aiShow("ai-error");btn.textContent="Retry";btn.disabled=false;}});'
             f'}}'
             f'</script>'
             f'</div>'
@@ -1791,6 +2255,20 @@ def render_job_page(vm: "JobPageViewModel") -> str:
                 f'{escape(label)}</button>'
             )
 
+        ai_cv_stale_html = ""
+        ai_cv_saved_html = ""
+        if vm.ai_cv_saved is not None:
+            # Escape <, > and & inside the JSON text so no data can close the script element.
+            _saved_json = (json.dumps(vm.ai_cv_saved, ensure_ascii=False)
+                           .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026"))
+            ai_cv_saved_html = f'<script type="application/json" id="ai-cv-saved">{_saved_json}</script>'
+        elif vm.ai_cv_stale:
+            ai_cv_stale_html = (
+                '<p id="ai-cv-stale" style="margin:0;font-size:13px;color:var(--ink-soft);">'
+                'An earlier AI review of this job no longer matches your CV or profile. '
+                'Click AI Review CV to review again.</p>'
+            )
+
         action_bar_html = (
             f'<div style="position:sticky;bottom:0;margin-top:20px;padding:16px 0;'
             f'background:linear-gradient(to top,var(--bg) 65%,transparent);">'
@@ -1809,11 +2287,15 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer;'
             f'border:1px solid var(--line);background:var(--surface);color:var(--ink);">'
             f'&#10024; Tailor CV</button>'
+            f'<span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;">'
             f'<button type="button" id="ai-cv-btn" data-job-id="{job_id_esc}" '
             f'style="display:inline-flex;align-items:center;gap:7px;padding:10px 15px;border-radius:var(--r-md);'
             f'font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer;'
             f'border:1px solid var(--accent);background:transparent;color:var(--accent);">'
             f'&#128161; AI Review CV</button>'
+            f'<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);">'
+            f'<input type="checkbox" id="ai-cv-consent" data-consent-scope="{escape(vm.consent_scope)}"> Send my CV to {"Google Gemini and OpenAI" if vm.consent_scope == "gemini+openai" else "Google Gemini"} for this rewrite and its check</label>'
+            f'</span>'
             f'<button type="button" id="cover-btn" '
             f'style="display:inline-flex;align-items:center;gap:7px;padding:10px 15px;border-radius:var(--r-md);'
             f'font-size:13.5px;font-weight:600;font-family:inherit;cursor:pointer;'
@@ -1832,7 +2314,8 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);">'
             f'&#11015; Download package</a>'
             f'</div>'
-            f'<div id="tailor-result" style="margin-top:12px;"></div>'
+            f'<div id="tailor-result" style="margin-top:12px;">{ai_cv_stale_html}</div>'
+            f'{ai_cv_saved_html}'
             f'</div>'
             f'</div>'
         )
@@ -1901,56 +2384,8 @@ def render_job_page(vm: "JobPageViewModel") -> str:
             f'tailorBtn.disabled=false;tailorBtn.textContent="Tailor CV";'
             f'resultDiv.innerHTML=\'<p style="color:var(--skip);font-size:13px;">Request failed: \'+err.message+\'</p>\';'
             f'}});}});}}'
-            # AI Review CV
-            f'var aiCvBtn=document.getElementById("ai-cv-btn");'
-            f'if(aiCvBtn){{aiCvBtn.addEventListener("click",function(){{'
-            f'var jobId=aiCvBtn.dataset.jobId;'
-            f'var resultDiv=document.getElementById("tailor-result");'
-            f'aiCvBtn.disabled=true;aiCvBtn.textContent="Reviewing… (30–60 s)";'
-            f'if(resultDiv)resultDiv.innerHTML=\'<p style="color:var(--ink-faint);font-size:13px;padding:8px 0;">Gemini is reviewing your CV against this job — please wait…</p>\';'
-            f'fetch("/job/"+jobId+"/ai-review-cv",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify({{}})}})'
-            f'.then(function(r){{return r.json().then(function(d){{return{{ok:r.ok,data:d}};}})}})'
-            f'.then(function(res){{'
-            f'aiCvBtn.disabled=false;aiCvBtn.textContent="AI Review CV";'
-            f'if(!res.ok){{resultDiv.innerHTML=\'<p style="color:var(--skip);font-size:13px;">\'+( res.data.error||"Error")+\'</p>\';return;}}'
-            f'var d=res.data;'
-            f'window._aiReviewedCvText=d.reviewed_cv||"";'
-            f'var html=\'<div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:16px;">\';'
-            f'html+=\'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">\';'
-            f'html+=\'<span style="font-weight:700;font-size:13.5px;color:var(--ink);flex:1;">AI-Reviewed CV</span>\';'
-            f'html+=\'<span style="font-size:11px;color:var(--ink-faint);">\xb7 via Gemini (\'+( d.model_used||"unknown")+\')</span>\';'
-            f'html+=\'<button id="ai-cv-copy-btn" style="padding:4px 12px;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);color:var(--ink-soft);">Copy</button>\';'
-            f'html+=\'</div>\';'
-            f'if(d.saved_path)html+=\'<p style="font-size:11.5px;color:var(--ink-faint);margin-bottom:10px;word-break:break-all;">Saved: <code>\'+d.saved_path+\'</code></p>\';'
-            f'if(d.changes&&d.changes.length){{'
-            f'html+=\'<div style="margin-bottom:12px;padding:10px 12px;background:var(--apply-bg);border:1px solid var(--apply-line);border-radius:var(--r-md);">\';'
-            f'html+=\'<div style="font-size:11.5px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--apply);margin-bottom:6px;">Changes made</div>\';'
-            f'html+=\'<ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.6;color:var(--ink-soft);">\';'
-            f'd.changes.forEach(function(c){{html+=\'<li>\'+c.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")+\'</li>\';}});'
-            f'html+=\'</ul></div>\';'
-            f'}}'
-            f'var safeText=d.reviewed_cv.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");'
-            f'html+=\'<pre style="white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:13.5px;line-height:1.7;color:var(--ink);max-height:560px;overflow-y:auto;background:var(--surface-sunk,#f5f5f5);border:1px solid var(--line);border-radius:var(--r-md);padding:16px 18px;margin:0;">\'+safeText+\'</pre>\';'
-            f'html+=\'</div>\';'
-            f'resultDiv.innerHTML=html;'
-            f'var copyBtn=document.getElementById("ai-cv-copy-btn");'
-            f'if(copyBtn){{copyBtn.addEventListener("click",function(){{'
-            f'var t=window._aiReviewedCvText;'
-            f'if(!t)return;'
-            f'navigator.clipboard.writeText(t).then(function(){{'
-            f'copyBtn.textContent="Copied ✓";copyBtn.style.color="var(--apply)";'
-            f'setTimeout(function(){{copyBtn.textContent="Copy";copyBtn.style.color="";}},1800);'
-            f'}}).catch(function(){{'
-            f'var m=document.getElementById("ai-cv-copy-msg");'
-            f'if(!m){{m=document.createElement("span");m.id="ai-cv-copy-msg";m.setAttribute("role","status");'
-            f'm.style.cssText="font-size:12px;color:var(--skip);margin-left:8px;";copyBtn.parentNode.insertBefore(m,copyBtn.nextSibling);}}'
-            f'm.textContent="Copy failed — please select the text manually.";'
-            f'}});'
-            f'}});}}'
-            f'}}).catch(function(err){{'
-            f'aiCvBtn.disabled=false;aiCvBtn.textContent="AI Review CV";'
-            f'resultDiv.innerHTML=\'<p style="color:var(--skip);font-size:13px;">Request failed: \'+err.message+\'</p>\';'
-            f'}});}});}}'
+            # AI Review CV: all response content is rendered through DOM text nodes.
+            + _AI_CV_SCRIPT +
             # cover toggle
             f'var coverBtn=document.getElementById("cover-btn");'
             f'var coverPanel=document.getElementById("cover-panel");'
@@ -2067,6 +2502,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         + (_tag(salary_str, mono=True) if salary_str else "")
         + (_tag(vm.work_mode) if vm.work_mode else "")
         + (_tag(vm.employment_type) if vm.employment_type else "")
+        + _market_badge_html()
         + '</div>'
         '</div>'
         + (
@@ -2208,6 +2644,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         f'<div style="margin-top:14px;">'
         f'<div style="font-size:11px;font-weight:700;color:var(--ink-faint);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Required skills</div>'
         f'{_pill_list(list(vm.required_skills))}'
+        f'{skill_method_note(vm.skill_extraction_method)}'
         f'</div>'
         f'<div style="margin-top:14px;">'
         f'<div style="font-size:11px;font-weight:700;color:var(--ink-faint);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Preferred skills</div>'
@@ -2221,7 +2658,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         f'</details>'
     )
 
-    salary_panel_html = render_salary_benchmark_panel(vm.job_id)
+    salary_panel_html = render_salary_benchmark_panel(vm.job_id, market_snapshot=vm.market_snapshot)
 
     if embed:
         # Embed mode: no sidebar, no back link — used by review-queue iframe
@@ -2248,7 +2685,7 @@ def render_job_page(vm: "JobPageViewModel") -> str:
         """
         return render_page(f"{vm.job_title} @ {vm.company}", body, model_label=vm.model_label)
 
-    sidebar = _render_sidebar("history")
+    sidebar = _render_sidebar("history", consent_scope=vm.consent_scope)
     body = f"""
     <div class="app-shell">
       {sidebar}
@@ -2344,6 +2781,7 @@ def render_profile_page(
     model_label: str = "",
     enabled_sources: list[str] | None = None,
     active_scoring_preset: str = "balanced",
+    consent_scope: str = "gemini",
 ) -> str:
     """Render the My Profile tab page."""
     # Saved Searches (Daily Job Digest — D1). Source options come from the
@@ -2373,14 +2811,12 @@ def render_profile_page(
     )
 
     # Scoring weight presets (Slice C, 2026-07-21 search/score/filter plan).
-    # Plain HTML form (no JS required) so it degrades gracefully; imported
-    # lazily to keep the render layer free of a module-load-order dependency
-    # on the scoring-presets module.
-    from src.job_hunt_scoring_presets import PRESET_LABELS
+    # Plain HTML form (no JS required) so it degrades gracefully. Labels come
+    # from ui_utils.SCORING_PRESET_LABELS (pinned to job_hunt_scoring_presets).
 
     _preset_options = "".join(
         f'<option value="{escape(name)}"' + (' selected' if name == active_scoring_preset else '') + f'>{escape(label)}</option>'
-        for name, label in PRESET_LABELS.items()
+        for name, label in SCORING_PRESET_LABELS.items()
     )
     scoring_preset_section = (
         '<section class="panel" id="scoring-preset-panel">'
@@ -2507,7 +2943,7 @@ def render_profile_page(
 
     # Build body via string concat - each piece is a single-quoted Python string
     # inner double-quotes inside HTML work via string concatenation: "<attr " + "value" + ">"
-    _sidebar_html = _render_sidebar("profile")
+    _sidebar_html = _render_sidebar("profile", consent_scope=consent_scope)
     body = "".join([
         '<div class="app-shell">',
           _sidebar_html,
@@ -2519,6 +2955,8 @@ def render_profile_page(
           '<h2>Upload CV</h2>',
           cv_status_strip,
           '<p>Upload a .txt, .pdf, or .docx file (max 5 MB) to extract your CV text, then edit and save your profile.</p>',
+          '<p>CV text parsing and skill suggestions run locally by default.</p>',
+          '<label><input type="checkbox" id="cv-cloud-consent"> Use Gemini for skill suggestions: send up to 12,000 characters of extracted CV text to Google Gemini.</label>',
           '<div style="margin-bottom: 16px;">',
           '<input type="file" id="cv-file-input" accept=".txt,.pdf,.docx">',
           '<button type="button" id="cv-upload-btn" style="margin-top:8px;">Parse CV</button>',
@@ -2616,7 +3054,7 @@ def render_profile_page(
           ('<option value="true"' + (' selected' if vm.digest_enabled else '') + '>Yes</option>'),
           ('<option value="false"' + ('' if vm.digest_enabled else ' selected') + '>No</option>'),
           '</select></label>',
-          '<label><span>Show jobs scoring ≥ (0–100)</span><input name="digest_threshold" type="number" min="0" max="100" value="',   escape(str(vm.digest_threshold)),   '"></label>',
+          '<label><span>AI analysis for jobs scoring ≥ (0–100)</span><input name="digest_threshold" type="number" min="0" max="100" value="',   escape(str(vm.digest_threshold)),   '"></label>',
           '<label><span>Run time (HH:MM, local)</span><input name="digest_run_time" value="',   escape(vm.digest_run_time),   '" placeholder="07:00"></label>',
           '<label><span>Max jobs per saved search (1–200)</span><input name="digest_max_per_source" type="number" min="1" max="200" value="',   escape(str(vm.digest_max_per_source)),   '"></label>',
           '<label><span>AI analysis on top matches</span><select name="digest_llm_enabled">',
@@ -2662,6 +3100,8 @@ def render_profile_page(
           'setStatus("Uploading and parsing...");',
           'var formData = new FormData();',
           'formData.append("cv_file", file);',
+          'var cloudConsent = document.getElementById("cv-cloud-consent");',
+          'formData.append("use_cloud", cloudConsent && cloudConsent.checked ? "true" : "false");',
           'var pidInput = document.querySelector("input[name=\'profile_id\']");',
           'if (pidInput && pidInput.value) formData.append("profile_id", pidInput.value);',
           'try {',
@@ -2690,7 +3130,8 @@ def render_profile_page(
           '    });',
           '  }',
           '}',
-          'var skillMsg = added > 0 ? " Added " + added + " skill(s) — set levels then save." : (data.skill_extraction_warning ? " Skill extraction: " + data.skill_extraction_warning : "");',
+          'var skillMsg = added > 0 ? " Added " + added + " skill(s) — set levels then save." : "";',
+          'if (data.skill_extraction_warning) skillMsg += " Skill extraction: " + data.skill_extraction_warning;',
           'var saveMsg = data.auto_saved ? " CV saved automatically." : (data.auto_save_error ? " Auto-save FAILED: " + data.auto_save_error + ". Save manually below." : " Review and save below.");',
           'setStatus("CV parsed successfully." + saveMsg + skillMsg);',
           '} catch(err) {',
@@ -2880,6 +3321,7 @@ def render_digest_page(
     sources: list[str],
     saved_searches: list[tuple[str, str]],
     model_label: str = "",
+    consent_scope: str = "gemini",
 ) -> str:
     """Render the Daily Digest feed. PURE: every external job field (title, company,
     location) is HTML-escaped; [View] links only to the internal /job/{id} (the
@@ -2975,7 +3417,7 @@ def render_digest_page(
 
     body = "".join([
         '<div class="app-shell">',
-          _render_sidebar("digest"),
+          _render_sidebar("digest", consent_scope=consent_scope),
           '<main class="main-content"><div class="content-inner">',
           '<section class="panel">',
           '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">',
@@ -3054,7 +3496,7 @@ def render_digest_page(
     return render_page("Daily Digest", body, model_label=model_label)
 
 
-def _render_sidebar(active_tab: str = "") -> str:
+def _render_sidebar(active_tab: str = "", *, consent_scope: str = "gemini") -> str:
     """Render the left sidebar nav, matching the Claude deliverable design."""
     _svg = lambda paths, sw="1.7": (
         f'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
@@ -3131,7 +3573,7 @@ def _render_sidebar(active_tab: str = "") -> str:
       <div class="sidebar-spacer"></div>
       <div class="sidebar-privacy">
         <div class="sidebar-privacy-title">{lock_svg} Local-first</div>
-        <div class="sidebar-privacy-body">Profile, jobs &amp; outcomes stay on this device. Nothing auto-applies.</div>
+        <div class="sidebar-privacy-body">Records are stored on this device. Optional Gemini features send relevant text to Google. CV skill suggestions use Gemini only with your consent. AI CV review sends the CV to {"Google Gemini and OpenAI" if consent_scope == "gemini+openai" else "Gemini"} only after the per-click consent. Nothing auto-applies.</div>
       </div>
       <div class="sidebar-updated" style="padding:8px 18px 14px;font-size:10px;color:var(--ink-faint);letter-spacing:.02em;">
         Page updated {_PAGE_UPDATED.get(active_tab, "—")}
@@ -3488,7 +3930,7 @@ def render_page(title: str, body: str, *, model_label: str = "") -> str:
     <div class="ai-loading-spinner"></div>
     <div class="ai-loading-title">Preparing job review…</div>
     <div class="ai-loading-status" id="ai-loading-status">Submitting job details…</div>
-    <div class="ai-loading-hint">Powered by Ollama · running locally</div>
+    <div class="ai-loading-hint">AI-assisted review uses Google Gemini when enabled.</div>
   </div>
 </div>
 {body}

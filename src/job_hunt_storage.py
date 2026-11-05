@@ -95,11 +95,56 @@ def load_reviewed_job(job_id: str, root: str | Path) -> JobPosting:
     return reviewed_job_from_dict(payload, job_id=job_id)
 
 
-def save_job_analysis(analysis: JobAnalysis, root: str | Path) -> Path:
+def save_job_analysis(
+    analysis: JobAnalysis, root: str | Path, *, preserved_llm_fields: dict[str, Any] | None = None,
+) -> Path:
     """Persist derived analysis separately from the reviewed structured job."""
     path = _state_file_path(root, "analyses", analysis.job_id)
-    _write_json(path, job_analysis_to_dict(analysis))
+    payload = job_analysis_to_dict(analysis)
+    if preserved_llm_fields is None:
+        _write_json(path, payload)
+    else:
+        if not isinstance(preserved_llm_fields, dict) or any(
+            not isinstance(key, str) or not key.startswith("llm_") for key in preserved_llm_fields
+        ):
+            raise StorageError("preserved analysis fields must belong to the llm_ group")
+        payload.update(preserved_llm_fields)
+        _write_analysis_snapshot(path, payload)
     return path
+
+
+def load_analysis_llm_fields(job_id: str, root: str | Path) -> dict[str, Any]:
+    """Read the whole persisted AI group, including fields unknown to this model."""
+    payload = _read_json(_state_file_path(root, "analyses", job_id))
+    if not isinstance(payload, dict):
+        raise StorageError("analysis file must contain an object")
+    return {key: value for key, value in payload.items() if key.startswith("llm_")}
+
+
+def _write_analysis_snapshot(path: Path, payload: dict[str, Any]) -> None:
+    """Replace one rescore snapshot without exposing an AI-free intermediate."""
+    # Local imports keep this scoped path independent of unrelated storage work.
+    import os
+    import tempfile
+
+    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=".rescore-", suffix=".tmp", delete=False) as stream:
+            temporary = stream.name
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
 
 
 def save_qualitative_assessment(job_id: str, assessment: dict[str, Any], root: str | Path) -> Path:
@@ -112,7 +157,15 @@ def save_qualitative_assessment(job_id: str, assessment: dict[str, Any], root: s
 
 
 def load_qualitative_assessment(job_id: str, root: str | Path) -> dict[str, Any]:
-    """Load a qualitative assessment payload for a job."""
+    """Load only a completed qualitative publication under its SQLite guard."""
+    from src.job_hunt_qualitative_state import read_accepted
+    if not _qualitative_assessment_path(root, job_id).exists():
+        raise FileNotFoundError(job_id)
+    return read_accepted(job_id, root)
+
+
+def _load_qualitative_assessment_raw(job_id: str, root: str | Path) -> dict[str, Any]:
+    """Internal raw read; authoritative callers hold the qualitative guard."""
     payload = _read_json(_qualitative_assessment_path(root, job_id))
     if not isinstance(payload, dict):
         raise StorageError("qualitative assessment file must contain an object")
@@ -120,6 +173,18 @@ def load_qualitative_assessment(job_id: str, root: str | Path) -> dict[str, Any]
 
 
 def archive_qualitative_assessment(job_id: str, root: str | Path) -> Path | None:
+    """Legacy archive entry point; managed archives require a current owner."""
+    from src.job_hunt_qualitative_state import guard
+    if not _qualitative_assessment_path(root, job_id).exists():
+        return None
+    with guard(Path(root) / "job_hunt_index.db") as (conn, _now):
+        row = conn.execute("SELECT generation FROM qualitative_index WHERE job_ref=?", (job_id,)).fetchone()
+        if row is not None and row["generation"]:
+            raise StorageError("managed qualitative archive requires its current owner")
+        return _archive_qualitative_assessment_raw(job_id, root)
+
+
+def _archive_qualitative_assessment_raw(job_id: str, root: str | Path) -> Path | None:
     """Move an existing qualitative assessment to a versioned archive path."""
     path = _qualitative_assessment_path(root, job_id)
     if not path.exists():
@@ -232,6 +297,10 @@ def job_analysis_from_dict(payload: dict[str, Any], *, job_id: str | None = None
             ),
             llm_model=_optional_string(payload.get("llm_model"), "llm_model"),
             llm_generated_at=_optional_string(payload.get("llm_generated_at"), "llm_generated_at"),
+            # Market-aware salary (2026-09-22, revision 2) — explicit reads so a
+            # record saved before this field existed loads unchanged (None/None).
+            market_snapshot=_optional_dict(payload.get("market_snapshot"), "market_snapshot"),
+            market_adjustment=_optional_float(payload.get("market_adjustment"), "market_adjustment"),
         )
     except (TypeError, ValueError) as exc:
         raise StorageError(f"invalid analysis payload: {exc}") from exc
@@ -296,6 +365,17 @@ _required_number = partial(_v.required_number, error=StorageError)
 
 
 _optional_int = partial(_v.optional_int, error=StorageError)
+
+
+_optional_float = partial(_v.optional_float, error=StorageError)
+
+
+def _optional_dict(value: Any, field_name: str) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise StorageError(f"{field_name} must be an object when provided")
+    return value
 
 
 _optional_bool = partial(_v.optional_bool, error=StorageError)

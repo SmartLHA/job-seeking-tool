@@ -8,42 +8,20 @@ This is a simple local web page for browsing the project markdown files in one p
 
 ## Run locally on your Mac
 
-From the project folder:
+From this project's folder, run the supported server:
 
 ```bash
-cd "/Users/lhaclaw/AI-Project-Workspace/Job Seeking Tool"
-python3 -m http.server 8765
+python3 viewer/viewer_server.py
 ```
 
-Then open on the same Mac:
+Then open `http://127.0.0.1:8765/viewer/` on the same Mac.
+If port 8765 is already occupied, check the existing service before starting another server.
 
-```text
-http://localhost:8765/viewer/
-```
+The server binds to loopback by default. Its static file allowlist serves the
+viewer assets and the explicitly listed public project documents. Other project
+files, directory listings, traversal paths, and symbolic links are not served.
+`viewer/documents.json` describes navigation; adding an entry does not grant
+access to a file. Public document additions require an explicit server allowlist update.
 
-## View from your mobile phone on the same Wi‑Fi
-
-Run the server so it listens on your local network:
-
-```bash
-cd "/Users/lhaclaw/AI-Project-Workspace/Job Seeking Tool"
-python3 -m http.server 8765 --bind 0.0.0.0
-```
-
-Then find your Mac's local IP address, for example with:
-
-```bash
-ipconfig getifaddr en0
-```
-
-If that returns nothing, try:
-
-```bash
-ipconfig getifaddr en1
-```
-
-Then open this on your phone browser:
-
-```text
-http://YOUR-MAC-IP:8765/viewer/
-```
+Network access from other devices is not supported. Use this server rather than
+an unrestricted generic file server, which exposes files outside that allowlist.

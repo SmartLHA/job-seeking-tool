@@ -11,6 +11,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import pytest
 import html
 import re
 import threading
@@ -139,7 +140,7 @@ def test_two_keywords_one_location_merge_into_one_deduped_list(tmp_path: Path, m
     assert calls == ["Business Analyst", "Data Analyst"]
     # Merged + deduped: exactly 2 distinct cards (job 1 shown once, job 2 once).
     import re
-    assert len(re.findall(r'\sid="jrc-\d+"', body)) == 2
+    assert len(re.findall(r'<div class="jst-rc"', body)) == 2
     assert "reed.example/jobs/1" in body
     assert "reed.example/jobs/2" in body
 
@@ -250,3 +251,192 @@ def test_multi_keyword_more_advances_each_term_independently(tmp_path: Path, mon
         ("Business Analyst", 10), ("Data Analyst", 10),
         ("Data Analyst", 20),
     ]
+
+
+from types import SimpleNamespace
+from unittest.mock import Mock
+from src.ui_handlers import _prepare_keyword_search, handle_source_search, handle_source_search_more
+from src.job_sources.reed_source import normalize_reed_search_params
+from src.job_sources.adzuna_source import normalize_adzuna_search_params
+from src.job_sources.linkedin_source import normalize_search_params as normalize_linkedin
+
+
+@pytest.mark.parametrize('source_id,normalizer', [
+    ('reed', normalize_reed_search_params), ('adzuna', normalize_adzuna_search_params),
+    ('linkedin', normalize_linkedin)])
+@pytest.mark.parametrize('raw,expected', [
+    (', BA  analyst , ba analyst, , Data analyst,', ['BA analyst', 'Data analyst']),
+    ('A' * 121 + ', ' + 'B' * 121, ['A' * 120, 'B' * 120]),
+    ('X' * 120 + 'a, ' + 'X' * 120 + 'b, unique', ['X' * 120, 'unique']),
+    (', ,', []),
+    (', '.join(['Q' * 120 + str(i) for i in range(6)] + ['outside cap']), ['Q' * 120]),
+    (' '.join(['word'] * 40), [(' '.join(['word'] * 40))[:120].strip()]),
+    (', '.join('term' + str(i) for i in range(8)), ['term' + str(i) for i in range(6)])])
+def test_prepared_source_terms_round_trip(source_id, normalizer, raw, expected):
+    source = SimpleNamespace(normalize_search_params=normalizer)
+    values, terms = _prepare_keyword_search(source, {'keywords': raw})
+    assert terms == expected
+    assert values['keywords'] == ', '.join(expected)
+    assert _prepare_keyword_search(source, values)[1] == expected
+    if len(_parse_keyword_terms(raw)) > 6:
+        assert values['_keyword_capped'] == '6'
+
+
+@pytest.mark.parametrize('source_id,normalizer', [
+    ('reed', normalize_reed_search_params), ('adzuna', normalize_adzuna_search_params),
+    ('linkedin', normalize_linkedin)])
+def test_actual_initial_more_keep_long_vector(tmp_path, monkeypatch, source_id, normalizer):
+    calls = []
+    take_key, skip_key = ('results_to_take', 'results_skip') if source_id == 'linkedin' else ('resultsToTake', 'resultsSkip')
+    def search(values):
+        calls.append((values['keywords'], int(values[skip_key])))
+        return [{'source': source_id, 'source_job_id': values['keywords'] + str(values[skip_key]),
+                 'title': values['keywords'], 'company': 'Synthetic', 'location': 'Test'}]
+    source = SimpleNamespace(source_id=source_id, display_name=source_id,
+        normalize_search_params=normalizer, search_handler=search,
+        render_cards_fragment=lambda *args, **kwargs: 'synthetic cards')
+    monkeypatch.setattr('src.job_sources.source_registry.get_source', lambda _: source)
+    monkeypatch.setattr('src.job_sources.relevance.bucket_jobs_by_relevance', lambda rows, _: (rows, []))
+    monkeypatch.setattr('src.job_sources.dedup.deduplicate_jobs', lambda rows: rows)
+    monkeypatch.setattr('src.job_hunt_not_interested.filter_results', lambda rows, **kw: (rows, 0))
+    captured = []
+    monkeypatch.setattr('src.ui_handlers.render_home', lambda *args, **kw: (captured.append(kw['search_values']) or 'Synthetic prepared HTML'))
+    terms = ['A' * 120, 'B' * 120, 'C' * 120]
+    req = SimpleNamespace(query={'keywords': ', '.join(terms), take_key: '1'})
+    (tmp_path/'profile.json').write_text('{"candidate_id": "synthetic"}')
+    config = UIServerConfig(profile_path=tmp_path/'profile.json', state_root=tmp_path/'state', report_dir=tmp_path/'reports')
+    responder = Mock()
+    handle_source_search(req, config, responder, source_id)
+    assert captured[0]['keywords'] == ', '.join(terms)
+    url = captured[0]['_more_url']
+    for offset in (1, 2):
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+        assert query['keywords'] == ', '.join(terms)
+        assert query['keywordCursors'] == ','.join([str(offset)] * 3)
+        handle_source_search_more(SimpleNamespace(query=query), config, responder, source_id)
+        body = responder.send_json.call_args.args[0]
+        assert body['ok'] is True
+        url = body['next_url']
+    assert calls == [(term, offset) for offset in (0, 1, 2) for term in terms]
+    query['keywordCursors'] = '3,5,7'
+    handle_source_search_more(SimpleNamespace(query=query), config, responder, source_id)
+    assert responder.send_json.call_args.kwargs['status'] == 409
+    assert responder.send_json.call_args.args[0]['restart_required'] is True
+    assert calls == [(term, offset) for offset in (0, 1, 2) for term in terms]
+    # The lower-level helper still accepts complete independent vectors; the
+    # handler additionally rejects vectors that it never issued.
+    from src.ui_handlers import _run_multi_keyword_search
+    _, _, _, next_offsets = _run_multi_keyword_search(source,
+        {take_key: '1', skip_key: '0'}, terms, offsets=[3, 5, 7])
+    assert calls[-3:] == list(zip(terms, (3, 5, 7)))
+    assert next_offsets == [4, 6, 8]
+    for cursor in ('-1,1,1', '1,1'):
+        query['keywordCursors'] = cursor
+        before = len(calls)
+        handle_source_search_more(SimpleNamespace(query=query), config, responder, source_id)
+        assert responder.send_json.call_args.kwargs['status'] == 400
+        assert len(calls) == before
+    query.pop('keywordCursors')
+    query[skip_key] = '-1'
+    handle_source_search_more(SimpleNamespace(query=query), config, responder, source_id)
+    assert responder.send_json.call_args.kwargs['status'] == 400
+
+
+@pytest.mark.parametrize('source_id,normalizer', [
+    ('reed', normalize_reed_search_params), ('adzuna', normalize_adzuna_search_params),
+    ('linkedin', normalize_linkedin)])
+@pytest.mark.parametrize('initial_count,later_count', [(0, 0), (1, 0), (2, 0), (2, 1)])
+def test_failed_initial_term_remains_retryable_with_short_or_full_success(tmp_path, monkeypatch, source_id, normalizer, initial_count, later_count):
+    calls, phase, captured = [], [0], []
+    terms = ['F' * 120, 'G' * 120]
+    take_key, skip_key = ('results_to_take', 'results_skip') if source_id == 'linkedin' else ('resultsToTake', 'resultsSkip')
+    def search(values):
+        term, offset = values['keywords'], int(values[skip_key]); calls.append((phase[0], term, offset))
+        if term == terms[0] and phase[0] < 3:
+            raise ValueError('Synthetic retryable failure')
+        count = initial_count if phase[0] == 0 else (later_count if phase[0] == 1 else 1)
+        return [{'source': source_id, 'source_job_id': f'{phase[0]}-{term}-{i}',
+                 'title': term, 'company': 'Synthetic'} for i in range(count)]
+    source = SimpleNamespace(source_id=source_id, display_name=source_id,
+        normalize_search_params=normalizer, search_handler=search,
+        render_cards_fragment=lambda *args, **kwargs: 'synthetic cards')
+    monkeypatch.setattr('src.job_sources.source_registry.get_source', lambda _: source)
+    monkeypatch.setattr('src.job_sources.relevance.bucket_jobs_by_relevance', lambda rows, _: (rows, []))
+    monkeypatch.setattr('src.job_sources.dedup.deduplicate_jobs', lambda rows: rows)
+    monkeypatch.setattr('src.job_hunt_not_interested.filter_results', lambda rows, **kw: (rows, 0))
+    monkeypatch.setattr('src.ui_handlers.render_home', lambda *args, **kw: (captured.append(kw['search_values']) or 'Synthetic prepared HTML'))
+    (tmp_path/'profile.json').write_text('{"candidate_id": "synthetic"}')
+    config = UIServerConfig(profile_path=tmp_path/'profile.json', state_root=tmp_path/'state', report_dir=tmp_path/'reports')
+    responder = Mock()
+    handle_source_search(SimpleNamespace(query={'keywords': terms[0]+'x, '+terms[1]+'x', take_key: '2'}), config, responder, source_id)
+    query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(captured[0]['_more_url']).query))
+    assert query['keywords'] == ', '.join(terms)
+    assert query['keywordCursors'] == ('0,2' if initial_count == 2 else '0,x')
+    phase[0] = 1
+    handle_source_search_more(SimpleNamespace(query=query), config, responder, source_id)
+    body = responder.send_json.call_args.args[0]
+    if initial_count == 2:
+        assert body['ok'] and body['has_more']  # Failed term survives even though the other page is short.
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(body['next_url']).query))
+        assert query['keywordCursors'] == '0,x'
+    else:
+        assert body['ok'] is False
+    retry_query = dict(query)
+    phase[0] = 2; before = len(calls)
+    handle_source_search_more(SimpleNamespace(query=query), config, responder, source_id)
+    assert responder.send_json.call_args.args[0]['ok'] is False
+    assert query == retry_query and calls[before:] == [(2, terms[0], 0)]
+    phase[0] = 3; before = len(calls)
+    handle_source_search_more(SimpleNamespace(query=query), config, responder, source_id)
+    body = responder.send_json.call_args.args[0]
+    assert body['ok'] and body['has_more'] is False
+    assert calls[before:] == [(3, terms[0], 0)]
+    assert dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(body['next_url']).query))['keywordCursors'] == 'x,x'
+
+
+def test_later_keyword_failure_preserves_nonzero_requested_offset():
+    from src.ui_handlers import _run_multi_keyword_search
+    calls = []
+    def search(values):
+        calls.append((values['keywords'], values['resultsSkip']))
+        if values['keywords'] == 'Fail':
+            raise ValueError('Synthetic later failure')
+        return []
+    _, full, errors, offsets = _run_multi_keyword_search(SimpleNamespace(search_handler=search),
+        {'resultsToTake': '2', 'resultsSkip': '0'}, ['Fail', 'Done'], offsets=[5, 7])
+    assert calls == [('Fail', '5'), ('Done', '7')] and offsets == [5, None]
+    assert errors and full is False
+
+
+@pytest.mark.parametrize('empty_success', [False, True])
+def test_http_initial_partial_failure_with_short_success_exposes_retry(tmp_path, monkeypatch, empty_success):
+    calls = []
+    def fetch(keyword, location, max_results, *, skip=0, save_raw=True):
+        calls.append((keyword, skip))
+        if keyword == 'Business Analyst' and len(calls) == 1:
+            raise ValueError('Synthetic first failure')
+        if empty_success and keyword == 'Data Analyst':
+            return []
+        return [{'jobId': 100+len(calls), 'jobTitle': keyword, 'employerName': 'Synthetic',
+                 'locationName': 'London', 'jobUrl': f'https://example.test/{len(calls)}',
+                 'jobDescription': '<p>Synthetic role.</p>'}]
+    monkeypatch.setattr('src.job_sources.reed_source.fetch_reed_jobs', fetch)
+    query = urllib.parse.urlencode({'keywords': 'Business Analyst, Data Analyst', 'resultsToTake': '2'})
+    with _running_ui_server(tmp_path) as (base, _):
+        status, page = _http_get(base+'/search/reed?'+query)
+        assert status == 200
+        assert 'id="jst-cards-container"' in page and 'window.jstLoadMore=function(btn)' in page
+        url = html.unescape(re.search(r'data-next-url="([^"]+)"', page).group(1))
+        assert dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))['keywordCursors'] == '0,x'
+        status, response = _http_get(base+url)
+    assert status == 200 and json.loads(response)['ok'] is True
+    assert calls == [('Business Analyst', 0), ('Data Analyst', 0), ('Business Analyst', 0)]
+
+
+@pytest.mark.parametrize('source_id', ['reed', 'adzuna', 'linkedin'])
+def test_empty_retry_page_renders_shared_paging_target(source_id, monkeypatch):
+    from src.ui_handlers import _render_search_jobs_tab
+    monkeypatch.setattr('src.ui_handlers.get_enabled_sources', lambda: ['reed', 'adzuna', 'linkedin'])
+    page = _render_search_jobs_tab(search_values={'_source_id': source_id, '_more_url': '/synthetic-retry'}, reed_results=[])
+    assert 'id="jst-cards-container"' in page and 'data-next-url="/synthetic-retry"' in page
+    assert 'window.jstLoadMore=function(btn)' in page

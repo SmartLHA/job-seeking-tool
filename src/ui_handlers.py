@@ -9,6 +9,7 @@ domain modules; it is imported by ``ui_routes`` (dispatch) and ``job_hunt_ui``.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import logging
 import re
@@ -22,6 +23,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 logger = logging.getLogger(__name__)
+
+from src.job_sources._multiselect import ACTION_BAR, STAGING_OVERLAY, job_identity, multiselect_script, more_button_html
 
 from src.ui_state import (
     _MAX_CV_SIZE_BYTES,
@@ -52,12 +55,13 @@ from src.ui_render import (
     _normalize_home_tab,
 )
 
+from src.job_hunt_cv_review import consent_scope
 from src.job_hunt_orchestrator import run_local_evaluation_flow_from_payload
 from src.job_hunt_parsing import parse_job_from_text, parse_job_from_url
 from src.job_hunt_outcomes import allowed_next_statuses, create_outcome_record, reset_terminal_outcome, update_outcome
-from src.job_hunt_profile import load_candidate_profile, save_candidate_profile, ProfileValidationError, parse_cv_file, candidate_profile_from_dict
+from src.job_hunt_profile import load_candidate_profile, save_candidate_profile, ProfileValidationError, parse_cv_file, candidate_profile_from_dict, candidate_profile_to_dict, profile_update_lock
 from src.job_hunt_models import JobPosting, Skill
-from src.job_hunt_config import get_enabled_sources, DEFAULT_TAILORING_POLICY
+from src.job_hunt_config import get_enabled_sources, DEFAULT_TAILORING_POLICY, DEFAULT_DECISION_POLICY
 from src.job_hunt_models import effective_decision
 from src.job_hunt_tailoring import (
     select_relevant_evidence,
@@ -70,6 +74,7 @@ from src.job_hunt_tailoring import (
 )
 from src.job_hunt_keyword_match import compute_keyword_match
 from src.job_hunt_cover_letter import generate_cover_letter_text, save_cover_letter
+from src.job_hunt_cv_storage import write_cv_text
 from src.job_hunt_storage import (
     ensure_storage_layout,
     archive_qualitative_assessment,
@@ -209,6 +214,7 @@ def render_profile(req, config, responder, profile_id, *, parsed_cv_text=None, p
 
     from src.job_hunt_scoring_presets import load_preset_name
     page = render_profile_page(
+        consent_scope=consent_scope(),
         profile_id=profile_id,
         vm=_build_profile_page_vm(profile_obj),
         parsed_cv_text=parsed_cv_text,
@@ -241,6 +247,24 @@ def handle_set_scoring_preset(req, config, responder):
     responder.redirect(f"/profile?profile_id={_quote(profile_id)}&flash={_quote(flash_msg)}")
 
 
+def _profile_alias_matches(config, profile_id):
+    try:
+        return load_candidate_profile(config.profile_path).candidate_id == profile_id
+    except FileNotFoundError:
+        return config.profile_path.stem == profile_id
+
+
+def _latest_profile_for_update(profile_json_path, config, profile_id):
+    try:
+        return load_candidate_profile(profile_json_path)
+    except FileNotFoundError:
+        try:
+            alias = load_candidate_profile(config.profile_path)
+        except FileNotFoundError:
+            return None
+        return alias if alias.candidate_id == profile_id else None
+
+
 def handle_parse_cv(req, config, responder):
     content_type = req.headers.get("Content-Type", "")
     if "multipart/form-data" not in content_type:
@@ -269,7 +293,7 @@ def handle_parse_cv(req, config, responder):
 
     # Size check
     if len(content) > _MAX_CV_SIZE_BYTES:
-        responder.send_json({"ok": False, "error": "File too large. Maximum size is 5 MB."}, status=HTTPStatus.PAYLOAD_TOO_LARGE)
+        responder.send_json({"ok": False, "error": "File too large. Maximum size is 5 MB."}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
         return
 
     # MIME check (basic)
@@ -293,11 +317,13 @@ def handle_parse_cv(req, config, responder):
         temp_path.unlink(missing_ok=True)
 
     # Extract skills from CV text so the profile skills table can be pre-populated.
-    # Uses LLM (Ollama) when available for open-ended extraction; keyword fallback otherwise.
+    # Keep skill suggestions local unless this upload explicitly opts into Gemini.
+    consent_item = form_data.get("use_cloud", {})
+    use_cloud = consent_item.get("content", b"") == b"true"
     skill_extraction_warning: str | None = None
     try:
         from src.job_hunt_parsing import extract_skills_from_cv
-        suggested_skills, skill_extraction_warning = extract_skills_from_cv(text)
+        suggested_skills, skill_extraction_warning = extract_skills_from_cv(text, use_cloud=use_cloud)
     except Exception as _ske:
         suggested_skills = []
         skill_extraction_warning = f"Skill extraction failed: {_ske}"
@@ -314,28 +340,22 @@ def handle_parse_cv(req, config, responder):
                 if _profile_dir is not None:
                     _profile_dir.mkdir(parents=True, exist_ok=True)
                     _profile_json = _profile_dir / "candidate_profile.json"
-                    # Load existing profile (fall back to startup profile if dir version missing)
-                    try:
-                        _profile_obj = load_candidate_profile(_profile_json)
-                    except FileNotFoundError:
-                        if config.profile_path.stem == _pid and config.profile_path.exists():
-                            _profile_obj = load_candidate_profile(config.profile_path)
-                        else:
+                    with profile_update_lock(_profile_json, config.profile_path):
+                        _profile_obj = _latest_profile_for_update(_profile_json, config, _pid)
+                        if _profile_obj is None:
                             _profile_obj = candidate_profile_from_dict({"candidate_id": _pid})
-                    # Write CV file alongside the profile
-                    _cv_ext = ext if ext in _ALLOWED_CV_EXTENSIONS else ".txt"
-                    _docs_dir = _profile_dir / "docs"
-                    _docs_dir.mkdir(parents=True, exist_ok=True)
-                    _cv_path = _docs_dir / f"master_cv{_cv_ext}"
-                    _cv_path.write_text(text, encoding="utf-8")
-                    # Update only the CV fields — leave everything else intact
-                    _profile_obj.master_cv_text = text
-                    _profile_obj.master_cv_ref = str(_cv_path.resolve())
-                    save_candidate_profile(_profile_obj, _profile_json)
-                    # Keep startup profile in sync
-                    if config.profile_path.stem == _pid:
-                        save_candidate_profile(_profile_obj, config.profile_path)
-                    auto_saved = True
+                        # The extractor returns plain text, irrespective of upload format.
+                        _cv_path = write_cv_text(
+                            _DATA_ROOT, _profile_dir.relative_to(_DATA_ROOT) / "docs" / "master_cv.txt", text,
+                        )
+                        # Update only the CV fields — leave everything else intact
+                        _profile_obj.master_cv_text = text
+                        _profile_obj.master_cv_ref = str(_cv_path.resolve())
+                        save_candidate_profile(_profile_obj, _profile_json)
+                        # Keep startup profile in sync
+                        if _profile_alias_matches(config, _pid):
+                            save_candidate_profile(_profile_obj, config.profile_path)
+                        auto_saved = True
             except Exception as _save_exc:
                 logger.warning("CV auto-save failed for profile_id=%r: %s", _pid, _save_exc)
                 _auto_save_error = str(_save_exc)
@@ -365,106 +385,94 @@ def handle_save_profile(req, config, responder):
 
     profile_json_path = profile_dir / "candidate_profile.json"
 
-    # Build dict from form, then validate via candidate_profile_from_dict
-    payload: dict[str, Any] = {}
-    for field in ("name", "target_roles", "locations", "remote_preference",
-                  "salary_floor_gbp", "right_to_work_uk",
-                  "years_experience", "industries", "achievements",
-                  "certifications", "master_cv_text"):
-        val = form.get(field, "").strip()
-        if field == "achievements":
-            # Textarea uses one-per-line; fall back to comma-split for old data
-            if "\n" in val:
-                payload[field] = [s.strip() for s in val.splitlines() if s.strip()]
-            else:
+    with profile_update_lock(profile_json_path, config.profile_path):
+        # Build dict from form, then validate via candidate_profile_from_dict
+        _existing = _latest_profile_for_update(profile_json_path, config, profile_id)
+        payload: dict[str, Any] = candidate_profile_to_dict(_existing) if _existing is not None else {}
+        for field in ("name", "target_roles", "locations", "remote_preference",
+                      "salary_floor_gbp", "right_to_work_uk",
+                      "years_experience", "industries", "achievements",
+                      "certifications", "master_cv_text"):
+            if field not in form:
+                continue
+            val = form[field].strip()
+            if field == "achievements":
+                # Textarea uses one-per-line; fall back to comma-split for old data
+                if "\n" in val:
+                    payload[field] = [s.strip() for s in val.splitlines() if s.strip()]
+                else:
+                    payload[field] = [s.strip() for s in val.split(",") if s.strip()] if val else []
+            elif field in ("target_roles", "locations", "industries", "certifications"):
                 payload[field] = [s.strip() for s in val.split(",") if s.strip()] if val else []
-        elif field in ("target_roles", "locations", "industries", "certifications"):
-            payload[field] = [s.strip() for s in val.split(",") if s.strip()] if val else []
-        elif field == "salary_floor_gbp":
-            payload[field] = int(float(val)) if val else None
-        elif field == "years_experience":
-            payload[field] = float(val) if val else None
-        elif field == "right_to_work_uk":
-            payload[field] = True if val.lower() in ("true", "1", "yes") else (False if val.lower() in ("false", "0", "no") else None)
-        else:
-            payload[field] = val or None
+            elif field == "salary_floor_gbp":
+                payload[field] = int(float(val)) if val else None
+            elif field == "years_experience":
+                payload[field] = float(val) if val else None
+            elif field == "right_to_work_uk":
+                payload[field] = True if val.lower() in ("true", "1", "yes") else (False if val.lower() in ("false", "0", "no") else None)
+            else:
+                payload[field] = val or None
 
-    # Skills: prefer skills_json (list[dict] from JS table), fall back to comma-split string
-    skills_json_raw = form.get("skills_json", "").strip()
-    if skills_json_raw:
+        # Skills: prefer skills_json (list[dict] from JS table), fall back to comma-split string
+        skills_json_raw = form.get("skills_json", "").strip()
+        if "skills_json" in form:
+            try:
+                payload["skills"] = json.loads(skills_json_raw) if skills_json_raw else []
+            except (json.JSONDecodeError, ValueError) as _skj_exc:
+                logger.warning("Could not parse skills_json field: %s — defaulting to empty", _skj_exc)
+                payload["skills"] = []
+        elif "skills" in form:
+            skills_val = form["skills"].strip()
+            payload["skills"] = [s.strip() for s in skills_val.split(",") if s.strip()] if skills_val else []
+
+        payload["candidate_id"] = profile_id
+        cv_text_provided = bool(form.get("master_cv_text", "").strip())
+
+        # CV storage is server-managed. Do not accept or render its filesystem path
+        # in the browser; preserve the existing trusted reference when the user is
+        # saving other profile sections.
+        if _existing is not None and not cv_text_provided:
+            payload["master_cv_text"] = _existing.master_cv_text
+            payload["master_cv_ref"] = _existing.master_cv_ref
+
+        # Omitted preferences retain the latest saved value; blank supplied values
+        # use the field validator's default rather than overwriting omitted fields.
+        for field in ("digest_enabled", "digest_llm_enabled", "digest_threshold",
+                      "digest_max_per_source", "digest_max_llm_per_run", "digest_llm_rpm",
+                      "digest_llm_rpd", "digest_llm_batch_size", "digest_llm_batch_interval_min",
+                      "digest_run_time"):
+            if field in form:
+                payload[field] = form[field].strip() or None
+
         try:
-            payload["skills"] = json.loads(skills_json_raw)
-        except (json.JSONDecodeError, ValueError) as _skj_exc:
-            logger.warning("Could not parse skills_json field: %s — defaulting to empty", _skj_exc)
-            payload["skills"] = []
-    else:
-        skills_val = form.get("skills", "").strip()
-        payload["skills"] = [s.strip() for s in skills_val.split(",") if s.strip()] if skills_val else []
+            profile_obj = candidate_profile_from_dict(payload)
+        except ProfileValidationError as exc:
+            responder.send_json({"ok": False, "errors": {"form": str(exc)}}, status=HTTPStatus.BAD_REQUEST)
+            return
 
-    payload["candidate_id"] = profile_id
+        # Persist the CV before changing any saved profile fields or references.
+        if cv_text_provided:
+            try:
+                cv_path = write_cv_text(
+                    _DATA_ROOT, profile_dir.relative_to(_DATA_ROOT) / "docs" / "master_cv.txt",
+                    profile_obj.master_cv_text,
+                )
+            except (OSError, ValueError):
+                responder.send_json(
+                    {"ok": False, "errors": {"master_cv_text": "CV could not be saved safely."}},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+                return
+            # Store as absolute path to avoid ambiguous relative resolution
+            profile_obj.master_cv_ref = str(cv_path.resolve())
 
-    # Daily Digest (D3) settings — preserve current values when the form omits a field
-    # so editing the rest of the profile never silently resets digest prefs.
-    try:
-        _existing = load_candidate_profile(profile_json_path)
-    except Exception:
-        _existing = None
-    if _existing is None and config.profile_path.stem == profile_id:
-        try:
-            _existing = load_candidate_profile(config.profile_path)
-        except Exception:
-            _existing = None
-
-    # CV storage is server-managed. Do not accept or render its filesystem path
-    # in the browser; preserve the existing trusted reference when the user is
-    # saving other profile sections.
-    if _existing is not None and not payload.get("master_cv_text"):
-        payload["master_cv_text"] = _existing.master_cv_text
-        payload["master_cv_ref"] = _existing.master_cv_ref
-
-    def _digest_default(attr, fallback):
-        return getattr(_existing, attr, fallback) if _existing is not None else fallback
-
-    for _bf, _fb in (("digest_enabled", True), ("digest_llm_enabled", True)):
-        _v = form.get(_bf, "").strip()
-        payload[_bf] = _v if _v else str(_digest_default(_bf, _fb)).lower()
-    for _nf, _fb in (("digest_threshold", 70), ("digest_max_per_source", 50),
-                     ("digest_max_llm_per_run", 10), ("digest_llm_rpm", 4),
-                     ("digest_llm_rpd", 200), ("digest_llm_batch_size", 4),
-                     ("digest_llm_batch_interval_min", 15)):
-        _v = form.get(_nf, "").strip()
-        payload[_nf] = _v if _v else _digest_default(_nf, _fb)
-    _rt = form.get("digest_run_time", "").strip()
-    payload["digest_run_time"] = _rt if _rt else _digest_default("digest_run_time", "07:00")
-
-    try:
-        profile_obj = candidate_profile_from_dict(payload)
-    except ProfileValidationError as exc:
-        responder.send_json({"ok": False, "errors": {"form": str(exc)}}, status=HTTPStatus.BAD_REQUEST)
-        return
-
-    profile_dir.mkdir(parents=True, exist_ok=True)
-    save_candidate_profile(profile_obj, profile_json_path)
-
-    # If master_cv_text was provided, save master CV file
-    if profile_obj.master_cv_text:
-        docs_dir = profile_dir / "docs"
-        docs_dir.mkdir(parents=True, exist_ok=True)
-        cv_ext = ".txt"
-        if form.get("_cv_filename"):
-            cv_ext = Path(form["_cv_filename"]).suffix.lower()
-            if cv_ext not in _ALLOWED_CV_EXTENSIONS:
-                cv_ext = ".txt"
-        cv_path = docs_dir / f"master_cv{cv_ext}"
-        cv_path.write_text(profile_obj.master_cv_text, encoding="utf-8")
-        # Store as absolute path to avoid ambiguous relative resolution
-        profile_obj.master_cv_ref = str(cv_path.resolve())
+        profile_dir.mkdir(parents=True, exist_ok=True)
         save_candidate_profile(profile_obj, profile_json_path)
 
-    # Keep startup profile in sync when profile_id matches its stem
-    # so that tailor/cover-letter/evaluate all see the latest data
-    if config.profile_path.stem == profile_id:
-        save_candidate_profile(profile_obj, config.profile_path)
+        # Keep startup profile in sync when profile_id matches its stem
+        # so that tailor/cover-letter/evaluate all see the latest data
+        if _profile_alias_matches(config, profile_id):
+            save_candidate_profile(profile_obj, config.profile_path)
 
     # Build flash message so the user knows exactly what was saved
     cv_chars = len(profile_obj.master_cv_text) if profile_obj.master_cv_text else 0
@@ -515,7 +523,7 @@ def parse_multipart_form(req):
     return result
 
 
-def render_home(req, config, responder, *, values=None, error=None, tab='search', search_values=None, reed_results=None, reed_error=None, evaluate_notice=None, reed_other_results=None):
+def render_home(req, config, responder, *, values=None, error=None, tab='search', search_values=None, reed_results=None, reed_error=None, evaluate_notice=None, reed_other_results=None, prepare_only=False):
     tab = _normalize_home_tab(tab)
     profile = load_candidate_profile(config.profile_path)
     history = load_recent_job_history(config.state_root)
@@ -529,6 +537,7 @@ def render_home(req, config, responder, *, values=None, error=None, tab='search'
         reed_other_results=reed_other_results,
     )
     page = render_home_page(
+        consent_scope=consent_scope(),
         profile_name=profile.name or profile.candidate_id,
         profile_target_roles=list(profile.target_roles or []),
         history=history,
@@ -540,7 +549,50 @@ def render_home(req, config, responder, *, values=None, error=None, tab='search'
         evaluate_notice=evaluate_notice,
         model_label=config.model_label,
     )
+    if prepare_only:
+        return page
     responder.send_html(page)
+
+
+def _ai_cv_saved_fields(config, job_id) -> dict:
+    """Read-only view of the saved AI CV review for the job page.
+
+    Returns the view-model fields ``ai_cv_saved`` (a dict in the POST-success shape, current
+    record only) and ``ai_cv_stale`` (a record exists but no longer matches the CV or profile).
+    Any problem reading gives the plain page: no panel, no notice, no exception.
+    """
+    none = {"ai_cv_saved": None, "ai_cv_stale": False}
+    try:
+        from src.job_hunt_cv_review import (
+            build_review_source, canonical_cv_body, compute_binding, read_review_record,
+            resolve_master_cv_text,
+        )
+        output_dir = Path(DEFAULT_TAILORING_POLICY.output_dir)
+        record = read_review_record(output_dir, job_id)
+        if record is None:
+            return none
+        md_path = output_dir / f"{job_id}_ai_reviewed.md"
+        if md_path.is_symlink():
+            return none
+        body = canonical_cv_body(md_path.read_text(encoding="utf-8"))
+        profile = load_candidate_profile(config.profile_path)
+        cv_text = resolve_master_cv_text(profile, config.profile_path.parent)
+        evidence, context = build_review_source(profile, cv_text)
+        if record["binding"] != compute_binding(profile, cv_text, evidence, context, body, job_id):
+            return {"ai_cv_saved": None, "ai_cv_stale": True}
+        review = {"verdict": record["verdict"], "l0_findings": record["l0_findings"],
+                  "items": record["items"], "reviewer_model": record["reviewer_model"]}
+        return {"ai_cv_saved": {
+            "reviewed_cv": body, "changes": [], "saved_path": md_path.name,
+            "model_used": record["writer_model"], "review": review,
+            "generation_id": record["generation_id"],
+            "rewrite_sha256": record["binding"]["rewrite_sha256"],
+            "revise_round": record["revise_round"], "approval": record["approval"],
+            "created_at": record["created_at"],
+        }, "ai_cv_stale": False}
+    except Exception as exc:
+        logger.debug("Saved AI CV review not shown for %s: %s", job_id, exc)
+        return none
 
 
 def render_job(req, config, responder, job_id, *, flash=None, flash_kind='success', embed=None):
@@ -571,27 +623,14 @@ def render_job(req, config, responder, job_id, *, flash=None, flash_kind='succes
     except FileNotFoundError:
         outcome = None
     try:
-        qualitative_assessment = load_qualitative_assessment(job_id, config.state_root)
-    except FileNotFoundError:
-        qualitative_assessment = None
-    try:
-        from src.job_hunt_index import get_qualitative_index_row
-        qualitative_index = get_qualitative_index_row(_index_db_path(config), job_id)
+        from src.job_hunt_qualitative_state import read_snapshot
+        qualitative_assessment, qualitative_index = read_snapshot(job_id, config.state_root, db_path=_index_db_path(config))
     except Exception:
-        qualitative_index = None
-    qualitative_grade = _ensure_qualitative_grade(
-        config,
-        job_id,
-        analysis,
-        qualitative_assessment,
-        qualitative_index,
+        # An unreadable index cannot authorize qualitative content.
+        qualitative_assessment, qualitative_index = None, None
+    qualitative_assessment, qualitative_index, qualitative_grade = _ensure_qualitative_grade(
+        config, job_id, analysis, qualitative_assessment, qualitative_index,
     )
-    if (
-        qualitative_index is not None
-        and qualitative_grade is not None
-        and qualitative_index.get("grade") != qualitative_grade.get("display_grade")
-    ):
-        qualitative_index = {**qualitative_index, "grade": qualitative_grade.get("display_grade")}
 
     page = render_job_page(_build_job_page_vm(
         reviewed_job, analysis, outcome,
@@ -600,51 +639,30 @@ def render_job(req, config, responder, job_id, *, flash=None, flash_kind='succes
         qualitative_grade=qualitative_grade,
         flash=flash, flash_kind=flash_kind, embed=embed,
         model_label=config.model_label,
+        **_ai_cv_saved_fields(config, job_id),
     ))
     responder.send_html(page)
 
 
 def _ensure_qualitative_grade(config, job_id: str, analysis, qualitative_assessment, qualitative_index):
     if analysis is None:
-        return None
-    from src.job_hunt_index import update_qualitative_grade
-    from src.job_hunt_qualitative import apply_grade_to_assessment, derive_grade
-
+        return qualitative_assessment, qualitative_index, None
+    from src.job_hunt_qualitative import derive_grade
+    from src.job_hunt_qualitative_state import backfill_grade
+    baseline = derive_grade(analysis.match_score, effective_decision=effective_decision(analysis),
+        has_blockers=bool(analysis.blockers), confidence=analysis.confidence, decision_reason=analysis.decision_reason)
     if qualitative_assessment is None:
-        return derive_grade(
-            analysis.match_score,
-            effective_decision=effective_decision(analysis),
-            has_blockers=bool(analysis.blockers),
-            confidence=analysis.confidence,
-            decision_reason=analysis.decision_reason,
-        )
-
-    existing = {
-        "base_grade": qualitative_assessment.get("base_grade"),
-        "capped_grade": qualitative_assessment.get("capped_grade"),
-        "cap_reason": qualitative_assessment.get("cap_reason"),
-        "grade_warning": qualitative_assessment.get("grade_warning"),
-    }
-    grade = apply_grade_to_assessment(
-        analysis.match_score,
-        qualitative_assessment,
-        effective_decision=effective_decision(analysis),
-        has_blockers=bool(analysis.blockers),
-        confidence=analysis.confidence,
-        decision_reason=analysis.decision_reason,
-    )
-    changed = (
-        existing["base_grade"] != qualitative_assessment.get("base_grade")
-        or existing["capped_grade"] != qualitative_assessment.get("capped_grade")
-        or existing["cap_reason"] != qualitative_assessment.get("cap_reason")
-        or existing["grade_warning"] != qualitative_assessment.get("grade_warning")
-    )
-    if changed:
-        save_qualitative_assessment(job_id, qualitative_assessment, config.state_root)
-    if qualitative_index is not None and qualitative_index.get("grade") != grade.get("display_grade"):
-        update_qualitative_grade(_index_db_path(config), job_id, grade.get("display_grade"))
-    return grade
-
+        return None, qualitative_index, baseline
+    try:
+        # Re-read the current artifact and index under the writer guard; never
+        # rewrite the stale full dict supplied by a previous GET read.
+        current = backfill_grade(_index_db_path(config), job_id, state_root=config.state_root, analysis=analysis)
+    except Exception:
+        current = None
+    if current is None:
+        return None, None, baseline
+    assessment, grade, row = current
+    return assessment, row, grade
 
 def handle_evaluate_form(req, config, responder, job_id):
     """GET /job/<id>/evaluate-form — reload a saved job into the Evaluate form.
@@ -674,8 +692,9 @@ def handle_evaluate_form(req, config, responder, job_id):
 
 
 def handle_job_explain(req, config, responder, job_id):
-    """GET /job/{id}/explain — return LLM explanation as JSON."""
-    from src.job_hunt_llm import explain_job_match_with_llm
+    """POST /job/{id}/explain — return LLM explanation as JSON."""
+    from src.job_hunt_llm import build_explain_fields, explain_source_text, explain_job_match_with_llm
+    from src.job_hunt_explain_check import create_check
     if not job_id.strip():
         responder.send_json({"ok": False, "error": "Missing job id"}, status=HTTPStatus.BAD_REQUEST)
         return
@@ -694,11 +713,31 @@ def handle_job_explain(req, config, responder, job_id):
     except Exception as exc:
         responder.send_json({"ok": False, "error": f"Could not load profile: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         return
+    fields = build_explain_fields(profile, reviewed_job, analysis)
     explanation, explain_error = explain_job_match_with_llm(profile, reviewed_job, analysis)
     if explanation is None:
         responder.send_json({"ok": False, "error": explain_error or "LLM unavailable"}, status=HTTPStatus.SERVICE_UNAVAILABLE)
         return
-    responder.send_json({"ok": True, **explanation})
+    check = create_check(job_id, explain_source_text(fields), explanation)
+    responder.send_json({"ok": True, **explanation, **check})
+
+
+def handle_job_explain_check(req, config, responder, job_id):
+    """Check only the current server-held explanation and its exact source."""
+    from src.job_hunt_explain_check import TOKEN_STORE, run_check
+    try:
+        load_reviewed_job(job_id, config.state_root)
+    except FileNotFoundError:
+        responder.send_json({"ok": False, "error": "Job not found"}, status=HTTPStatus.NOT_FOUND)
+        return
+    body = req.json_body
+    token = body.get("check_token") if isinstance(body, dict) and set(body) == {"check_token"} else None
+    entry = TOKEN_STORE.get(token, job_id) if isinstance(token, str) and token else None
+    if entry is None:
+        responder.send_json({"ok": True, "state": "stale"})
+        return
+    entry["state_root"] = config.state_root
+    responder.send_json(run_check(entry))
 
 
 def _job_load_failure(exc: Exception):
@@ -730,7 +769,7 @@ def handle_job_export(req, config, responder, job_id):
     except Exception:
         profile = None
     try:
-        data, _manifest = build_package(job_id, profile, state_root=config.state_root)
+        data, _manifest = build_package(job_id, profile, state_root=config.state_root, base_dir=config.profile_path.parent)
     except (FileNotFoundError, StorageError, ValueError, KeyError, TypeError) as exc:
         status, message = _job_load_failure(exc)
         responder.send_json({"ok": False, "error": message}, status=status)
@@ -746,8 +785,13 @@ def handle_job_export(req, config, responder, job_id):
 def handle_job_salary_benchmark(req, config, responder, job_id):
     """GET /job/{id}/salary-benchmark — advisory Adzuna salary histogram summary (JSON).
 
-    Advisory only: never touches scoring, decision or grade. The Adzuna key is never
-    included in any response or log (the client returns fixed-text errors).
+    This route itself is purely advisory and never touches scoring, decision or
+    grade. Revision 2 (2026-09-22) adds an EXPLICIT, separate user action —
+    "Save market position" (POST /job/{id}/market-position) — that persists a
+    STICKY snapshot on the job; only THAT snapshot, and only when the opt-in
+    market_score_effect_enabled() switch is on, can ever move the score (a fixed
+    -5 for "bottom quarter"). This GET route never saves anything. The Adzuna key
+    is never included in any response or log (the client returns fixed-text errors).
     """
     from src.job_sources.adzuna_client import fetch_adzuna_salary_histogram
     from src.job_sources.adzuna_source import _ensure_adzuna_env_loaded
@@ -796,93 +840,127 @@ def handle_job_salary_benchmark(req, config, responder, job_id):
     responder.send_json(payload, status=http_status)
 
 
-def handle_qualitative_assess(req, config, responder, job_id):
-    """POST /job/{id}/qualitative-assess — idempotent advisory assessment."""
-    from src.job_hunt_index import (
-        LLMQuotaExhausted,
-        claim_qualitative_assessment,
-        finish_qualitative_assessment,
-    )
-    from src.job_hunt_llm import RateLimited
-    from src.job_hunt_qualitative import (
-        PROMPT_VERSION,
-        run_qualitative_assessment_pipeline,
-    )
+def _load_job_and_analysis_for_market_route(job_id, config):
+    """Shared 400/404/422 validation for the market-position routes below.
 
+    Returns (reviewed_job, analysis, error_response) where error_response is
+    ``None`` on success, else a ``(status, message)`` tuple already appropriate
+    to send straight back to the client. Never raises; never touches the network
+    or the Adzuna cache — this only loads what is already on disk.
+    """
+    from src.job_hunt_export import validate_job_id
+
+    try:
+        validate_job_id(job_id)
+    except ValueError:
+        return None, None, (HTTPStatus.BAD_REQUEST, "Invalid job id")
+    try:
+        reviewed_job = load_reviewed_job(job_id, config.state_root)
+    except Exception as exc:
+        status, message = _job_load_failure(exc)
+        return None, None, (status, message)
+    try:
+        analysis = load_job_analysis(job_id, config.state_root)
+    except Exception as exc:
+        status, message = _job_load_failure(exc)
+        return None, None, (status, message)
+    return reviewed_job, analysis, None
+
+
+def handle_set_market_position(req, config, responder, job_id):
+    """POST /job/{id}/market-position — explicit user action only. Recomputes the
+    market position from the CACHED Adzuna histogram for this job's cleaned title
+    (never a fresh fetch); trusts nothing in the request body. STICKY: only this
+    route and its /clear sibling ever write JobAnalysis.market_snapshot.
+    """
+    from src.job_hunt_salary_benchmark import build_market_snapshot, clean_job_title
+    from src.job_sources.adzuna_client import read_cached_salary_histogram
+
+    reviewed_job, analysis, error = _load_job_and_analysis_for_market_route(job_id, config)
+    if error is not None:
+        status, message = error
+        responder.send_json({"ok": False, "error": message}, status=status)
+        return
+
+    query = clean_job_title(getattr(reviewed_job, "job_title", "") or "")
+    cache_dir = Path(config.state_root) / "cache" / "adzuna_salary"
+    cached = read_cached_salary_histogram(query, cache_dir=cache_dir)
+    if cached is None or cached.status not in ("ok", "no_data"):
+        responder.send_json({"ok": False, "error": "benchmark not fetched yet"}, status=HTTPStatus.CONFLICT)
+        return
+
+    snapshot = build_market_snapshot(
+        reviewed_job.salary_min_gbp, reviewed_job.salary_max_gbp, cached.to_dict(),
+        employment_type=reviewed_job.employment_type, query=query,
+    )
+    analysis = dataclasses.replace(analysis, market_snapshot=snapshot)
+    save_job_analysis(analysis, config.state_root)
+    responder.send_json({"ok": True, "market_snapshot": snapshot})
+
+
+def handle_clear_market_position(req, config, responder, job_id):
+    """POST /job/{id}/market-position/clear — remove a saved market snapshot."""
+    reviewed_job, analysis, error = _load_job_and_analysis_for_market_route(job_id, config)
+    if error is not None:
+        status, message = error
+        responder.send_json({"ok": False, "error": message}, status=status)
+        return
+    analysis = dataclasses.replace(analysis, market_snapshot=None)
+    save_job_analysis(analysis, config.state_root)
+    responder.send_json({"ok": True, "market_snapshot": None})
+
+
+def handle_qualitative_assess(req, config, responder, job_id):
+    """POST /job/{id}/qualitative-assess — owned advisory assessment."""
+    from src.job_hunt_index import LLMQuotaExhausted, claim_qualitative_assessment
+    from src.job_hunt_llm import RateLimited
+    from src.job_hunt_qualitative import PROMPT_VERSION, run_qualitative_assessment_pipeline
+    from src.job_hunt_qualitative_state import utc_now, archive_owned, transition, QualitativeOwnershipStopped
     if not job_id.strip():
-        responder.send_html(
-            render_page("Missing job id", "<p>Missing job id.</p>", model_label=config.model_label),
-            status=HTTPStatus.BAD_REQUEST,
-        )
+        responder.send_html(render_page("Missing job id", "<p>Missing job id.</p>", model_label=config.model_label), status=HTTPStatus.BAD_REQUEST)
         return
     try:
         load_reviewed_job(job_id, config.state_root)
     except FileNotFoundError:
-        responder.send_html(
-            render_page("Job not found", "<p>No saved job was found for that id.</p>", model_label=config.model_label),
-            status=HTTPStatus.NOT_FOUND,
-        )
+        responder.send_html(render_page("Job not found", "<p>No saved job was found for that id.</p>", model_label=config.model_label), status=HTTPStatus.NOT_FOUND)
         return
-
     force = str(req.form.get("force") or "").strip() == "1" or (
-        isinstance(req.json_body, dict) and str(req.json_body.get("force") or "").strip() == "1"
-    )
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        isinstance(req.json_body, dict) and str(req.json_body.get("force") or "").strip() == "1")
     db_path = _index_db_path(config)
-    claim = claim_qualitative_assessment(
-        db_path,
-        job_id,
-        now=now,
-        force=force,
-        model=None,
-        prompt_version=PROMPT_VERSION,
-    )
-    row = claim.get("row") or {}
+    claim = claim_qualitative_assessment(db_path, job_id, clock=utc_now, force=force,
+                                        model=None, prompt_version=PROMPT_VERSION)
     if not claim.get("claimed"):
-        flash = "Qualitative assessment is already running." if row.get("status") in {"pending", "running"} else None
+        flash = "Qualitative assessment is already running." if claim.get("in_flight") else None
         render_job(req, config, responder, job_id, flash=flash, flash_kind="success")
         return
-
-    if force:
-        archive_qualitative_assessment(job_id, config.state_root)
-
+    owner = claim["owner"]
     try:
+        if force:
+            outcome = archive_owned(db_path, owner, state_root=config.state_root, clock=utc_now)
+            if outcome != "active":
+                raise QualitativeOwnershipStopped(outcome)
         profile = load_candidate_profile(config.profile_path)
-    except Exception as exc:
-        finish_qualitative_assessment(
-            db_path, job_id, status="error", prompt_version=PROMPT_VERSION,
-            error_text=f"Could not load profile: {exc}",
-        )
-        render_job(req, config, responder, job_id, flash="Qualitative assessment failed.", flash_kind="error")
+        result = run_qualitative_assessment_pipeline(job_id=job_id, profile=profile,
+            state_root=config.state_root, db_path=db_path, owner=owner, clock=utc_now)
+    except QualitativeOwnershipStopped:
+        render_job(req, config, responder, job_id, flash="Qualitative assessment ownership changed. Try again.", flash_kind="error")
         return
-
-    quota_message = "daily LLM quota exhausted - try tomorrow"
-    try:
-        result = run_qualitative_assessment_pipeline(
-            job_id=job_id,
-            profile=profile,
-            state_root=config.state_root,
-            db_path=db_path,
-        )
     except LLMQuotaExhausted as exc:
-        last_error = str(exc) or quota_message
-        finish_qualitative_assessment(
-            db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=last_error,
-        )
-        render_job(req, config, responder, job_id, flash=last_error, flash_kind="error")
+        message = str(exc) or "daily LLM quota exhausted - try tomorrow"
+        transition(db_path, owner, mode="quota", error=message, state_root=config.state_root, clock=utc_now)
+        render_job(req, config, responder, job_id, flash=message, flash_kind="error")
         return
-    except RateLimited as exc:
-        last_error = str(exc) or "Gemini rate limited (429)"
-        finish_qualitative_assessment(
-            db_path, job_id, status="error", prompt_version=PROMPT_VERSION, error_text=last_error,
-        )
+    except Exception as exc:
+        message = str(exc) or exc.__class__.__name__
+        transition(db_path, owner, mode="error", error=message, state_root=config.state_root, clock=utc_now)
         render_job(req, config, responder, job_id, flash="Qualitative assessment failed.", flash_kind="error")
         return
-    if result.ok:
-        render_job(req, config, responder, job_id, flash="Qualitative assessment saved.")
-    else:
-        render_job(req, config, responder, job_id, flash="Qualitative assessment failed.", flash_kind="error")
-
+    if not result.ok and result.outcome not in {"lost", "cancelled"}:
+        transition(db_path, owner, mode="error", error=result.error or "qualitative assessment failed",
+                   state_root=config.state_root, clock=utc_now)
+    render_job(req, config, responder, job_id,
+        flash="Qualitative assessment saved." if result.ok else "Qualitative assessment failed.",
+        flash_kind="success" if result.ok else "error")
 
 def _take_skip_param_keys(search_values: dict) -> tuple[str, str]:
     """Return the (take_key, skip_key) param names a source uses for paging.
@@ -939,6 +1017,24 @@ def _parse_keyword_terms(raw: str) -> list[str]:
     return terms
 
 
+def _prepare_keyword_search(source, params: dict) -> tuple[dict, list[str]]:
+    """Normalize each capped term, never truncate the joined display vector."""
+    raw_terms = _parse_keyword_terms(params.get("keywords") or "")
+    values = source.normalize_search_params({**params, "keywords": ""})
+    terms: list[str] = []
+    seen: set[str] = set()
+    for term in raw_terms[:_MAX_KEYWORD_SEARCHES]:
+        normalized = source.normalize_search_params({**params, "keywords": term}).get("keywords", "").strip()
+        key = normalized.casefold()
+        if normalized and key not in seen:
+            seen.add(key)
+            terms.append(normalized)
+    values["keywords"] = ", ".join(terms)
+    if len(raw_terms) > _MAX_KEYWORD_SEARCHES:
+        values["_keyword_capped"] = str(_MAX_KEYWORD_SEARCHES)
+    return values, terms
+
+
 def _run_multi_keyword_search(source, search_values: dict, keyword_terms: list[str], *, offsets: list[int | None] | None = None):
     """Run one search per keyword term (same location/radius/other criteria
     from `search_values`), merge the raw results. Never a cross-product with
@@ -946,8 +1042,8 @@ def _run_multi_keyword_search(source, search_values: dict, keyword_terms: list[s
 
     Returns (merged_results, any_page_full, sub_errors, next_offsets):
     - `any_page_full` is True if ANY keyword's sub-search returned a full
-      page (>= take), used instead of a raw merged count to decide whether
-      a "Show more" page is offered.
+      page (>= take), used to bound hidden-page lookahead. Retryable
+      next_offsets, including failed searches, determine pagination.
     - `sub_errors` collects per-keyword failures without aborting the other
       keyword searches (partial failure never blanks out the whole page)."""
     take_key, skip_key = _take_skip_param_keys(search_values)
@@ -961,7 +1057,7 @@ def _run_multi_keyword_search(source, search_values: dict, keyword_terms: list[s
     sub_errors: list[str] = []
     next_offsets: list[int | None] = []
     for index, term in enumerate(terms):
-        offset = offsets[index] if offsets is not None else None
+        offset = offsets[index] if offsets is not None else int(search_values.get(skip_key, "0") or "0")
         if offset is None and offsets is not None:
             next_offsets.append(None)
             continue
@@ -1018,7 +1114,17 @@ def _parse_keyword_cursors(raw: str | None, term_count: int, *, default_offset: 
     return offsets
 
 
-def _render_other_results_fragment(source, results: list[dict[str, Any]], *, skip: int, nonce: str | None) -> str:
+def _render_other_results_fragment(
+    source, results: list[dict[str, Any]], *, skip: int, nonce: str | None,
+    main_results: list[dict[str, Any]] | None = None,
+) -> str:
+    # Exact UI identities already in the main bucket must not duplicate DOM IDs.
+    # Keep backend fuzzy matching and search/pagination semantics unchanged.
+    main_ids = {job_identity(source.source_id, row) for row in (main_results or [])}
+    results = [
+        row for row in results
+        if (identity := job_identity(source.source_id, row)) is None or identity not in main_ids
+    ]
     if not results or source.render_cards_fragment is None:
         return ""
     cards_html = source.render_cards_fragment(results, skip=skip, nonce=nonce)
@@ -1030,6 +1136,7 @@ def _render_other_results_fragment(source, results: list[dict[str, Any]], *, ski
         'match your search terms</summary>'
         f'<div style="margin-top:12px;">{cards_html}</div>'
         '</details>'
+        '<script>if(window.jstRegisterCards){jstRegisterCards(document);}</script>'
     )
 
 
@@ -1051,6 +1158,33 @@ def _apply_exclude_filter(results, raw_exclude: str):
     return kept, excluded
 
 
+def _search_binding(config, source_id: str, search_values: dict, exclude_raw: str):
+    """Bind a search to its active namespace and a frozen hidden-job lookup."""
+    from src.job_hunt_not_interested import hidden_lookup
+    profile = load_candidate_profile(config.profile_path)
+    lookup = hidden_lookup(state_root=config.state_root)
+    _take_key, skip_key = _take_skip_param_keys(search_values)
+    criteria = {
+        str(key): value for key, value in search_values.items()
+        if not str(key).startswith("_") and key not in {skip_key, "searchId", "keywordCursors", "excludeKeywords"}
+    }
+    criteria["excludeKeywords"] = sorted(_parse_exclude_terms(exclude_raw))
+    identity = [str(Path(config.state_root).resolve()), str(Path(config.profile_path).resolve()),
+                profile.candidate_id, source_id, criteria, sorted(lookup[0]), sorted(lookup[1])]
+    binding = hashlib.sha256(json.dumps(identity, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return binding, lookup
+
+
+def _search_restart_url(source_id: str, search_values: dict, exclude_raw: str) -> str:
+    from urllib.parse import quote, urlencode
+    _take_key, skip_key = _take_skip_param_keys(search_values)
+    params = {str(key): str(value) for key, value in search_values.items()
+              if not str(key).startswith("_") and key not in {skip_key, "searchId", "keywordCursors"}}
+    if exclude_raw:
+        params["excludeKeywords"] = exclude_raw
+    return "/search/" + quote(source_id, safe="") + "?" + urlencode(params)
+
+
 def handle_source_search(req, config, responder, source_id):
     params = req.query
     from src.job_sources.source_registry import get_source
@@ -1062,34 +1196,20 @@ def handle_source_search(req, config, responder, source_id):
         )
         return
     from urllib.parse import urlencode as _urlencode_ss
-    search_values = source.normalize_search_params(params)
+    search_values, keyword_terms = _prepare_keyword_search(source, params)
     search_values["_source_id"] = source_id  # carried through to _render_search_jobs_tab
     # Exclude-keywords: normalisers drop unknown keys, so read the raw field here
     # and carry it in search_values so it survives form re-render and paging.
     exclude_raw = (params.get("excludeKeywords") or "").strip()
     if exclude_raw:
         search_values["excludeKeywords"] = exclude_raw
-    # Multi-keyword (Slice D): parse chip-entered keywords from the RAW query
-    # field — the source normaliser only squashes/truncates one string, it
-    # doesn't split on commas. ONE location + radius only (search_values
-    # already carries exactly one locationName from the shared form).
-    raw_keywords = (params.get("keywords") or "").strip()
-    keyword_terms = _parse_keyword_terms(raw_keywords)
-    _keyword_capped = False
-    if len(keyword_terms) > _MAX_KEYWORD_SEARCHES:
-        keyword_terms = keyword_terms[:_MAX_KEYWORD_SEARCHES]
-        _keyword_capped = True
-    # Carry back exactly what was searched (post-cap) so the form/chip field
-    # and "Show more" URL reflect reality, not the untrimmed input.
-    search_values["keywords"] = ", ".join(keyword_terms)
-    if _keyword_capped:
-        search_values["_keyword_capped"] = str(_MAX_KEYWORD_SEARCHES)
+    binding, hidden_snapshot = _search_binding(config, source_id, search_values, exclude_raw)
     error: str | None = None
     results: list[dict[str, Any]] = []
     try:
         results, _any_full_page, _kw_sub_errors, _next_offsets = _run_multi_keyword_search(source, search_values, keyword_terms)
         if _kw_sub_errors:
-            if not results:
+            if not results and len(_kw_sub_errors) == len(keyword_terms or [""]):
                 error = f"{source.display_name} search failed: {'; '.join(_kw_sub_errors)}. Manual fallback is still available."
             else:
                 search_values["_partial_error_count"] = str(len(_kw_sub_errors))
@@ -1121,10 +1241,10 @@ def handle_source_search(req, config, responder, source_id):
             from src.job_hunt_not_interested import filter_results as _filter_ni
             _hidden_ct_total = 0
             if results:
-                results, _hidden_ct = _filter_ni(results, state_root=config.state_root)
+                results, _hidden_ct = _filter_ni(results, state_root=config.state_root, lookup=hidden_snapshot)
                 _hidden_ct_total += _hidden_ct
             if other_results:
-                other_results, _hidden_ct = _filter_ni(other_results, state_root=config.state_root)
+                other_results, _hidden_ct = _filter_ni(other_results, state_root=config.state_root, lookup=hidden_snapshot)
                 _hidden_ct_total += _hidden_ct
             if _hidden_ct_total:
                 search_values["_hidden_count"] = str(_hidden_ct_total)
@@ -1143,11 +1263,9 @@ def handle_source_search(req, config, responder, source_id):
             search_values["_excluded_count"] = str(_excl_ct_total)
     if other_results:
         search_values["_other_count"] = str(len(other_results))
-    # New search (Slice B): mint a fresh search-id and seed its "seen" set
-    # with both buckets, so later pages cannot reintroduce a result that was
-    # initially shown under Other results.
-    from src.job_sources.search_state import start_search
-    _search_id = start_search(results + other_results)
+    # Mint the ID locally; no seen state is consumed until rendering succeeds.
+    from src.job_sources.search_state import commit_initial_search, SearchRestartRequired
+    _search_id = uuid.uuid4().hex
     # Build "More jobs" URL for ANY source: same params, skip cursor advanced by
     # one page. Sources differ in param naming (Reed/Adzuna use camelCase
     # resultsToTake/resultsSkip; LinkedIn uses snake_case results_to_take/
@@ -1157,11 +1275,11 @@ def handle_source_search(req, config, responder, source_id):
         _take = int(search_values.get(take_key, "10") or "10")
     except (TypeError, ValueError):
         _take = 10
-    # Slice D: with multiple keyword sub-searches merged together, the merged
-    # raw count no longer reliably signals "there's another page" (many
-    # keywords each returning a partial page could still sum past `_take`) —
-    # use _any_full_page (did ANY sub-search return a full page) instead.
-    if not error and _take > 0 and _any_full_page:
+    # Offer another page for any pending per-term cursor, including failures.
+    # Successful short/empty pages exhaust only their own term; a failed first
+    # page remains at its requested offset instead of being encoded as exhausted.
+    next_cursor = None
+    if not error and _take > 0 and any(offset is not None for offset in _next_offsets):
         try:
             _cur_skip = int(search_values.get(skip_key, "0") or "0")
         except (TypeError, ValueError):
@@ -1175,7 +1293,25 @@ def handle_source_search(req, config, responder, source_id):
             _more_params["keywordCursors"] = _encode_keyword_cursors(_next_offsets)
         _more_params["searchId"] = _search_id
         search_values["_more_url"] = f"/search/{source_id}/more?" + _urlencode_ss(_more_params)
-    render_home(req, config, responder, tab="search", search_values=search_values, reed_results=results, reed_error=error, reed_other_results=other_results)
+        next_cursor = (_cur_skip + _take, tuple(_next_offsets))
+    if error:
+        render_home(req, config, responder, tab="search", search_values=search_values,
+                    reed_results=results, reed_error=error, reed_other_results=other_results)
+        return
+    page = render_home(req, config, responder, tab="search", search_values=search_values,
+                       reed_results=results, reed_error=None, reed_other_results=other_results, prepare_only=True)
+    if not isinstance(page, str):
+        raise TypeError("Search renderer must return prepared HTML")
+    try:
+        if _search_binding(config, source_id, search_values, exclude_raw)[0] != binding:
+            raise SearchRestartRequired("Search settings changed. Run the search again.")
+        commit_initial_search(_search_id, binding, results + other_results, next_cursor)
+    except SearchRestartRequired as exc:
+        search_values.pop("_more_url", None)
+        render_home(req, config, responder, tab="search", search_values=search_values,
+                    reed_results=[], reed_error=str(exc), reed_other_results=[])
+        return
+    responder.send_html(page)
 
 
 def handle_source_select(req, config, responder, source_id):
@@ -1257,6 +1393,7 @@ def render_result(req, config, responder, result):
         result.reviewed_job, result.analysis, outcome,
         flash="Job evaluated and saved locally.", flash_kind="success",
         model_label=config.model_label,
+        **_ai_cv_saved_fields(config, result.reviewed_job.job_id),
     ))
     responder.send_html(page)
 
@@ -1277,6 +1414,8 @@ def handle_prefill(req, config, responder):
 
     values = default_form_values()
     values.update({key: stringify_form_value(value) for key, value in payload.items() if key in values})
+    # Slice 1c: parse_job_from_text/_url use the local keyword scan for skills.
+    values["skill_extraction_method"] = "keyword"
     if mode == "paste":
         values["input_method"] = "copied_text"
         values["copied_text"] = form.get("job_text", "")
@@ -1450,38 +1589,49 @@ def handle_add_gap_skills(req, config, responder, job_id):
         responder.send_json({"ok": True, "added": [], "skipped": []})
         return
 
-    # Load the active profile
+    # Discover identity without holding one file lock while acquiring another.
     profile_path = config.profile_path
     try:
-        profile_obj = load_candidate_profile(profile_path)
+        active_id = load_candidate_profile(profile_path).candidate_id
     except FileNotFoundError:
         responder.send_json({"ok": False, "error": "Profile not found — save your profile first"}, status=HTTPStatus.NOT_FOUND)
         return
+    profile_dir = _allowed_profile_dir(active_id)
+    if profile_dir is None:
+        responder.send_json({"ok": False, "error": "Invalid profile ID"}, status=HTTPStatus.BAD_REQUEST)
+        return
+    canonical_path = profile_dir / "candidate_profile.json"
+    with profile_update_lock(canonical_path, profile_path):
+        # Re-read after locking; merging must use the current canonical profile.
+        if load_candidate_profile(profile_path).candidate_id != active_id:
+            responder.send_json({"ok": False, "error": "Active profile changed; retry this update"}, status=HTTPStatus.CONFLICT)
+            return
+        profile_obj = _latest_profile_for_update(canonical_path, config, active_id)
+        existing_names = {s.name.lower() for s in profile_obj.skills}
+        added: list[str] = []
+        skipped: list[str] = []
+        new_skills = list(profile_obj.skills)  # copy
+        for skill_name in incoming:
+            if skill_name.lower() in existing_names:
+                skipped.append(skill_name)
+            else:
+                new_skills.append(Skill(name=skill_name, level="unspecified"))
+                existing_names.add(skill_name.lower())
+                added.append(skill_name)
 
-    existing_names = {s.name.lower() for s in profile_obj.skills}
-    added: list[str] = []
-    skipped: list[str] = []
-    new_skills = list(profile_obj.skills)  # copy
-    for skill_name in incoming:
-        if skill_name.lower() in existing_names:
-            skipped.append(skill_name)
-        else:
-            new_skills.append(Skill(name=skill_name, level="unspecified"))
-            existing_names.add(skill_name.lower())
-            added.append(skill_name)
-
-    if added:
-        import dataclasses
-        updated_profile = dataclasses.replace(profile_obj, skills=new_skills)
-        save_candidate_profile(updated_profile, profile_path)
-        logger.info("Added %d gap skill(s) to profile for job %s: %s", len(added), job_id, added)
+        if added:
+            import dataclasses
+            updated_profile = dataclasses.replace(profile_obj, skills=new_skills)
+            save_candidate_profile(updated_profile, canonical_path)
+            save_candidate_profile(updated_profile, profile_path)
+            logger.info("Added %d gap skill(s) to profile for job %s: %s", len(added), job_id, added)
 
     responder.send_json({"ok": True, "added": added, "skipped": skipped})
 
 
-def handle_ai_review_cv(req, config, responder, job_id):
+def handle_ai_review_cv(req, config, responder, job_id, *, _revise=False):
     """POST /job/{id}/ai-review-cv — Gemini lightly rewrites the master CV for this job."""
-    from src.job_hunt_llm import ai_review_cv_with_llm
+    from src.job_hunt_llm import _MAX_CV_REVIEW_CHARS, ai_rewrite_cv
 
     if not isinstance(job_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", job_id) or job_id in {".", ".."}:
         responder.send_json({"ok": False, "error": "Job not found"}, status=HTTPStatus.NOT_FOUND)
@@ -1514,45 +1664,181 @@ def handle_ai_review_cv(req, config, responder, job_id):
         responder.send_json({"ok": False, "error": f"Could not load profile: {exc}"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         return
 
-    cv_text: str | None = profile.master_cv_text
-    if not cv_text:
-        if profile.master_cv_ref:
-            try:
-                from src.job_hunt_profile import load_master_cv
-                cv_ref_path = Path(profile.master_cv_ref)
-                if not cv_ref_path.is_absolute():
-                    cv_ref_path = config.profile_path.parent / cv_ref_path
-                cv_text = load_master_cv(cv_ref_path)
-            except Exception as exc:
-                logger.warning("Could not read master CV %s: %s", profile.master_cv_ref, exc)
-                responder.send_json({"ok": False, "error": "CV file could not be read. Re-upload on the Profile page."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
-                return
-        else:
-            responder.send_json({"ok": False, "error": "No master CV on profile. Upload your CV on the Profile page first."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
-            return
+    from src.job_hunt_cv_review import (
+        AI_REVIEW_LOCK, MissingMasterCVError, UnreadableMasterCVError,
+        build_review_source, canonical_cv_body, compute_binding, delete_review_record,
+        item_statuses, link_and_clear, overall_verdict, resolve_master_cv_text,
+        run_blind_review, run_layer0, write_review_record,
+    )
+    try:
+        cv_text = resolve_master_cv_text(profile, config.profile_path.parent)
+    except MissingMasterCVError:
+        responder.send_json({"ok": False, "error": "No master CV on profile. Upload your CV on the Profile page first."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
+        return
+    except UnreadableMasterCVError as exc:
+        logger.warning("Could not read master CV %s: %s", getattr(profile, 'master_cv_ref', None), exc)
+        responder.send_json({"ok": False, "error": "CV file could not be read. Re-upload on the Profile page."}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
+        return
 
-    # Call LLM
-    result, error, model_used = ai_review_cv_with_llm(cv_text, profile, job, analysis)
-    if result is None:
+    # The writer only sees the first _MAX_CV_REVIEW_CHARS characters, so refuse a longer CV
+    # instead of rewriting a truncated copy.  Checked before consent and any cloud call.
+    if len(cv_text) > _MAX_CV_REVIEW_CHARS:
+        responder.send_json({"ok": False, "error": "cv_too_long_for_ai_review"}, status=HTTPStatus.UNPROCESSABLE_ENTITY)
+        return
+
+    # Per-click cloud consent: only the exact boolean True passes (same rule as
+    # extract_skills_from_cv).  A missing, malformed or non-boolean body is no consent.
+    body = getattr(req, "json_body", None)
+    if not (isinstance(body, dict) and body.get("use_cloud") is True):
+        responder.send_json({"ok": False, "error": "consent_required"}, status=HTTPStatus.FORBIDDEN)
+        return
+
+    if body.get("consent_scope", "gemini") != consent_scope():
+        error = "consent_stale" if "consent_scope" in body else "AI services changed - reload the page"
+        responder.send_json({"error": error}, status=HTTPStatus.CONFLICT)
+        return
+
+    if not AI_REVIEW_LOCK.acquire(blocking=False):
+        responder.send_json({"ok": False, "error": "busy"}, status=HTTPStatus.CONFLICT)
+        return
+    try:
+        if _revise:
+            from src.job_hunt_cv_review import read_review_record
+            record = read_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id)
+            if (record is None or not isinstance(body.get("generation_id"), str)
+                    or body["generation_id"] != record["generation_id"]):
+                responder.send_json({"ok": False, "error": "stale"}, status=HTTPStatus.CONFLICT)
+                return
+            if not _ai_cv_binding_current(record, profile, cv_text, job_id):
+                responder.send_json({"ok": False, "error": "inputs_changed"}, status=HTTPStatus.CONFLICT)
+                return
+            if record["revise_round"] != 0 or record["verdict"] not in {"BLOCKED", "NEEDS_EDIT"}:
+                responder.send_json({"ok": False, "error": "not_revisable"}, status=HTTPStatus.CONFLICT)
+                return
+            findings = [
+                {"statement": finding["text"], "reason": finding["rule"] + ": " + finding["detail"]}
+                for finding in record["l0_findings"]
+                if finding["severity"] == "BLOCKER" or (
+                    finding["severity"] == "MAJOR" and finding["cleared_by"] is None)
+            ]
+            findings.extend({"statement": item["text"], "reason": item["reason"]}
+                            for item in record["items"] if item["severity"] in {"BLOCKER", "MAJOR"})
+            _run_ai_cv_generation(config, responder, job_id, profile, cv_text, job, analysis,
+                                  revise_round=1, revision_findings=findings)
+        else:
+            _run_ai_cv_generation(config, responder, job_id, profile, cv_text, job, analysis)
+    finally:
+        AI_REVIEW_LOCK.release()
+
+
+def handle_ai_review_cv_revise(req, config, responder, job_id):
+    """Explicitly consent to the one permitted revision of a current generation."""
+    handle_ai_review_cv(req, config, responder, job_id, _revise=True)
+
+
+def _ai_cv_binding_current(record, profile, cv_text, job_id):
+    """Compare the entire binding against the current canonical on-disk body."""
+    from src.job_hunt_cv_review import build_review_source, canonical_cv_body, compute_binding
+    try:
+        path = Path(DEFAULT_TAILORING_POLICY.output_dir) / f"{job_id}_ai_reviewed.md"
+        body = canonical_cv_body(path.read_text(encoding="utf-8"))
+        evidence, context = build_review_source(profile, cv_text)
+        return record["binding"] == compute_binding(profile, cv_text, evidence, context, body, job_id)
+    except (OSError, ValueError, UnicodeError):
+        return False
+
+
+def handle_ai_review_cv_approve(req, config, responder, job_id):
+    """Approve only the exact current generation and current source snapshot."""
+    from datetime import datetime, timezone
+    from src.job_hunt_cv_review import (
+        AI_REVIEW_LOCK, read_review_record, resolve_master_cv_text, write_review_record,
+    )
+    if not isinstance(job_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", job_id) or job_id in {".", ".."}:
+        responder.send_json({"ok": False, "error": "Job not found"}, status=HTTPStatus.NOT_FOUND)
+        return
+    body = getattr(req, "json_body", None)
+    if (not isinstance(body, dict) or not isinstance(body.get("generation_id"), str)
+            or not isinstance(body.get("rewrite_sha256"), str)):
+        responder.send_json({"ok": False, "error": "bad_request"}, status=HTTPStatus.BAD_REQUEST)
+        return
+    if not AI_REVIEW_LOCK.acquire(blocking=False):
+        responder.send_json({"ok": False, "error": "busy"}, status=HTTPStatus.CONFLICT)
+        return
+    try:
+        record = read_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id)
+        current = False
+        if (record is not None and body["generation_id"] == record["generation_id"]
+                and body["rewrite_sha256"] == record["binding"]["rewrite_sha256"]):
+            try:
+                profile = load_candidate_profile(config.profile_path)
+                cv_text = resolve_master_cv_text(profile, config.profile_path.parent)
+                current = _ai_cv_binding_current(record, profile, cv_text, job_id)
+            except Exception:
+                current = False
+        if not current:
+            responder.send_json({"ok": False, "error": "stale"}, status=HTTPStatus.CONFLICT)
+            return
+        record["approval"] = {"approved_at": datetime.now(timezone.utc).isoformat(),
+                              "generation_id": record["generation_id"],
+                              "rewrite_sha256": record["binding"]["rewrite_sha256"]}
+        write_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id, record)
+        responder.send_json({"ok": True, "verdict": record["verdict"],
+                             "approval": record["approval"]})
+    finally:
+        AI_REVIEW_LOCK.release()
+
+
+def _run_ai_cv_generation(config, responder, job_id, profile, cv_text, job, analysis,
+                          *, revise_round=0, revision_findings=None):
+    """Generate, check and commit one snapshot while the caller owns the lock."""
+    from src.job_hunt_llm import ai_rewrite_cv
+    from src.job_hunt_cv_review import (
+        build_review_source, canonical_cv_body, compute_binding, delete_review_record,
+        item_statuses, link_and_clear, overall_verdict, run_blind_review, run_layer0,
+        write_review_record,
+    )
+    from datetime import datetime, timezone
+    from uuid import uuid4
+    from src.job_hunt_parsing import KNOWN_SKILLS
+
+    evidence, context = build_review_source(profile, cv_text)
+    if revision_findings is None:
+        result, error, model_used = ai_rewrite_cv(cv_text, profile, job, analysis)
+    else:
+        result, error, model_used = ai_rewrite_cv(
+            cv_text, profile, job, analysis, revision_findings=revision_findings)
+    if (not isinstance(result, dict) or not isinstance(result.get("reviewed_cv"), str)
+            or not result["reviewed_cv"].strip()):
         responder.send_json({"ok": False, "error": error or "AI CV review failed"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
         return
 
-    reviewed_cv = result["reviewed_cv"]
+    reviewed_cv = result["reviewed_cv"].replace("\r\n", "\n").replace("\r", "\n")
+    writer_result = {**result, "reviewed_cv": reviewed_cv}
     changes = result["changes"]
-
-    # Save to tailored_cvs/{job_id}_ai_reviewed.md.  Treat route data as untrusted
-    # here too: an AI review may be displayed without saving, but must never write
-    # outside the configured output directory.
+    job_skills = list(getattr(job, 'required_skills', [])) + list(getattr(job, 'preferred_skills', []))
+    findings = run_layer0(cv_text, evidence, context, reviewed_cv, job_skills, KNOWN_SKILLS)
+    review = run_blind_review(cv_text, evidence, context, job_skills, writer_result, model_used)
+    findings = link_and_clear(findings, review['items'])
+    findings = [finding if isinstance(finding, dict) else vars(finding) for finding in findings]
+    verdict = overall_verdict(findings, item_statuses(review['items']))
+    generation_id = uuid4().hex
+    saved_text = (f"<!-- ai_reviewed: true | model: {model_used} | profile_id: {profile.candidate_id} -->\n"
+                  f"{reviewed_cv.strip()}\n")
+    binding = compute_binding(profile, cv_text, evidence, context, canonical_cv_body(saved_text), job_id)
+    record = {
+        'schema_version': 1, 'generation_id': generation_id, 'verdict': verdict,
+        'l0_findings': findings, 'items': review['items'],
+        'reviewer_model': review['reviewer_model'], 'prompt_version': review['prompt_version'],
+        'binding': binding, 'writer_model': model_used or 'unknown',
+        'created_at': datetime.now(timezone.utc).isoformat(), 'revise_round': revise_round,
+        'approval': None,
+    }
     try:
-        if not re.fullmatch(r"[A-Za-z0-9._-]+", job_id) or job_id in {".", ".."}:
-            raise ValueError("invalid job_id")
-        output_dir = DEFAULT_TAILORING_POLICY.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
-        save_path = output_dir / f"{job_id}_ai_reviewed.md"
-        save_path.write_text(
-            f"<!-- ai_reviewed: true | model: {model_used} | profile_id: {profile.candidate_id} -->\n{reviewed_cv.strip()}\n",
-            encoding="utf-8",
-        )
+        delete_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id)
+        save_path = write_cv_text(DEFAULT_TAILORING_POLICY.output_dir,
+                                  f"{job_id}_ai_reviewed.md", saved_text)
+        write_review_record(DEFAULT_TAILORING_POLICY.output_dir, job_id, record)
         logger.info("AI-reviewed CV saved to %s", save_path)
     except Exception as exc:
         logger.warning("Could not save AI-reviewed CV (non-fatal): %s", exc)
@@ -1564,6 +1850,12 @@ def handle_ai_review_cv(req, config, responder, job_id):
         "changes": changes,
         "saved_path": save_path.name if save_path else None,
         "model_used": model_used or "unknown",
+        "review": {"verdict": verdict, "l0_findings": findings,
+                   "items": review['items'], "reviewer_model": review['reviewer_model']},
+        "generation_id": generation_id,
+        "rewrite_sha256": binding['rewrite_sha256'],
+        "revise_round": revise_round,
+        "approval": None,
     })
 
 
@@ -1576,9 +1868,20 @@ _ATS_RECHECK_LOCKS: "defaultdict[str, threading.Lock]" = defaultdict(threading.L
 def handle_ats_recheck(req, config, responder, job_id):
     """POST /job/{id}/ats-recheck — re-score keyword match against the latest tailored CV."""
     with _ATS_RECHECK_LOCKS[job_id]:
-        # Tailored CV first (path-safety / empty-file gates) before any state read.
+        # Validate the active identity before reading any tailored CV.
         try:
-            tailored = load_latest_tailored_cv(job_id)
+            profile = load_candidate_profile(config.profile_path)
+        except (OSError, ValueError):
+            responder.send_json(
+                {"ok": False, "error": "Could not load active profile."},
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+            return
+
+        # Tailored CV path-safety / empty-file gates precede job-analysis reads.
+        try:
+            tailored = load_latest_tailored_cv(job_id, expected_profile_id=profile.candidate_id,
+                                               profile=profile, base_dir=config.profile_path.parent)
         except EmptyTailoredCVError:
             responder.send_json(
                 {"ok": False, "error": "Tailored CV is empty — re-tailor your CV first."},
@@ -1652,7 +1955,7 @@ def handle_get_board(req, config, responder):
 def handle_get_board_view(req, config, responder):
     from src.job_hunt_index import query_board
     board = query_board(_index_db_path(config))
-    responder.send_html(render_board_page(board, model_label=config.model_label))
+    responder.send_html(render_board_page(board, model_label=config.model_label, consent_scope=consent_scope()))
 
 
 def handle_batch_evaluate(req, config, responder):
@@ -1705,6 +2008,7 @@ def handle_batch_evaluate(req, config, responder):
             if result.reviewed_job.salary_max_gbp:
                 sal_parts.append(f"£{int(result.reviewed_job.salary_max_gbp):,}")
             results.append({
+                "index": i,
                 "job_id": result.reviewed_job.job_id,
                 "title": result.reviewed_job.job_title,
                 "company": result.reviewed_job.company,
@@ -1720,6 +2024,10 @@ def handle_batch_evaluate(req, config, responder):
     responder.send_json({"ok": True, "jobs": results, "errors": errors})
 
 
+class _SearchPageSourceError(RuntimeError):
+    """A retryable provider failure; it must not consume search state."""
+
+
 def handle_source_search_more(req, config, responder, source_id):
     """GET /search/{source_id}/more?... — AJAX endpoint returning the next page of
     cards as JSON, for any source that registered a ``render_cards_fragment``.
@@ -1727,7 +2035,7 @@ def handle_source_search_more(req, config, responder, source_id):
     Works for Reed, Adzuna and LinkedIn alike: it normalises the query through the
     source's own normaliser (so each source's param naming and skip cursor are
     honoured), re-runs the search one page deep, and renders the bare cards with
-    their ids offset by ``skip`` so they never collide with already-shown cards."""
+    their stable source/job identities across pages."""
     from urllib.parse import urlencode as _urlencode
     from src.job_sources.source_registry import get_source
     source = get_source(source_id)
@@ -1736,8 +2044,15 @@ def handle_source_search_more(req, config, responder, source_id):
             {"ok": False, "error": f"Source '{source_id}' does not support pagination."}
         )
         return
-    search_values = source.normalize_search_params(req.query)
+    search_values, keyword_terms = _prepare_keyword_search(source, req.query)
     take_key, skip_key = _take_skip_param_keys(search_values)
+    try:
+        if int(req.query.get(skip_key, "0") or "0") < 0:
+            raise ValueError("negative offset")
+    except (TypeError, ValueError):
+        responder.send_json({"ok": False, "error": "Invalid keyword pagination cursor."}, status=HTTPStatus.BAD_REQUEST)
+        return
+
     try:
         take = int(search_values.get(take_key, "10") or "10")
     except (TypeError, ValueError):
@@ -1748,7 +2063,6 @@ def handle_source_search_more(req, config, responder, source_id):
         skip = 0
     # Multi-keyword searches keep one bounded cursor per term. An exhausted
     # term is never re-queried while another term continues to paginate.
-    keyword_terms = _parse_keyword_terms(search_values.get("keywords", ""))[:_MAX_KEYWORD_SEARCHES]
     effective_terms = keyword_terms or [""]
     offsets = _parse_keyword_cursors(
         req.query.get("keywordCursors"), len(effective_terms), default_offset=skip,
@@ -1758,8 +2072,14 @@ def handle_source_search_more(req, config, responder, source_id):
         return
     exclude_raw = (req.query.get("excludeKeywords") or "").strip()
     search_id = (req.query.get("searchId") or "").strip() or None
+    from src.job_sources.search_state import prepare_page, PreparedSearchPage, SearchRestartRequired
+    try:
+        binding, hidden_snapshot = _search_binding(config, source_id, search_values, exclude_raw)
+    except Exception:
+        responder.send_json({"ok": False, "error": "Could not load search settings. Try again."})
+        return
 
-    def _prepare_page(raw_results: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:
+    def _prepare_page(raw_results, draft) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:
         """Apply the same bucket/filter/dedup pipeline as an initial search."""
         hidden_count = 0
         hidden_or_excluded_count = 0
@@ -1778,10 +2098,10 @@ def handle_source_search_more(req, config, responder, source_id):
             try:
                 from src.job_hunt_not_interested import filter_results as _filter_ni
                 if main_results:
-                    main_results, hidden_count = _filter_ni(main_results, state_root=config.state_root)
+                    main_results, hidden_count = _filter_ni(main_results, state_root=config.state_root, lookup=hidden_snapshot)
                     hidden_or_excluded_count += hidden_count
                 if other_page_results:
-                    other_page_results, other_hidden_count = _filter_ni(other_page_results, state_root=config.state_root)
+                    other_page_results, other_hidden_count = _filter_ni(other_page_results, state_root=config.state_root, lookup=hidden_snapshot)
                     hidden_count += other_hidden_count
                     hidden_or_excluded_count += other_hidden_count
             except Exception as exc:
@@ -1795,80 +2115,73 @@ def handle_source_search_more(req, config, responder, source_id):
             hidden_count += excluded_count
             hidden_or_excluded_count += excluded_count
         if main_results:
-            from src.job_sources.search_state import filter_new_page
             before_cross_page = len(main_results)
-            main_results = filter_new_page(search_id, main_results)
+            main_results = draft.filter_new(main_results)
             hidden_count += before_cross_page - len(main_results)
         if other_page_results:
-            from src.job_sources.search_state import filter_new_page
             before_cross_page = len(other_page_results)
-            other_page_results = filter_new_page(search_id, other_page_results)
+            other_page_results = draft.filter_new(other_page_results)
             hidden_count += before_cross_page - len(other_page_results)
         return main_results, other_page_results, hidden_count, hidden_or_excluded_count
 
-    # When a whole requested page is hidden/excluded, inspect only a bounded
-    # number of following source pages. A visible "Other result" is a valid
-    # result and therefore stops look-ahead without promoting it to the main
-    # bucket.
-    raw_count = 0
-    hidden_count = 0
-    results: list[dict[str, Any]] = []
-    other_results: list[dict[str, Any]] = []
-    any_full_page = False
-    next_offsets = offsets
-    current_offsets = offsets
-    pages_advanced = 0
-    while True:
-        try:
+    def produce_page(draft):
+        # Look ahead only through entirely hidden/excluded source pages. All
+        # draft changes remain local until fragments and the successor render.
+        raw_count = hidden_count = pages_advanced = 0
+        next_offsets = current_offsets = offsets
+        while True:
             raw_results, any_full_page, kw_sub_errors, next_offsets = _run_multi_keyword_search(
                 source, search_values, effective_terms, offsets=current_offsets,
             )
-        except Exception as exc:
-            responder.send_json({"ok": False, "error": str(exc)})
-            return
-        if kw_sub_errors and not raw_results:
-            responder.send_json({"ok": False, "error": "; ".join(kw_sub_errors)})
-            return
-        raw_count += len(raw_results)
-        results, other_results, page_hidden_count, page_hidden_or_excluded_count = _prepare_page(raw_results)
-        hidden_count += page_hidden_count
-        if (
-            results
-            or other_results
-            or not any_full_page
-            or not page_hidden_or_excluded_count
-            or pages_advanced >= _MAX_HIDDEN_PAGE_LOOKAHEAD
-        ):
-            break
-        pages_advanced += 1
-        current_offsets = next_offsets
-    nonce = create_select_nonce()
-    display_skip = skip + (take * pages_advanced)
-    cards_html = source.render_cards_fragment(results, skip=display_skip, nonce=nonce)
-    other_results_html = _render_other_results_fragment(source, other_results, skip=display_skip + len(results), nonce=nonce)
-    has_more = take > 0 and any_full_page
-    next_params = {
-        str(k): str(v) for k, v in search_values.items()
-        if not str(k).startswith("_") and k != skip_key
-    }
-    if exclude_raw:
-        next_params["excludeKeywords"] = exclude_raw
-    next_params[skip_key] = str(display_skip + take)
-    if len(keyword_terms) > 1:
-        next_params["keywordCursors"] = _encode_keyword_cursors(next_offsets)
-    if search_id:
+            if kw_sub_errors and not raw_results and len(kw_sub_errors) == sum(offset is not None for offset in current_offsets):
+                raise _SearchPageSourceError("; ".join(kw_sub_errors))
+            raw_count += len(raw_results)
+            results, other_results, page_hidden_count, page_hidden_or_excluded_count = _prepare_page(raw_results, draft)
+            hidden_count += page_hidden_count
+            if (results or other_results or kw_sub_errors or not any_full_page
+                    or not page_hidden_or_excluded_count or pages_advanced >= _MAX_HIDDEN_PAGE_LOOKAHEAD):
+                break
+            pages_advanced += 1
+            current_offsets = next_offsets
+        nonce = create_select_nonce()
+        display_skip = skip + (take * pages_advanced)
+        cards_html = source.render_cards_fragment(results, skip=display_skip, nonce=nonce)
+        other_results_html = _render_other_results_fragment(source, other_results, skip=display_skip + len(results), nonce=nonce, main_results=results)
+        has_more = take > 0 and any(offset is not None for offset in next_offsets)
+        next_params = {
+            str(k): str(v) for k, v in search_values.items()
+            if not str(k).startswith("_") and k != skip_key
+        }
+        if exclude_raw:
+            next_params["excludeKeywords"] = exclude_raw
+        next_params[skip_key] = str(display_skip + take)
+        if len(keyword_terms) > 1:
+            next_params["keywordCursors"] = _encode_keyword_cursors(next_offsets)
         next_params["searchId"] = search_id
-    next_url = f"/search/{source_id}/more?" + _urlencode(next_params)
-    responder.send_json({
-        "ok": True,
-        "cards_html": cards_html,
-        "other_results_html": other_results_html,
-        "has_more": has_more,
-        "next_url": next_url,
-        "count": raw_count,
-        "visible_count": len(results) + len(other_results),
-        "hidden_count": hidden_count,
-    })
+        next_url = f"/search/{source_id}/more?" + _urlencode(next_params)
+        return PreparedSearchPage({
+            "ok": True, "cards_html": cards_html, "other_results_html": other_results_html,
+            "has_more": has_more, "next_url": next_url, "count": raw_count,
+            "visible_count": len(results) + len(other_results), "hidden_count": hidden_count,
+        }, (display_skip + take, tuple(next_offsets)) if has_more else None)
+
+    try:
+        payload = prepare_page(
+            search_id, binding, (skip, tuple(offsets)), produce_page,
+            current_binding=lambda: _search_binding(config, source_id, search_values, exclude_raw)[0],
+        )
+    except SearchRestartRequired as exc:
+        responder.send_json({"ok": False, "restart_required": True, "error": str(exc),
+                             "restart_url": _search_restart_url(source_id, search_values, exclude_raw)},
+                            status=HTTPStatus.CONFLICT)
+        return
+    except _SearchPageSourceError as exc:
+        responder.send_json({"ok": False, "error": str(exc)})
+        return
+    except Exception:
+        responder.send_json({"ok": False, "error": "Could not prepare next page. Try again."})
+        return
+    responder.send_json(payload)
 
 
 def _read_json_body(req, responder) -> dict | None:
@@ -1981,7 +2294,11 @@ def handle_get_review_queue(req, config, responder):
     if not active_id or not any(j["job_id"] == active_id for j in jobs_info):
         active_id = jobs_info[0]["job_id"]
     ids_csv = ",".join(j["job_id"] for j in jobs_info)
-    responder.send_html(render_review_queue_page(ReviewQueueViewModel(jobs=jobs_info, active_id=active_id, ids_csv=ids_csv, model_label=config.model_label)))
+    responder.send_html(render_review_queue_page(ReviewQueueViewModel(
+        jobs=jobs_info, active_id=active_id, ids_csv=ids_csv, model_label=config.model_label,
+        apply_threshold=DEFAULT_DECISION_POLICY.apply_threshold,
+        review_threshold=DEFAULT_DECISION_POLICY.review_threshold,
+    )))
 
 
 def _batch_assess_selected_ids(req) -> list[str]:
@@ -2356,6 +2673,7 @@ def handle_digest(req, config, responder):
     except Exception:
         searches = []
     page = render_digest_page(
+        consent_scope=consent_scope(),
         entries=entries,
         filters=raw,
         sources=get_enabled_sources(),
@@ -2878,15 +3196,23 @@ def _render_search_jobs_tab(
     # title didn't closely match the search query's role-family terms.
     # Never dropped outright — reuses the source's own render_cards_fragment
     # (already used for AJAX "Show more") instead of a second card renderer.
-    # IDs are offset past the main list's so they never collide in the DOM.
+    # Exact identities in the main bucket are omitted from this display bucket.
     other_results_html = ""
     if active_search_source and reed_other_results:
         for source in sources:
             if source.source_id == active_search_source and source.render_cards_fragment:
                 other_results_html = _render_other_results_fragment(
-                    source, reed_other_results, skip=len(reed_results or []), nonce=reed_select_nonce
+                    source, reed_other_results, skip=len(reed_results or []), nonce=reed_select_nonce, main_results=reed_results
                 )
                 break
+
+    retry_url = (search_values or {}).get("_more_url")
+    if not reed_results and (other_results_html or retry_url):
+        # Empty source renderers omit paging/scaffolding. Failed terms still need
+        # a working retry button and insertion target, even with no visible jobs.
+        if retry_url:
+            source_results_html += '<div id="jst-cards-container">' + more_button_html(retry_url) + '</div>'
+        source_results_html += ACTION_BAR + STAGING_OVERLAY + multiselect_script()
 
     # Not-interested note: explains short (or fully empty) pages caused by the
     # server-side hide filter, so a filtered page never looks broken.
@@ -2975,7 +3301,7 @@ def _keyword_match_vm_fields(reviewed_job, analysis) -> dict:
 
 def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash,
                        qualitative_assessment=None, qualitative_index=None, qualitative_grade=None, flash_kind="success",
-                       embed=False, model_label="") -> "JobPageViewModel":
+                       embed=False, model_label="", ai_cv_saved=None, ai_cv_stale=False) -> "JobPageViewModel":
     if analysis is not None:
         sb = analysis.score_breakdown
         rows = [
@@ -2997,6 +3323,8 @@ def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash,
                         if r.code not in _SKILL_GAP_CODES_VM],
             missing_required_skills=list(analysis.missing_required_skills),
             missing_preferred_skills=list(analysis.missing_preferred_skills),
+            market_snapshot=analysis.market_snapshot,
+            market_adjustment=analysis.market_adjustment,
             **_keyword_match_vm_fields(reviewed_job, analysis),
         )
     else:
@@ -3005,11 +3333,13 @@ def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash,
             decision=None, decision_reason=None, user_decision=None, effective_decision="skip",
             score_breakdown_rows=[], blockers=[], strengths=[], risk_items=[],
             missing_required_skills=[], missing_preferred_skills=[],
+            market_snapshot=None, market_adjustment=None,
             keyword_match_rate=None, keywords_required_matched=[], keywords_required_missing=[],
             keywords_preferred_matched=[], keywords_preferred_missing=[], keywords_overused=[],
             keyword_match_baseline_rate=None, keyword_match_source="master",
         )
     return JobPageViewModel(
+        consent_scope=consent_scope(),
         job_id=reviewed_job.job_id, source_type=reviewed_job.source_type,
         source_ref=reviewed_job.source_ref, url=getattr(reviewed_job, "url", None),
         job_title=reviewed_job.job_title,
@@ -3021,6 +3351,7 @@ def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash,
         description_raw=reviewed_job.description_raw,
         required_skills=list(reviewed_job.required_skills),
         preferred_skills=list(reviewed_job.preferred_skills),
+        skill_extraction_method=getattr(reviewed_job, "skill_extraction_method", None),
         has_outcome=outcome is not None,
         outcome_status=outcome.status if outcome else None,
         outcome_notes=outcome.notes if outcome else None,
@@ -3029,7 +3360,8 @@ def _build_job_page_vm(reviewed_job, analysis, outcome, *, flash,
         qualitative_assessment=qualitative_assessment,
         qualitative_index=qualitative_index,
         qualitative_grade=qualitative_grade,
-        flash=flash, flash_kind=flash_kind, embed=embed, model_label=model_label, **a,
+        flash=flash, flash_kind=flash_kind, embed=embed, model_label=model_label,
+        ai_cv_saved=ai_cv_saved, ai_cv_stale=ai_cv_stale, **a,
     )
 
 

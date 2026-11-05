@@ -44,7 +44,7 @@ def validate_job_id(job_id: Any) -> str:
         not isinstance(job_id, str)
         or not job_id
         or len(job_id) > MAX_JOB_ID_LEN
-        or not _SAFE_JOB_ID.match(job_id)
+        or not _SAFE_JOB_ID.fullmatch(job_id)
         or job_id in (".", "..")
     ):
         raise ValueError("invalid job_id")
@@ -67,6 +67,11 @@ def _bullets(items: list[str]) -> list[str]:
     return [f"- {_md(i)}" for i in items] or ["- None"]
 
 
+# Market-aware salary (2026-09-22, revision 2): analysis.market_snapshot and
+# analysis.market_adjustment must NEVER be read into this renderer, and no
+# "Adzuna"/"market position" wording may appear below. Adzuna's terms allow
+# personal research use only — this zip is handed to employers. Covered by
+# tests/test_export_bundle.py::test_market_snapshot_and_adzuna_wording_excluded_from_zip.
 def render_analysis_md(job: Any, analysis: Any, assessment: dict | None) -> str:
     decision = analysis.user_decision or analysis.decision
     grade = derive_grade(
@@ -150,6 +155,7 @@ def build_package(
     profile: Any | None,
     *,
     state_root: str | Path,
+    base_dir: str | Path | None = None,
     policy: TailoringPolicy = DEFAULT_TAILORING_POLICY,
     cover_letter_base: str | Path | None = None,
     now: datetime | None = None,
@@ -170,7 +176,7 @@ def build_package(
         missing[ENTRY_CV] = "no profile available to match the CV against"
     else:
         try:
-            cv = load_latest_tailored_cv(job_id, expected_profile_id=profile_id, policy=policy)
+            cv = load_latest_tailored_cv(job_id, expected_profile_id=profile_id, profile=profile, base_dir=base_dir, policy=policy)
         except EmptyTailoredCVError:
             cv, why = None, "saved CV is empty"
         except ValueError:
@@ -182,11 +188,14 @@ def build_package(
         else:
             missing[ENTRY_CV] = why
 
-    letter = load_cover_letter(job_id, cover_letter_base)
+    try:
+        letter = load_cover_letter(job_id, cover_letter_base, profile_id=profile_id)
+    except (ValueError, OSError, UnicodeError):
+        letter = None
     if letter and letter.strip():
         parts[ENTRY_COVER] = letter if letter.endswith("\n") else letter + "\n"
     else:
-        missing[ENTRY_COVER] = "not generated yet"
+        missing[ENTRY_COVER] = "not generated for this profile, or unavailable"
 
     try:
         analysis = load_job_analysis(job_id, state_root)

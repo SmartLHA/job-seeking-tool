@@ -87,6 +87,15 @@ DEFAULT_DECISION_POLICY = DecisionPolicy(
 )
 
 
+
+# Qualitative grade bands (A-F) on the 0-100 match score. Grade A starts at
+# DEFAULT_DECISION_POLICY.apply_threshold and grade C at its review_threshold,
+# so grades never disagree with the decision bands. B and D are display-only
+# sub-bands with no decision meaning (Slice 1, 2026-10-19).
+GRADE_B_THRESHOLD: float = 72.0
+GRADE_D_THRESHOLD: float = 50.0
+
+
 SOURCE_QUALITY_SKIP_THRESHOLD: int = 40
 SOURCE_QUALITY_REVIEW_THRESHOLD: int = 70
 
@@ -110,5 +119,36 @@ ENABLED_SOURCES: list[str] = ["Reed", "Adzuna", "LinkedIn"]
 def get_enabled_sources() -> list[str]:
     """Return the list of currently enabled job sources."""
     return list(ENABLED_SOURCES)
+
+
+# ── Market-aware salary (2026-09-22, revision 2) ─────────────────────────────
+# Position bands are RANGES of the Adzuna histogram percentile, not single anchor
+# points: bottom < 25th, 25th <= typical <= 75th, top > 75th.
+MARKET_POSITION_BOTTOM_PERCENTILE: float = 25.0
+MARKET_POSITION_TOP_PERCENTILE: float = 75.0
+# A histogram sample below this size, or with fewer than this many buckets, is too
+# thin to classify a position from — "unknown" instead of a false-precision claim.
+MARKET_MIN_SAMPLE_TOTAL: int = 30
+MARKET_MIN_BUCKETS: int = 5
+# A job salary is only treated as a clear annual figure (and used to classify market
+# position) when BOTH min and max are known AND both are >= this floor; anything
+# lower reads as a day/hourly rate, not an annual salary, so it is "unknown".
+MARKET_ANNUAL_SALARY_FLOOR: int = 10000
+# Employment types that make an annual-salary market comparison unreliable (day-rate
+# contracts, short temp work, part-time pro-rata pay) — normalised, lower-cased tokens
+# as stored in JobPosting.employment_type (see src/ui_state.py _ALLOWED_EMPLOYMENT_TYPES).
+MARKET_EXCLUDED_EMPLOYMENT_TYPES: frozenset[str] = frozenset(
+    {"contract", "temporary", "temp", "part_time", "part-time"}
+)
+
+# The optional score effect (a fixed -5 when the STORED snapshot says "bottom") is
+# OFF by default. Read through market_score_effect_enabled() (not the module
+# constant directly) so tests can monkeypatch it without touching call sites.
+MARKET_SCORE_EFFECT: bool = False
+
+
+def market_score_effect_enabled() -> bool:
+    """Whether the optional market-position score effect is active. Default OFF."""
+    return MARKET_SCORE_EFFECT
 
 

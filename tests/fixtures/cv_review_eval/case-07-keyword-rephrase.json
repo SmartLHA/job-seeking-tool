@@ -1,0 +1,34 @@
+{
+  "id": "keyword-rephrase",
+  "description": "keyword rephrase",
+  "original_cv": "Summary\n- Worked to collect stakeholder needs.",
+  "rewrite": "Summary\n- Performed requirements gathering.",
+  "profile": {
+    "years_experience": 5,
+    "skills": [],
+    "target_roles": [
+      "Programme Director"
+    ],
+    "industries": [
+      "Technology"
+    ]
+  },
+  "job_skills": [
+    "requirements gathering"
+  ],
+  "labels": {
+    "expected_overall": "PASS",
+    "expected_l0": [
+      {
+        "rule": "L0-4",
+        "severity": "MAJOR"
+      }
+    ],
+    "expected_items": [
+      {
+        "statement": "- Performed requirements gathering.",
+        "expected": "SUPPORTED"
+      }
+    ]
+  }
+}

@@ -1,6 +1,7 @@
 """Security boundary tests for the loopback-only local UI."""
 from __future__ import annotations
 
+from email.message import Message
 import io
 import json
 import logging
@@ -13,6 +14,7 @@ from unittest import mock
 import pytest
 
 from src.ui_routes import (
+    MAX_CV_UPLOAD_BODY_BYTES,
     MAX_REQUEST_BODY_BYTES,
     _build_handler,
     _http_url,
@@ -40,7 +42,9 @@ def _make_handler(
     handler = handler_type.__new__(handler_type)
     handler.command = method
     handler.path = "/missing"
-    handler.headers = headers or {}
+    handler.headers = Message()
+    for name, value in (headers or {}).items():
+        handler.headers[name] = value
     handler.rfile = io.BytesIO(body)
     handler.wfile = io.BytesIO()
     handler.request_version = "HTTP/1.1"
@@ -101,7 +105,7 @@ def test_invalid_content_length_fails_before_body_read(
 ) -> None:
     handler = _make_handler(
         tmp_path,
-        headers={"Host": "127.0.0.1", "Content-Length": content_length},
+        headers={"Host": "127.0.0.1:9000", "Origin": "http://127.0.0.1:9000", "Content-Length": content_length},
     )
     handler.rfile = mock.Mock()
     handler.rfile.read.side_effect = AssertionError("body must not be read")
@@ -111,6 +115,90 @@ def test_invalid_content_length_fails_before_body_read(
     status, body = _response(handler)
     assert status == expected_status
     assert json.loads(body)["ok"] is False
+    handler.rfile.read.assert_not_called()
+
+
+@pytest.mark.parametrize("file_size", [2 * 1024 * 1024, 5 * 1024 * 1024, 5 * 1024 * 1024 + 1])
+def test_cv_upload_dispatcher_preserves_file_size_limit(tmp_path: Path, file_size: int) -> None:
+    boundary = "synthetic-cv-boundary"
+    body = (
+        f'--{boundary}\r\nContent-Disposition: form-data; name="cv_file"; filename="synthetic.txt"\r\n'
+        'Content-Type: text/plain\r\n\r\n'
+    ).encode() + b"X" * file_size + f"\r\n--{boundary}--\r\n".encode()
+    handler = _make_handler(tmp_path, headers={
+        "Host": "127.0.0.1:9000", "Origin": "http://127.0.0.1:9000",
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "Content-Length": str(len(body)),
+    }, body=body)
+    handler.path = "/profile/parse-cv"
+
+    def parse_synthetic_cv(path: Path) -> str:
+        assert path.stat().st_size == file_size
+        return "Synthetic business analyst CV"
+
+    with mock.patch("src.ui_handlers.parse_cv_file", side_effect=parse_synthetic_cv) as parse_cv:
+        with mock.patch("src.job_hunt_parsing.extract_skills_from_cv", return_value=([], None)):
+            handler.do_POST()
+
+    status, response_body = _response(handler)
+    payload = json.loads(response_body)
+    if file_size > 5 * 1024 * 1024:
+        assert status == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
+        assert payload == {"ok": False, "error": "File too large. Maximum size is 5 MB."}
+        parse_cv.assert_not_called()
+    else:
+        assert status == HTTPStatus.OK
+        assert payload["ok"] is True
+        parse_cv.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("path", "content_type", "length", "expected_status"),
+    [
+        ("/profile/parse-cv", "multipart/form-data; boundary=synthetic", str(MAX_CV_UPLOAD_BODY_BYTES + 1), 413),
+        ("/profile/parse-cv", "multipart/form-data; boundary=synthetic", "not-a-number", 400),
+        ("/profile/parse-cv", "multipart/form-data; boundary=synthetic", "-1", 400),
+        ("/profile/parse-cv", "text/plain", str(MAX_REQUEST_BODY_BYTES + 1), 413),
+        ("/profile/parse-cv", "application/json; charset=multipart/form-data", str(MAX_REQUEST_BODY_BYTES + 1), 413),
+        ("/profile/parse-cv/", "multipart/form-data; boundary=synthetic", str(MAX_REQUEST_BODY_BYTES + 1), 413),
+        ("/profile/parse-cv-extra", "multipart/form-data; boundary=synthetic", str(MAX_REQUEST_BODY_BYTES + 1), 413),
+    ],
+)
+def test_upload_transport_limit_rejects_before_read(
+    tmp_path: Path, path: str, content_type: str, length: str, expected_status: int
+) -> None:
+    handler = _make_handler(tmp_path, headers={
+        "Host": "127.0.0.1:9000", "Origin": "http://127.0.0.1:9000",
+        "Content-Type": content_type, "Content-Length": length,
+    })
+    handler.path = path
+    handler.rfile = mock.Mock()
+    handler.rfile.read.side_effect = AssertionError("body must not be read")
+
+    with mock.patch("src.ui_routes.handle_parse_cv") as parse_cv:
+        handler.do_POST()
+
+    assert _response(handler)[0] == expected_status
+    handler.rfile.read.assert_not_called()
+    parse_cv.assert_not_called()
+
+
+@pytest.mark.parametrize("headers", [
+    {"Host": "attacker.example:9000", "Origin": "http://attacker.example:9000"},
+    {"Host": "127.0.0.1:9000", "Origin": "https://attacker.example"},
+])
+def test_upload_transport_allowance_preserves_source_checks(tmp_path: Path, headers: dict[str, str]) -> None:
+    handler = _make_handler(tmp_path, headers={**headers,
+        "Content-Type": "multipart/form-data; boundary=synthetic",
+        "Content-Length": str(MAX_REQUEST_BODY_BYTES + 1),
+    })
+    handler.path = "/profile/parse-cv"
+    handler.rfile = mock.Mock()
+    handler.rfile.read.side_effect = AssertionError("body must not be read")
+
+    handler.do_POST()
+
+    assert _response(handler)[0] == HTTPStatus.FORBIDDEN
     handler.rfile.read.assert_not_called()
 
 
@@ -153,10 +241,9 @@ def test_cross_origin_browser_posts_are_rejected(
         },
         {"Host": "localhost:9000", "Origin": "http://localhost:9000"},
         {"Host": "[::1]:9000", "Origin": "http://[::1]:9000"},
-        {},
     ],
 )
-def test_same_origin_and_headerless_local_posts_remain_compatible(
+def test_same_origin_posts_remain_compatible(
     tmp_path: Path,
     headers: dict[str, str],
 ) -> None:
@@ -195,3 +282,94 @@ def test_unhandled_errors_are_generic_but_logged(
     assert secret_detail.encode() not in body
     assert b"Internal server error." in body
     assert secret_detail in caplog.text
+
+
+@pytest.mark.parametrize('method', ['GET', 'POST'])
+@pytest.mark.parametrize('host', [None, '', '127.0.0.1:9001', 'example.com:9000',
+    'user@localhost:9000', 'localhost:9000/path', 'localhost:9000?x',
+    'localhost:9000#x', 'localhost:', '::1:9000', '[::1',
+    'localhost:abc', '[::1]evil:9000', ' localhost:9000', 'localhost:9000\\path', 'duplicate'])
+def test_host_boundary_before_dispatch_and_read(tmp_path, method, host):
+    handler = _make_handler(tmp_path, method=method,
+        headers={'Origin': 'http://127.0.0.1:9000'})
+    if host is not None:
+        handler.headers['Host'] = '127.0.0.1:9000' if host == 'duplicate' else host
+    if host == 'duplicate':
+        handler.headers['Host'] = '127.0.0.1:9000'
+    handler.path = '/job/synthetic/explain'
+    handler.rfile = mock.Mock()
+    with mock.patch('src.ui_routes.handle_job_explain') as provider:
+        getattr(handler, 'do_' + method)()
+        assert _response(handler)[0] == 403
+        provider.assert_not_called()
+    handler.rfile.read.assert_not_called()
+
+
+@pytest.mark.parametrize('sources', [{}, {'Origin': 'null'}, {'Origin': ''},
+    {'Origin': 'http://127.0.0.1:9001'}, {'Origin': 'https://127.0.0.1:9000'},
+    {'Origin': 'http://127.0.0.1:9000', 'Referer': 'http://localhost:9000/'},
+    {'Referer': 'http://user@127.0.0.1:9000/'},
+    {'Origin': 'http://127.0.0.1:9000/path'}, {'Origin': 'duplicate'}])
+def test_post_origin_boundary_before_body_and_provider(tmp_path, sources):
+    handler = _make_handler(tmp_path, headers={'Host': '127.0.0.1:9000', **sources})
+    if sources.get('Origin') == 'duplicate':
+        handler.headers['Origin'] = 'http://127.0.0.1:9000'
+    handler.path = '/job/synthetic/explain'
+    handler.rfile = mock.Mock()
+    with mock.patch('src.ui_routes.handle_job_explain') as provider:
+        handler.do_POST()
+        assert _response(handler)[0] == 403
+        provider.assert_not_called()
+    handler.rfile.read.assert_not_called()
+
+
+def test_explanation_get_has_allow_post_without_provider(tmp_path):
+    handler = _make_handler(tmp_path, method='GET', headers={'Host': '127.0.0.1:9000'})
+    handler.path = '/job/synthetic/explain'
+    with mock.patch('src.ui_routes.handle_job_explain') as provider:
+        handler.do_GET()
+        assert _response(handler)[0] == 405
+        assert b'Allow: POST\r\n' in handler.wfile.getvalue()
+        provider.assert_not_called()
+
+
+@pytest.mark.parametrize('sources', [
+    {'Origin': 'http://127.0.0.1:9000'},
+    {'Referer': 'http://127.0.0.1:9000/profile?tab=cv'},
+    {'Origin': 'http://127.0.0.1:9000', 'Referer': 'http://127.0.0.1:9000/profile'}])
+def test_explanation_same_origin_post_dispatches_once(tmp_path, sources):
+    handler = _make_handler(tmp_path, headers={'Host': '127.0.0.1:9000', **sources})
+    handler.path = '/job/synthetic/explain'
+    with mock.patch('src.ui_routes.handle_job_explain') as provider:
+        handler.do_POST()
+        provider.assert_called_once()
+        assert provider.call_args.args[-1] == 'synthetic'
+
+
+def test_rendered_explanation_fetch_is_post():
+    # Inspect the actual renderer function, rather than a copied JS fixture.
+    import inspect
+    from src import ui_render
+    source = inspect.getsource(ui_render)
+    assert 'fetch("/job/{job_id_esc}/explain",{{method:"POST"}})' in source
+
+
+@pytest.mark.parametrize('method', ['GET', 'POST'])
+def test_explanation_actual_handler_mocked_provider(tmp_path, method):
+    handler = _make_handler(tmp_path, method=method,
+        headers={'Host': '127.0.0.1:9000', 'Origin': 'http://127.0.0.1:9000'})
+    handler.path = '/job/synthetic/explain'
+    profile, job, analysis = object(), object(), object()
+    with mock.patch('src.ui_handlers.load_candidate_profile', return_value=profile), \
+         mock.patch('src.ui_handlers.load_reviewed_job', return_value=job), \
+         mock.patch('src.ui_handlers.load_job_analysis', return_value=analysis), \
+         mock.patch('src.job_hunt_llm.explain_job_match_with_llm',
+                    return_value=({'fit': 'Synthetic fit'}, None)) as provider:
+        getattr(handler, 'do_' + method)()
+        if method == 'GET':
+            assert _response(handler)[0] == 405
+            provider.assert_not_called()
+        else:
+            assert _response(handler)[0] == 200
+            assert json.loads(_response(handler)[1])['fit'] == 'Synthetic fit'
+            provider.assert_called_once_with(profile, job, analysis)

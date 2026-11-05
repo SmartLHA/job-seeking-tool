@@ -1,0 +1,27 @@
+{
+  "id": "substring-shortening",
+  "description": "substring shortening",
+  "original_cv": "Summary\n- Assisted colleagues who led migration.",
+  "rewrite": "Summary\n- Led migration.",
+  "profile": {
+    "years_experience": 5,
+    "skills": [],
+    "target_roles": [
+      "Programme Director"
+    ],
+    "industries": [
+      "Technology"
+    ]
+  },
+  "job_skills": [],
+  "labels": {
+    "expected_overall": "NEEDS_EDIT",
+    "expected_l0": [],
+    "expected_items": [
+      {
+        "statement": "- Led migration.",
+        "expected": "EXAGGERATED"
+      }
+    ]
+  }
+}

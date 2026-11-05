@@ -24,6 +24,7 @@ from src.job_sources._multiselect import (
     ACTION_BAR,
     STAGING_OVERLAY,
     hide_attrs,
+    identity_cards,
     more_button_html,
     multiselect_script,
     select_shell,
@@ -35,6 +36,7 @@ from src.ui_state import (
     _ALLOWED_EMPLOYMENT_TYPES,
 )
 from src.ui_utils import (
+    skill_extraction_method_from_warning,
     escape,
     squash_whitespace,
     normalize_optional_int_text,
@@ -183,6 +185,7 @@ def reed_select_form_to_evaluate_values(form: dict[str, str], config: "object | 
             "description_raw": full_description,
             "required_skills": ", ".join(_req_skills),
             "preferred_skills": ", ".join(_pref_skills),
+            "skill_extraction_method": skill_extraction_method_from_warning(_skill_warn),  # Slice 1c
             "notes": "Prefilled from Reed search result. Review all fields before evaluation.",
             "source_snapshot_json": serialize_reed_source_snapshot(source_snapshot),
         }
@@ -409,12 +412,11 @@ def _render_reed_cards_fragment(
     skip: int = 0,
     nonce: str | None = None,
 ) -> str:
-    """Return the raw cards HTML for `results`, with IDs offset by `skip`.
+    """Return raw cards HTML with stable source/job IDs (`skip` is compatibility only).
     Used by both the full results render and the /search/reed/more AJAX endpoint."""
     html = []
-    for i, result in enumerate(results):
-        card_id   = f"jrc-{skip + i}"
-        form_id   = f"jrf-{skip + i}"
+    for card_id, result, identified in identity_cards("reed", results):
+        form_id = "jrf-" + card_id
         title_esc    = escape(result.get("title") or "Unknown")
         company_esc  = escape(result.get("company") or "Unknown")
         location_esc = escape(result.get("location") or "")
@@ -468,13 +470,19 @@ def _render_reed_cards_fragment(
         # audit guard rejects evaluation, so the card must NOT be selectable —
         # otherwise ticking it produces a cryptic "source_snapshot_json is
         # required" error at evaluate time.
-        selectable = bool(result.get("source_snapshot_json"))
+        selectable = identified and bool(result.get("source_snapshot_json"))
+        if not identified:
+            form_html = ""
+        identity_attrs = (
+            f' id="{card_id}" data-jst-id="{card_id}" data-jst-form="{form_id}"'
+            if identified else ""
+        )
         root_class, root_extra, checkbox_html, disabled_note_html = select_shell(
             card_id, selectable=selectable, url=result.get("url")
         )
 
         html.append(
-            f'<div class="{root_class}" id="{card_id}" data-jst-id="{card_id}" data-jst-form="{form_id}"'
+            f'<div class="{root_class}"{identity_attrs}'
             f' data-jst-title="{title_esc}" data-jst-company="{company_esc}"'
             f' data-jst-salary="{salary_esc}" data-jst-location="{location_esc}"'
             f'{hide_attrs(result)}'

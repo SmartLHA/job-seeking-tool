@@ -2,6 +2,17 @@
 
 Mike approved building (2026-09-22, "do 2-4"). Roadmap origin: PROJECT_TODO.md F5 (~:224) and CAREER-F2 (~:391, excluded until a salary-data source exists).
 
+**Superseded note (2026-09-22, market-aware salary revision 2 —
+`docs/tasks/market-aware-salary-2026-09-22.md`):** line 13 below ("Advisory only:
+it must NOT change scoring, decision or grade") described THIS route
+(`GET /job/{id}/salary-benchmark`) accurately and still does — that GET route
+never writes anything. It no longer describes the feature as a whole: revision 2
+adds an explicit, separate "Save market position" action
+(`POST /job/{id}/market-position`) that persists a STICKY snapshot, plus an
+opt-in, OFF-by-default `market_score_effect_enabled()` switch that, only when on
+AND the saved snapshot says "bottom quarter", deducts a fixed -5 from the score.
+See the revision-2 spec for the full design.
+
 ## Verified facts (official docs read 2026-09-22; see sources)
 - Histogram: `GET https://api.adzuna.com/v1/api/jobs/gb/histogram` params `app_id`, `app_key`, `what` (required), optional `location0`,`location1`,... (hierarchy, NOT `where`), `content-type=application/json`. Response `{"histogram": {"<lower bound of salary range>": "<vacancy count as string>"}}`; key order not guaranteed. (https://developer.adzuna.com/docs/histogram)
 - History (average salary per month): `GET /v1/api/jobs/gb/history` returns `{"month": {"YYYY-MM": <float>}}`; whether `what` is accepted is UNVERIFIED -> NOT used in this version. (https://developer.adzuna.com/docs/historical)

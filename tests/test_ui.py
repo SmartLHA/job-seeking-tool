@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import html
 import json
+import pytest
+from browser_support import playwright_sync, launch_chromium, loopback_page
 import re
 import sys
 import threading
@@ -218,7 +220,7 @@ def _http_get(url: str) -> tuple[int, str]:
 
 def _http_post(url: str, form: dict[str, str]) -> tuple[int, str]:
     data = urllib.parse.urlencode(form).encode("utf-8")
-    request = urllib.request.Request(url, data=data, method="POST")
+    request = urllib.request.Request(url, data=data, method="POST", headers={"Origin": urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], "", "", ""))})
     try:
         with urllib.request.urlopen(request) as response:
             return response.status, response.read().decode("utf-8")
@@ -502,15 +504,9 @@ def test_qualitative_stale_grade_backfills_on_render(tmp_path: Path) -> None:
     assessment["job_id"] = "job-grade-backfill"
     save_qualitative_assessment("job-grade-backfill", assessment, config.state_root)
     db_path = config.state_root / "job_hunt_index.db"
-    claim_qualitative_assessment(db_path, "job-grade-backfill", now="2026-07-09T10:00:00")
-    finish_qualitative_assessment(
-        db_path,
-        "job-grade-backfill",
-        status="done",
-        grade="A",
-        legitimacy_tier="unknown_caution",
-        culture_flag="caution",
-    )
+    from src.job_hunt_index import open_db
+    with open_db(db_path) as conn:
+        conn.execute("INSERT INTO qualitative_index(job_ref,status,grade,legitimacy_tier,culture_flag) VALUES(?,'done','A','unknown_caution','caution')", ("job-grade-backfill",))
     req = types.SimpleNamespace(path="/job/job-grade-backfill", form={}, json_body=None)
     responder = _FakeResponder()
 
@@ -533,14 +529,9 @@ def test_qualitative_grade_warning_not_rendered_for_c_base_grade(tmp_path: Path)
     assessment["job_id"] = "job-grade-c"
     save_qualitative_assessment("job-grade-c", assessment, config.state_root)
     db_path = config.state_root / "job_hunt_index.db"
-    claim_qualitative_assessment(db_path, "job-grade-c", now="2026-07-09T10:00:00")
-    finish_qualitative_assessment(
-        db_path,
-        "job-grade-c",
-        status="done",
-        legitimacy_tier="unknown_caution",
-        culture_flag="caution",
-    )
+    from src.job_hunt_index import open_db
+    with open_db(db_path) as conn:
+        conn.execute("INSERT INTO qualitative_index(job_ref,status,legitimacy_tier,culture_flag) VALUES(?,'done','unknown_caution','caution')", ("job-grade-c",))
     req = types.SimpleNamespace(path="/job/job-grade-c", form={}, json_body=None)
     responder = _FakeResponder()
 
@@ -589,10 +580,11 @@ def test_post_qualitative_force_rejected_while_running(tmp_path: Path, monkeypat
     config = _ui_config(tmp_path)
     _save_evaluated_job(tmp_path, config, job_id="job-qual-running")
     from src.job_hunt_index import claim_qualitative_assessment
+    from src.job_hunt_qualitative_state import utc_now
     claim_qualitative_assessment(
         config.state_root / "job_hunt_index.db",
         "job-qual-running",
-        now="2026-07-08T10:00:00",
+        now=utc_now().isoformat(),
     )
     req = types.SimpleNamespace(path="/job/job-qual-running/qualitative-assess", form={"force": "1"}, json_body=None)
     responder = _FakeResponder()
@@ -970,26 +962,16 @@ def test_get_manual_fallback_tab_keeps_paste_and_url_flow(tmp_path: Path) -> Non
     assert 'id="tab-add_job" class="tab-content"' in body
 
 
+@pytest.mark.required_browser
 def test_add_job_parse_and_preview_browser_smoke(tmp_path: Path) -> None:
-    try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import sync_playwright
-    except ModuleNotFoundError:
-        from unittest import SkipTest
-
-        raise SkipTest("Playwright is not installed; browser smoke test was not run")
+    sync_playwright, _ = playwright_sync()
 
     with _running_ui_server(tmp_path) as (base_url, config):
         with sync_playwright() as playwright:
-            try:
-                browser = playwright.chromium.launch(headless=True)
-            except PlaywrightError as exc:
-                from unittest import SkipTest
-
-                raise SkipTest(f"Playwright Chromium is unavailable: {exc}") from exc
+            browser = launch_chromium(playwright)
 
             page_errors: list[str] = []
-            page = browser.new_page()
+            page = loopback_page(browser, base_url)
             page.on("pageerror", lambda error: page_errors.append(str(error)))
             try:
                 page.goto(f"{base_url}/?tab=add_job")
@@ -1015,26 +997,16 @@ def test_add_job_parse_and_preview_browser_smoke(tmp_path: Path) -> None:
                 browser.close()
 
 
+@pytest.mark.required_browser
 def test_search_keyword_chips_add_remove_and_backspace_browser_smoke(tmp_path: Path) -> None:
-    try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import sync_playwright
-    except ModuleNotFoundError:
-        from unittest import SkipTest
-
-        raise SkipTest("Playwright is not installed; browser smoke test was not run")
+    sync_playwright, _ = playwright_sync()
 
     with _running_ui_server(tmp_path) as (base_url, _config):
         with sync_playwright() as playwright:
-            try:
-                browser = playwright.chromium.launch(headless=True)
-            except PlaywrightError as exc:
-                from unittest import SkipTest
-
-                raise SkipTest(f"Playwright Chromium is unavailable: {exc}") from exc
+            browser = launch_chromium(playwright)
 
             page_errors: list[str] = []
-            page = browser.new_page()
+            page = loopback_page(browser, base_url)
             page.on("pageerror", lambda error: page_errors.append(str(error)))
             try:
                 page.goto(f"{base_url}/?tab=search")
@@ -1065,14 +1037,10 @@ def test_search_keyword_chips_add_remove_and_backspace_browser_smoke(tmp_path: P
                 browser.close()
 
 
+@pytest.mark.required_browser
 def test_hidden_jobs_filter_browser_smoke(tmp_path: Path, monkeypatch) -> None:
-    try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import expect, sync_playwright
-    except ModuleNotFoundError:
-        from unittest import SkipTest
-
-        raise SkipTest("Playwright is not installed; browser smoke test was not run")
+    sync_playwright, _ = playwright_sync()
+    from playwright.sync_api import expect
 
     def fake_fetch_reed_jobs(keyword, location, max_results, *, skip=0, save_raw=True):
         return [{
@@ -1094,15 +1062,10 @@ def test_hidden_jobs_filter_browser_smoke(tmp_path: Path, monkeypatch) -> None:
             state_root=config.state_root,
         )
         with sync_playwright() as playwright:
-            try:
-                browser = playwright.chromium.launch(headless=True)
-            except PlaywrightError as exc:
-                from unittest import SkipTest
-
-                raise SkipTest(f"Playwright Chromium is unavailable: {exc}") from exc
+            browser = launch_chromium(playwright)
 
             page_errors: list[str] = []
-            page = browser.new_page()
+            page = loopback_page(browser, base_url)
             page.on("pageerror", lambda error: page_errors.append(str(error)))
             try:
                 query = urllib.parse.urlencode({"keywords": "Business Analyst", "locationName": "London"})
@@ -1124,14 +1087,9 @@ def test_hidden_jobs_filter_browser_smoke(tmp_path: Path, monkeypatch) -> None:
                 browser.close()
 
 
+@pytest.mark.required_browser
 def test_shared_shell_has_no_mobile_document_overflow(tmp_path: Path) -> None:
-    try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import sync_playwright
-    except ModuleNotFoundError:
-        from unittest import SkipTest
-
-        raise SkipTest("Playwright is not installed; browser smoke test was not run")
+    sync_playwright, _ = playwright_sync()
 
     pages = [
         ("/?tab=search", "Find Jobs"),
@@ -1143,14 +1101,9 @@ def test_shared_shell_has_no_mobile_document_overflow(tmp_path: Path) -> None:
     ]
     with _running_ui_server(tmp_path) as (base_url, _config):
         with sync_playwright() as playwright:
-            try:
-                browser = playwright.chromium.launch(headless=True)
-            except PlaywrightError as exc:
-                from unittest import SkipTest
+            browser = launch_chromium(playwright)
 
-                raise SkipTest(f"Playwright Chromium is unavailable: {exc}") from exc
-
-            page = browser.new_page(viewport={"width": 390, "height": 844})
+            page = loopback_page(browser, base_url, viewport={"width": 390, "height": 844})
             try:
                 for path, nav_label in pages:
                     page.goto(f"{base_url}{path}")
@@ -1436,7 +1389,7 @@ def _http_post_json(url: str, payload: dict) -> tuple[int, dict]:
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url, data=data, method="POST",
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "Origin": urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], "", "", ""))},
     )
     try:
         with urllib.request.urlopen(request) as response:
@@ -1760,7 +1713,9 @@ def _write_master_cv(profile_path: Path) -> None:
 # POST /tailor route tests
 # ---------------------------------------------------------------------------
 
-def test_post_tailor_returns_tailored_cv_result_for_apply_job(tmp_path: Path) -> None:
+def test_post_tailor_returns_tailored_cv_result_for_apply_job(tmp_path: Path, monkeypatch) -> None:
+    # Handlers write to CWD-relative output/; keep that inside tmp_path.
+    monkeypatch.chdir(tmp_path)
     with _running_ui_server(tmp_path) as (base_url, config):
         _write_master_cv(config.profile_path)
         _write_apply_job_state(config.state_root, "tailor-apply-001")
@@ -1838,7 +1793,9 @@ def test_cv_read_errors_do_not_disclose_local_path(tmp_path: Path) -> None:
 # POST /cover-letter route tests
 # ---------------------------------------------------------------------------
 
-def test_post_cover_letter_returns_letter_for_apply_job(tmp_path: Path) -> None:
+def test_post_cover_letter_returns_letter_for_apply_job(tmp_path: Path, monkeypatch) -> None:
+    # Handlers write to CWD-relative output/; keep that inside tmp_path.
+    monkeypatch.chdir(tmp_path)
     with _running_ui_server(tmp_path) as (base_url, config):
         _write_apply_job_state(config.state_root, "cover-apply-001")
         status, data = _http_post_json(
@@ -1921,7 +1878,7 @@ def test_post_batch_evaluate_caps_at_20(tmp_path: Path) -> None:
 
 def test_get_search_reed_more_returns_offset_page(tmp_path: Path, monkeypatch) -> None:
     # MT-6: the /search/reed/more AJAX endpoint returns the next page of cards with
-    # IDs offset by resultsSkip and a next_url that advances the skip cursor.
+    # stable source IDs and a next_url that advances the skip cursor.
     def fake_fetch_reed_jobs(keyword, location, max_results, *, skip=0, save_raw=True):
         return [
             {
@@ -1936,28 +1893,32 @@ def test_get_search_reed_more_returns_offset_page(tmp_path: Path, monkeypatch) -
                 "jobDescription": "<p>Work</p>",
                 "fullTime": True,
             }
-            for i in range(max_results)
+            for i in range(skip - 10, skip - 10 + max_results)
         ]
 
     monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
     query = urllib.parse.urlencode(
-        {"keywords": "analyst", "locationName": "London", "resultsToTake": "10", "resultsSkip": "10"}
+        {"keywords": "analyst", "locationName": "London", "resultsToTake": "10", "resultsSkip": "0"}
     )
     with _running_ui_server(tmp_path) as (base_url, _config):
-        status, body = _http_get(f"{base_url}/search/reed/more?{query}")
+        initial_status, initial_body = _http_get(f"{base_url}/search/reed?{query}")
+        assert initial_status == 200
+        more_url = initial_body.split('data-next-url="', 1)[1].split('"', 1)[0].replace("&amp;", "&")
+        assert "searchId=" in more_url
+        status, body = _http_get(f"{base_url}{more_url}")
 
     assert status == 200
     data = json.loads(body)
     assert data["ok"] is True
     assert data["count"] == 10
     assert data["has_more"] is True
-    assert 'id="jrc-10"' in data["cards_html"]
+    assert 'data-jst-sjid="1000"' in data["cards_html"]
     assert "resultsSkip=20" in data["next_url"]
 
 
 def test_get_search_adzuna_more_returns_offset_page(tmp_path: Path, monkeypatch) -> None:
-    # The generic /search/{source}/more endpoint pages Adzuna too: ids are offset
-    # by resultsSkip and next_url advances the camelCase resultsSkip cursor.
+    # The generic /search/{source}/more endpoint pages Adzuna too: cards
+    # preserve source identity and next_url advances the camelCase resultsSkip cursor.
     captured = {}
 
     def fake_fetch_adzuna_jobs(keyword, location, max_results=50, *, skip=0):
@@ -1973,17 +1934,21 @@ def test_get_search_adzuna_more_returns_offset_page(tmp_path: Path, monkeypatch)
                 "created": "2026-06-01T00:00:00Z",
                 "contract_type": "permanent",
             }
-            for i in range(max_results)
+            for i in range(skip - 10, skip - 10 + max_results)
         ]
 
     monkeypatch.setattr(
         "src.job_sources.adzuna_source.fetch_adzuna_jobs", fake_fetch_adzuna_jobs
     )
     query = urllib.parse.urlencode(
-        {"keywords": "analyst", "locationName": "London", "resultsToTake": "10", "resultsSkip": "10"}
+        {"keywords": "analyst", "locationName": "London", "resultsToTake": "10", "resultsSkip": "0"}
     )
     with _running_ui_server(tmp_path) as (base_url, _config):
-        status, body = _http_get(f"{base_url}/search/adzuna/more?{query}")
+        initial_status, initial_body = _http_get(f"{base_url}/search/adzuna?{query}")
+        assert initial_status == 200
+        more_url = initial_body.split('data-next-url="', 1)[1].split('"', 1)[0].replace("&amp;", "&")
+        assert "searchId=" in more_url
+        status, body = _http_get(f"{base_url}{more_url}")
 
     assert status == 200
     data = json.loads(body)
@@ -1991,13 +1956,13 @@ def test_get_search_adzuna_more_returns_offset_page(tmp_path: Path, monkeypatch)
     assert data["count"] == 10
     assert data["has_more"] is True
     assert captured["skip"] == 10          # resultsSkip threaded to the client
-    assert 'id="jrc-10"' in data["cards_html"]   # cards offset, no collision with page 1
+    assert 'data-jst-sjid="a0"' in data["cards_html"]   # actual source job identity survives rendering
     assert "resultsSkip=20" in data["next_url"]
 
 
 def test_get_search_linkedin_more_returns_offset_page(tmp_path: Path, monkeypatch) -> None:
     # LinkedIn pages by `start` offset and uses snake_case params; the same generic
-    # endpoint must offset card ids and advance the results_skip cursor.
+    # endpoint must preserve source identity and advance the results_skip cursor.
     captured = {}
 
     def fake_fetch_search(keywords, location, work_mode, start=0):
@@ -2019,7 +1984,7 @@ def test_get_search_linkedin_more_returns_offset_page(tmp_path: Path, monkeypatc
                 "description_raw": "",
                 "filter_notes": "LinkedIn does not provide salary. Results may vary.",
             }
-            for i in range(25)
+            for i in range(start - 10, start + 15)
         ]
 
     monkeypatch.setattr("src.job_sources.linkedin_source._fetch_search", fake_fetch_search)
@@ -2027,10 +1992,14 @@ def test_get_search_linkedin_more_returns_offset_page(tmp_path: Path, monkeypatc
     monkeypatch.setattr("src.job_sources.linkedin_source._cache_get", lambda key: None)
     monkeypatch.setattr("src.job_sources.linkedin_source._cache_set", lambda key, results: None)
     query = urllib.parse.urlencode(
-        {"keywords": "engineer", "location": "London", "results_to_take": "10", "results_skip": "10"}
+        {"keywords": "engineer", "location": "London", "results_to_take": "10", "results_skip": "0"}
     )
     with _running_ui_server(tmp_path) as (base_url, _config):
-        status, body = _http_get(f"{base_url}/search/linkedin/more?{query}")
+        initial_status, initial_body = _http_get(f"{base_url}/search/linkedin?{query}")
+        assert initial_status == 200
+        more_url = initial_body.split('data-next-url="', 1)[1].split('"', 1)[0].replace("&amp;", "&")
+        assert "searchId=" in more_url
+        status, body = _http_get(f"{base_url}{more_url}")
 
     assert status == 200
     data = json.loads(body)
@@ -2038,7 +2007,7 @@ def test_get_search_linkedin_more_returns_offset_page(tmp_path: Path, monkeypatc
     assert data["count"] == 10
     assert data["has_more"] is True
     assert captured["start"] == 10          # results_skip threaded to the scraper offset
-    assert 'id="li-rc-10"' in data["cards_html"]
+    assert 'data-jst-sjid="0"' in data["cards_html"]
     assert "results_skip=20" in data["next_url"]
 
 
@@ -2061,7 +2030,7 @@ def test_post_parse_cv_missing_boundary_returns_clean_error(tmp_path: Path) -> N
             f"{base_url}/profile/parse-cv",
             data=b"ignored",
             method="POST",
-            headers={"Content-Type": "multipart/form-data"},
+            headers={"Content-Type": "multipart/form-data", "Origin": base_url},
         )
         try:
             with urllib.request.urlopen(request) as response:
@@ -2092,7 +2061,7 @@ def _http_post_multipart(url, fields, files):
     body = b"".join(chunks)
     request = urllib.request.Request(
         url, data=body, method="POST",
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}", "Origin": urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:2], "", "", ""))},
     )
     try:
         with urllib.request.urlopen(request) as response:
@@ -2106,7 +2075,7 @@ def _http_post_multipart(url, fields, files):
 
 def test_post_parse_cv_extracts_text_from_txt(tmp_path: Path, monkeypatch) -> None:
     # MT-6: a valid .txt upload is parsed and its text returned (no profile_id → no auto-save).
-    monkeypatch.setattr("src.job_hunt_parsing.extract_skills_from_cv", lambda text: ([], None))
+    monkeypatch.setattr("src.job_hunt_parsing.extract_skills_from_cv", lambda text, *, use_cloud=False: ([], None))
     with _running_ui_server(tmp_path) as (base_url, _config):
         status, data = _http_post_multipart(
             f"{base_url}/profile/parse-cv",
@@ -2123,7 +2092,7 @@ def test_post_parse_cv_extracts_text_from_txt(tmp_path: Path, monkeypatch) -> No
 def test_post_parse_cv_auto_saves_when_profile_id_present(tmp_path: Path, monkeypatch) -> None:
     # MT-6: when profile_id is supplied, the CV is persisted to the profile without
     # a separate "Save Profile" click.
-    monkeypatch.setattr("src.job_hunt_parsing.extract_skills_from_cv", lambda text: ([], None))
+    monkeypatch.setattr("src.job_hunt_parsing.extract_skills_from_cv", lambda text, *, use_cloud=False: ([], None))
     monkeypatch.setattr("src.ui_handlers._DATA_ROOT", tmp_path / "data")
     with _running_ui_server(tmp_path) as (base_url, _config):
         status, data = _http_post_multipart(

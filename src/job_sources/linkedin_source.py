@@ -26,6 +26,7 @@ from src.job_sources._multiselect import (
     ACTION_BAR,
     STAGING_OVERLAY,
     hide_attrs,
+    identity_cards,
     more_button_html,
     multiselect_script,
     select_shell,
@@ -37,6 +38,7 @@ from src.ui_state import (
     _SELECT_FORM_FIELD_LIMITS,
 )
 from src.ui_utils import (
+    skill_extraction_method_from_warning,
     default_form_values,
     escape,
     squash_whitespace,
@@ -338,8 +340,12 @@ def search_handler(cleaned_params: dict) -> list[dict]:
 
 # ── select_handler (lazy description fetch) ───────────────────────────────────
 
-def _fetch_description(job_id: str) -> str:
-    """Lazily fetch full job description. Returns "" if blocked or on error."""
+def _fetch_description(job_id: str, *, strict: bool = False) -> str:
+    """Fetch a description; strict digest callers retain failure distinctions.
+
+    The default preserves select-handler behavior: blocked/failed fetches return
+    an empty string. Strict callers receive exceptions for blocked/failed pages.
+    """
     import requests
 
     url = f"https://www.linkedin.com/jobs/view/{job_id}/"
@@ -348,12 +354,22 @@ def _fetch_description(job_id: str) -> str:
     try:
         response = requests.get(url, headers=headers, timeout=(5, 10), allow_redirects=True)
     except requests.exceptions.RequestException:
+        if strict:
+            raise
         return ""
 
     html_text = response.text
     final_url = response.url
 
+    if strict:
+        if response.status_code in (999, 429, 403, 401):
+            raise LinkedInBlockedError("LinkedIn blocked the description request")
+        # HTTP failures take precedence over content/redirect heuristics for
+        # digest diagnostics; the default UI path keeps its prior behavior.
+        response.raise_for_status()
     if _is_blocked(final_url, html_text, response.status_code):
+        if strict:
+            raise LinkedInBlockedError("LinkedIn blocked the description request")
         return ""
 
     try:
@@ -366,8 +382,33 @@ def _fetch_description(job_id: str) -> str:
         if desc_el:
             return squash_whitespace(desc_el.get_text())
     except Exception:
-        pass
+        if strict:
+            raise
     return ""
+
+
+def enrich_digest_result(result: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    """Copy a digest card and lazily fill its real description, without UI effects.
+
+    No cache-path changes, form conversion or skill extraction occur here. The
+    digest caller owns deduplication and the per-search detail-call allowance.
+    """
+    enriched = dict(result)
+    if str(enriched.get("description_raw") or "").strip():
+        return enriched, None
+    job_id = str(enriched.get("source_job_id") or "").strip()
+    if not job_id or not job_id.isdigit():
+        return enriched, "linkedin_detail_invalid_id"
+    try:
+        description = _fetch_description(job_id, strict=True)
+    except LinkedInBlockedError:
+        return enriched, "linkedin_detail_blocked"
+    except Exception:
+        return enriched, "linkedin_detail_failed"
+    if not isinstance(description, str) or not description.strip():
+        return enriched, "linkedin_detail_empty"
+    enriched["description_raw"] = description.strip()
+    return enriched, None
 
 
 def select_handler(post_form: dict, config: Any) -> dict:
@@ -444,6 +485,7 @@ def select_handler(post_form: dict, config: Any) -> dict:
             "description_raw": description_raw,
             "required_skills": ", ".join(_req_skills),
             "preferred_skills": ", ".join(_pref_skills),
+            "skill_extraction_method": skill_extraction_method_from_warning(_skill_warn),  # Slice 1c
             "notes": (
                 "Prefilled from LinkedIn search result (best effort). "
                 "Review all fields before evaluation."
@@ -518,9 +560,8 @@ def _render_select_form(result: dict, nonce: str | None, form_id: str | None = N
 
 def _render_cards(results: list[dict], nonce: str | None = None, *, skip: int = 0) -> str:
     html: list[str] = []
-    for i, result in enumerate(results):
-        card_id = f"li-rc-{skip + i}"
-        form_id = f"li-rf-{skip + i}"
+    for card_id, result, identified in identity_cards("linkedin", results):
+        form_id = "jrf-" + card_id
         title_esc = escape(result.get("title") or "Unknown")
         company_esc = escape(result.get("company") or "Unknown")
         location_esc = escape(result.get("location") or "")
@@ -565,16 +606,22 @@ def _render_cards(results: list[dict], nonce: str | None = None, *, skip: int = 
         # description already in hand, or a numeric job id we can lazy-fetch the
         # description for at select time. Otherwise render disabled.
         _jid = result.get("source_job_id") or ""
-        selectable = bool(
+        selectable = identified and bool(
             (_jid or result.get("url"))
             and (result.get("description_raw") or str(_jid).isdigit())
+        )
+        if not identified:
+            form_html = ""
+        identity_attrs = (
+            f' id="{card_id}" data-jst-id="{card_id}" data-jst-form="{form_id}"'
+            if identified else ""
         )
         root_class, root_extra, checkbox_html, disabled_note_html = select_shell(
             card_id, selectable=selectable, url=result.get("url")
         )
 
         html.append(
-            f'<div class="{root_class}" id="{card_id}" data-jst-id="{card_id}" data-jst-form="{form_id}"'
+            f'<div class="{root_class}"{identity_attrs}'
             f' data-jst-title="{title_esc}" data-jst-company="{company_esc}"'
             f' data-jst-salary="" data-jst-location="{location_esc}"'
             f"{hide_attrs(result)}"

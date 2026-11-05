@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sqlite3
 
 import pytest
 
 from src.job_hunt_index import (
+    _SCHEMA_SQL,
     open_db,
     query_board,
     query_jobs_list,
@@ -145,6 +147,38 @@ def test_upsert_tailoring_ready_none_stores_null(tmp_path: Path) -> None:
     jobs = query_jobs_list(db_path)
     assert len(jobs) == 1
     assert jobs[0]["tailoring_ready"] is None
+
+
+def test_digest_initialization_marker_migrates_legacy_rows_without_marking_them(tmp_path: Path) -> None:
+    db = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(_SCHEMA_SQL)
+    conn.execute("INSERT INTO jobs(job_id, user_decision) VALUES ('ordinary', 'review')")
+    conn.commit()
+    conn.close()
+
+    for _ in range(2):
+        conn = open_db(db)
+        try:
+            row = conn.execute("SELECT * FROM jobs WHERE job_id = 'ordinary'").fetchone()
+            assert row["user_decision"] == "review"
+            assert all(row[key] is None for key in ("digest_init_search_id", "digest_init_date", "digest_init_queue_requested"))
+        finally:
+            conn.close()
+
+
+def test_ordinary_upsert_preserves_incomplete_digest_initialization(tmp_path: Path) -> None:
+    db = tmp_path / "marker.db"
+    upsert_job(db, _minimal_row(digest_init_search_id="search-1", digest_init_date="2026-10-01", digest_init_queue_requested=True))
+    upsert_job(db, _minimal_row(user_decision="review", status="applied"))
+
+    conn = open_db(db)
+    try:
+        row = conn.execute("SELECT * FROM jobs").fetchone()
+        assert (row["digest_init_search_id"], row["digest_init_date"], row["digest_init_queue_requested"]) == ("search-1", "2026-10-01", 1)
+        assert (row["user_decision"], row["status"]) == ("review", "applied")
+    finally:
+        conn.close()
 
 
 def _build_test_job(job_id: str = "job-001") -> JobPosting:

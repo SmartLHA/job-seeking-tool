@@ -11,6 +11,8 @@ from unittest.mock import patch
 
 import pytest
 
+from test_cv_review_record import record_for
+from src.job_hunt_cv_review import write_review_record
 from src import job_hunt_export, ui_handlers
 from src.job_hunt_config import TailoringPolicy
 from src.job_hunt_cover_letter import cover_letter_dir, load_cover_letter, save_cover_letter
@@ -53,6 +55,12 @@ def _write_cv(cv_dir: Path, job_id: str, profile_id: str, body=CV_BODY, reviewed
 
 class _Profile:
     candidate_id = "cand-1"
+    master_cv_text = "Synthetic master CV"
+    master_cv_ref = None
+    years_experience = 5
+    skills = []
+    target_roles = []
+    industries = []
     # personal fields that must never leak
     name = "Jane Secret Person"
     email = "jane.secret@example.com"
@@ -117,13 +125,26 @@ def test_full_package_contents_and_analysis_text(env):
 
 def test_cv_only_lists_missing_parts(env):
     _write_cv(env["policy"].output_dir, "job-1", "cand-1", reviewed=True)
+    write_review_record(env["policy"].output_dir, "job-1", record_for(_Profile, CV_BODY))
     data, manifest = _build(env)
     zf = _open(data)
     assert zf.namelist() == ["README.txt", "cv.md", "job.json"]
     assert set(manifest["missing"]) == {"cover_letter.txt", "analysis.md"}
     readme = zf.read("README.txt").decode()
-    assert "cover_letter.txt: not generated yet" in readme
+    assert "cover_letter.txt: not generated for this profile, or unavailable" in readme
     assert "analysis.md: job has not been evaluated yet" in readme
+
+
+def test_export_uses_matching_ordinary_cv_after_other_profile_ai(env):
+    _write_cv(env["policy"].output_dir, "job-1", "other-profile", body="Other profile private AI CV", reviewed=True)
+    _write_cv(env["policy"].output_dir, "job-1", "cand-1", body="Active profile ordinary CV")
+
+    data, manifest = _build(env)
+    zf = _open(data)
+
+    assert zf.read("cv.md").decode().strip() == "Active profile ordinary CV"
+    assert "cv.md" not in manifest["missing"]
+    assert all(b"Other profile private AI CV" not in zf.read(name) for name in zf.namelist())
 
 
 def test_nothing_generated_is_partial_not_error(env):
@@ -168,7 +189,7 @@ def test_secrets_never_in_zip(env):
     assert not any(n.startswith((".env", "raw_inputs")) or "/" in n for n in zf.namelist())
 
 
-@pytest.mark.parametrize("bad", ["../x", "a/b", "", "x" * 500, "..", ".", "a b", "x%00", "id;rm", None])
+@pytest.mark.parametrize("bad", ["../x", "a/b", "", "x" * 500, "..", ".", "a b", "x%00", "id;rm", "job-1\n", "job-1\r\n", None])
 def test_validate_rejects_bad_ids(bad):
     with pytest.raises(ValueError):
         validate_job_id(bad)
@@ -176,7 +197,7 @@ def test_validate_rejects_bad_ids(bad):
         package_filename(bad)
 
 
-@pytest.mark.parametrize("bad", ["../x", "a/b", "", "x" * 500, "..", None])
+@pytest.mark.parametrize("bad", ["../x", "a/b", "", "x" * 500, "..", "job-1\n", "job-1\r\n", None])
 def test_build_package_rejects_before_any_file_access(env, bad):
     with patch.object(job_hunt_export, "load_reviewed_job") as a, \
          patch.object(job_hunt_export, "load_latest_tailored_cv") as b, \
@@ -192,11 +213,11 @@ def test_cover_letter_round_trip_from_tmp_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     assert load_cover_letter("job-1") is None
     p = save_cover_letter("job-1", LETTER, "cand-1")
-    assert p == cover_letter_dir() / "job-1.txt" and (tmp_path / "output" / "cover_letters" / "job-1.txt").exists()
-    assert load_cover_letter("job-1") == LETTER
+    assert p == cover_letter_dir() / "cand-1" / "job-1.txt" and p.exists()
+    assert load_cover_letter("job-1", profile_id="cand-1") == LETTER
     other = tmp_path / "elsewhere"
     save_cover_letter("job-2", "B", "c", base_dir=other)
-    assert load_cover_letter("job-2", other) == "B" and load_cover_letter("job-2") is None
+    assert load_cover_letter("job-2", other, profile_id="c") == "B" and load_cover_letter("job-2", profile_id="c") is None
 
 
 @pytest.mark.parametrize("bad", ["../x", "a/b", "", ".."])
@@ -341,3 +362,80 @@ def test_job_page_has_download_button():
                   model_label="m", source_type="copied_text")
     html = render_job_page(JobPageViewModel(**values))
     assert 'href="/job/job-001/export.zip"' in html and "download" in html and "Download package" in html
+
+
+# ── Market-aware salary (2026-09-22, revision 2): export exclusion ──────────
+# Adzuna's terms allow personal research use only; the zip goes to employers, so
+# neither the market_snapshot nor any Adzuna/market wording may appear in it.
+
+def _analysis_with_market(job_id="job-1"):
+    return dataclasses.replace(
+        _analysis(job_id),
+        market_snapshot={
+            "position": "bottom", "percentile": 12.5, "sample_total": 142,
+            "histogram_date": "2026-09-20T10:00:00+00:00", "query": "business analyst",
+            "salary_used": 47500.0, "reason": None, "source": "adzuna", "version": 1,
+        },
+        market_adjustment=-5.0,
+    )
+
+
+def test_market_snapshot_and_adzuna_wording_excluded_from_zip(env):
+    _write_cv(env["policy"].output_dir, "job-1", "cand-1")
+    save_cover_letter("job-1", LETTER, "cand-1", base_dir=env["out"])
+    save_job_analysis(_analysis_with_market(), env["state"])
+    data, _ = _build(env)
+    zf = _open(data)
+    blob = b"".join(zf.read(n) for n in zf.namelist()).lower()
+    for needle in (b"adzuna", b"market_snapshot", b"market position", b"bottom quarter", b"market adjustment"):
+        assert needle not in blob, needle
+
+    job_json = json.loads(zf.read("job.json"))
+    assert "market_snapshot" not in job_json and "market_adjustment" not in job_json
+
+
+def test_export_letters_match_active_profile_and_preserve_legacy(env):
+    from types import SimpleNamespace
+    root = cover_letter_dir(env['out'])
+    root.mkdir(parents=True)
+    legacy = root / 'job-1.txt'
+    old_bytes = b'Legacy unowned letter\xff'
+    legacy.write_bytes(old_bytes)
+    # A legacy file is never sufficient, even with an active profile.
+    data, manifest = _build(env)
+    assert 'cover_letter.txt' not in _open(data).namelist()
+    assert 'cover_letter.txt' in manifest['missing']
+    save_cover_letter('job-1', 'Profile A letter', 'cand-1', env['out'])
+    b_profile = SimpleNamespace(candidate_id='cand-2')
+    data, manifest = _build(env, profile=b_profile)
+    assert 'cover_letter.txt' not in _open(data).namelist()
+    assert 'cover_letter.txt' in manifest['missing']
+    save_cover_letter('job-1', 'Profile B letter', 'cand-2', env['out'])
+    for profile, expected in [(_Profile, 'Profile A letter\n'), (b_profile, 'Profile B letter\n')]:
+        data, manifest = _build(env, profile=profile)
+        assert _open(data).read('cover_letter.txt').decode() == expected
+        assert 'cover_letter.txt' not in manifest['missing']
+    for profile in [None, SimpleNamespace(candidate_id=''), SimpleNamespace(candidate_id='../cand-1')]:
+        data, manifest = _build(env, profile=profile)
+        assert 'cover_letter.txt' not in _open(data).namelist()
+        assert 'cover_letter.txt' in manifest['missing']
+    assert legacy.read_bytes() == old_bytes
+
+
+def test_export_rejects_symlinked_letter_without_reading_or_changing_target(env):
+    root = cover_letter_dir(env['out']) / 'cand-1'
+    root.mkdir(parents=True)
+    target = env['tmp'] / 'synthetic-other-letter.txt'
+    old_bytes = b'Synthetic other-profile letter'
+    target.write_bytes(old_bytes)
+    (root / 'job-1.txt').symlink_to(target)
+    data, manifest = _build(env)
+    assert 'cover_letter.txt' not in _open(data).namelist()
+    assert 'cover_letter.txt' in manifest['missing']
+    assert old_bytes not in data and target.read_bytes() == old_bytes
+
+
+@pytest.mark.parametrize("job_id", ["job-1", "source_2.v3", "A" * 128])
+def test_export_identity_validation_preserves_valid_ids(job_id):
+    assert validate_job_id(job_id) == job_id
+    assert package_filename(job_id) == f"application-package-{job_id}.zip"

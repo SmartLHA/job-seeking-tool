@@ -103,7 +103,7 @@ class TestRenderReviewQueuePage:
         assert "skip" in html.lower() or "−" in html
 
     def test_render_review_queue_page_score_color_high_score(self) -> None:
-        """Test that high scores (>=75) use apply color."""
+        """Test that high scores (>= apply threshold, 80) use apply color."""
         vm = ReviewQueueViewModel(
             jobs=[
                 {
@@ -129,7 +129,7 @@ class TestRenderReviewQueuePage:
         assert "apply" in html.lower() or "var(--apply)" in html
 
     def test_render_review_queue_page_score_color_medium_score(self) -> None:
-        """Test that medium scores (50-74) use review color."""
+        """Test that medium scores (review band, 65-79) use review color."""
         vm = ReviewQueueViewModel(
             jobs=[
                 {
@@ -155,7 +155,7 @@ class TestRenderReviewQueuePage:
         assert "review" in html.lower() or "var(--review)" in html
 
     def test_render_review_queue_page_score_color_low_score(self) -> None:
-        """Test that low scores (<50) use skip color."""
+        """Test that low scores (< review threshold, 65) use skip color."""
         vm = ReviewQueueViewModel(
             jobs=[
                 {

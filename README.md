@@ -18,8 +18,26 @@ Local-first UK job-search decision support and application preparation. It score
 
 ## Run the UI
 
+Install dependencies in the project's virtual environment (from this directory):
+
 ```bash
-python3 -m src.job_hunt_ui \
+python3 -m venv venv
+venv/bin/python -m pip install -r requirements-dev.txt
+```
+
+PDF CV extraction requires `pypdf>=6.19,<7`; DOCX CV extraction requires
+`python-docx>=1.2,<2` (imported as `docx`). Both are included in the manifest.
+TXT extraction uses Python's standard library. Missing extraction dependencies
+produce an installation error. Format checks use synthetic files only:
+
+```bash
+venv/bin/python -m pytest tests/test_cv_format_dependencies.py
+```
+
+Then run the UI with that same environment:
+
+```bash
+venv/bin/python -m src.job_hunt_ui \
   --profile data/mic_profile/candidate_profile.json \
   --state-root data/state \
   --report-dir output/reports \
@@ -31,13 +49,54 @@ Open `http://127.0.0.1:9000`.
 
 Required source credentials are read from the environment. Reed needs `REED_API_KEY`; Adzuna needs `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`; optional Gemini functions need `GOOGLE_API_KEY`. (`requests` and `python-dotenv` must be installed for the Python that runs the app — see `requirements-dev.txt`.)
 
+Local CV uploads extract text and suggest skills locally by default. The unchecked
+cloud option explicitly permits sending up to 12,000 characters of CV text to
+Gemini; other optional Gemini actions retain their own disclosures. Extracted
+text is stored as `docs/master_cv.txt` within the selected profile. New saves
+update the reference; existing legacy references and files are retained.
+
+AI Review CV rewrites with Google Gemini, then checks the rewrite with a second
+reviewer, after a per-click consent that names Google Gemini and OpenAI. The reviewer
+is OpenAI `gpt-6-luna` through the local Codex CLI, signed in with the owner's
+personal ChatGPT account (Plus per the owner; plan UNVERIFIED) in its own Codex home `~/.codex-cv-reviewer` (or the folder named
+by the `CV_REVIEW_CODEX_HOME` environment variable). It was enabled on 2026-11-04
+(commit `40cc011`); it needs the Codex CLI and `node`. What is sent and what is kept:
+
+- When the AI CV review is used, the original CV text, the rewrite, the profile
+  evidence and context, and the job's required and preferred skills are sent to OpenAI
+  through the Codex CLI (not the full job advert). If OpenAI fails with a rate limit, a server error or
+  not-found, they are sent to Google Gemini (`gemini-3.5-flash`) instead. A timeout
+  gives UNCHECKED with no fallback.
+- Training: personal-plan (Free, Plus, Pro) content may be used for model training unless "Improve the model for
+  everyone" is off in ChatGPT data controls. The default is ON; the owner turned it off
+  on 2026-11-04. Anyone else running this must check their own setting. Codex also has
+  a separate "Include environments" training setting; whether it applies to local CLI
+  runs is UNVERIFIED.
+- Retention: OpenAI publishes no retention period for Codex CLI requests (UNVERIFIED
+  beyond that; `--ephemeral` stops only local session files).
+- Terms: the OpenAI Europe Terms of Use ban "Automatically or programmatically
+  extracting data or Output". The owner read this and accepted the risk on 2026-11-04.
+- Quota: reviews share the account's Codex quota with development work.
+- The live check and its results are in
+  `docs/tasks/2026-11-01-openai-cv-reviewer-spec.md`.
+
+All UI requests require one valid loopback Host at the bound port. POST clients
+must supply a matching Origin or Referer; headerless POST clients are rejected.
+AI explanation is POST-only (GET returns 405 with `Allow: POST`). Search selections
+have stable source/job identities and a maximum of 20; partial evaluation keeps
+failed or changed selections for retry and links to successful results.
+Cover letters are stored per profile and job; export includes only the active
+profile's matching letter, with no legacy fallback.
+
+For repair scope and verification limits, see the [audit remediation record](docs/tasks/audit-remediation-2026-10-04.md).
+
 ## Route summary
 
 | Area | Routes |
 |---|---|
 | Search | `GET /search/{source}`, `GET /search/{source}/more`, `POST /select/{source}`, `GET /sources` |
 | Not-interested triage | `POST /jobs/not-interested` (hide), `POST /jobs/not-interested/undo` (undo/unhide), `GET /jobs/not-interested` (hidden list) |
-| Review/evaluate | `POST /prefill`, `POST /job-submit`, `POST /evaluate`, `GET /job/<id>`, `GET /job/<id>/explain`, `GET /job/<id>/evaluate-form`, `GET /review-queue`, `POST /jobs/batch-evaluate` |
+| Review/evaluate | `POST /prefill`, `POST /job-submit`, `POST /evaluate`, `GET /job/<id>`, `POST /job/<id>/explain`, `GET /job/<id>/evaluate-form`, `GET /review-queue`, `POST /jobs/batch-evaluate` |
 | Job actions | `POST /job/<id>/decision`, `POST /job/<id>/add-gap-skills`, `POST /job/<id>/ai-review-cv`, `POST /job/<id>/ats-recheck`, `POST /tailor`, `POST /cover-letter`, `POST /job/<id>/qualitative-assess` |
 | Batch qualitative assessment | `POST /jobs/batch-assess`, `GET /batch/<batch_id>`, `POST /batch/<batch_id>/cancel` |
 | Board/outcomes | `GET /jobs`, `GET /board`, `GET /board/view`, `POST /jobs/save`, `POST /outcome` |
