@@ -7,6 +7,27 @@ attempts per run. r2 to r4 apply three Codex design reviews (the third raised no
 and a fresh verifier check of r3 (0 BLOCKER, 0 MAJOR, 5 MINOR). The Gemini pre-check was
 skipped: the brief bars Gemini calls without Mike's consent. -->
 
+<!-- STATUS (implementation, 2026-11-05)
+Implementation status: ✅ built on branch claude/agitated-sinoussi-7cc5be, NOT pushed, NOT merged.
+Fresh verification is in progress; this block may be corrected after it.
+Commits (oldest first): ecb7c0b (ReedFetchError), 96c40f2 (local salary floor, 10-attempt budget),
+1efe433 (saved_search_runs records), e3842ae (Run now summary, Last run and Run history display),
+fac2eea (test registration fix).
+Key functions: reed_client.ReedFetchError and fetch_reed_jobs; scheduler _salary_number,
+_salary_floor, _salary_verdict, run_digest_pipeline(trigger=...), DigestRunResult (+3 counters);
+saved_searches search_run_status, search_run_error, search_run_summary, record_search_run,
+list_search_runs; ui_handlers handle_run_now, handle_saved_searches_list, _saved_search_to_json;
+ui_render runNow and Run history in render_profile_page.
+Routes: POST /saved-searches/{id}/run-now (adds run_status, summary), GET /saved-searches (adds runs).
+Divergences seen between code and spec: none found by reading the diff; not checked line by line
+against every acceptance criterion (AC1-AC21). Section 7 items stay out of scope (Adzuna failures,
+floor sent to Reed, 10-job read without a floor, floor on the Reed page, scheduled profile-load
+failure record, stale text).
+Evidence: full suite 64 failed, 2803 passed, 1 skipped, same 64 ids as base 401e48f (producer run,
+fake keys). Browser check of Run now and history used the real page handlers with synthetic data
+and a fake Reed (producer evidence). No live Reed or Gemini call; the salary floor against a live
+Reed response is UNVERIFIED. AC21 verifier not yet passed. -->
+
 ## 1. Problem
 
 Mike asked on 2026-11-05 why a saved search run had failed. No server error was found,
