@@ -20,6 +20,8 @@ from test_ui import _running_ui_server, _http_get
 @pytest.fixture(autouse=True)
 def _restore_source_registry():
     snapshot = dict(registry._REGISTRY)
+    # Earlier test modules can leave a stub registered under "reed"; these tests need the real one.
+    reed_source._register()
     try:
         yield
     finally:

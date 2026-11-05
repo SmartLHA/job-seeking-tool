@@ -221,8 +221,11 @@ def test_floor_requires_both_normalized_keys():
 
 def test_ac8_reed_floor_page_paging_server(tmp_path, monkeypatch):
     """Socket regression for the orchestrator; excluded from producer offline run."""
+    from src.job_sources import reed_source
     from test_ui import _running_ui_server, _http_get
     from urllib.parse import urlencode
+    # Earlier test modules can leave a stub registered under "reed"; this test needs the real one.
+    reed_source._register()
     calls = []
     def fake_fetch(keyword, location, max_results, *, skip=0, save_raw=True):
         calls.append((max_results, skip, save_raw))
