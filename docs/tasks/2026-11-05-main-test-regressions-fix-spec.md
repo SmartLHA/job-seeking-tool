@@ -24,7 +24,7 @@ independently verified; the verifier of this fix checks the claims that matter.
 | P | 29 | `tests/test_digest_pipeline.py` registers stub sources in the global registry and never restores it, so later search tests get blank pages | `tests/test_digest_pipeline.py:37,414`, `src/job_sources/source_registry.py:76-82`, commit d3e6695 | Autouse snapshot and restore fixture, as in `tests/test_digest_e2e.py:32-41` |
 | T | 4 | `tests/test_market_position_route.py` seeds a cache at a fixed date and the handler reads it with the real clock and a 24h TTL, so it returns 409 | `src/adzuna_client.py:115,162,237`, commit a6a222d | Pin `ac._utc_now` in the tests |
 | R | 2 | Two tests hide jobs after the first search; More now returns 409 "search expired or changed" by design | `src/ui_handlers.py:1161-1175`, commit 490c94d; intent in `docs/ui_scope.md:18`, `docs/tasks/p2-remediation-2026-10-23.md:182` | Move the `hide_jobs` block above the first GET |
-| M | 1 | `test_multiselect_triage_contract` slices the JS before `function _upd`, and that slice now includes the new `_addSelection` helper | `src/_multiselect.py:166`, commit cd46555; intent in `docs/tasks/audit-remediation-2026-10-04.md:23,152` | Needs an assertion rewrite. Not approved yet |
+| M | 1 | `test_multiselect_triage_contract` slices the JS before `function _upd`, and that slice now includes the new `_addSelection` helper | `src/job_sources/_multiselect.py:166`, commit cd46555; intent in `docs/tasks/audit-remediation-2026-10-04.md:23,152` | Needs an assertion rewrite. Not approved yet |
 
 CI cause: `.github/workflows/python-app.yml:20` uses `${{ runner.temp }}` in job-level
 `env:`. The `runner` context is not allowed there. Commit de5521f.
