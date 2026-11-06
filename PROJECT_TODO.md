@@ -47,7 +47,8 @@
 - ⬜ Pending: apply the floor on the Reed search page (its "More" logic reads a short page as the last page).
 - ⬜ Pending: record a scheduled profile-load failure (needs an edit to `DigestScheduler`; waits for the Issue 16 scheduler ledger work in the main checkout).
 - ⬜ Pending: stale text. `src/ui_render.py:2796` says "auto-run lands in a later phase"; the `src/ui_handlers.py:2606` docstring of `handle_run_now` says "No LLM calls (D3)" but Run now can call Gemini for each new job (skills extraction).
-- ⬜ Pending: fresh-context verifier for this build (spec AC21), then Mike commits.
+- ✅ Done 2026-11-06: fresh-context verifier for this build (spec AC21) passed at `db4b58d`, full suite 64 failed, 2803 passed, 1 skipped, same ids as base `401e48f`.
+- ⬜ Pending: Mike decides on merging this branch.
 
 
 ## Audit repairs — implementation and remaining verification
