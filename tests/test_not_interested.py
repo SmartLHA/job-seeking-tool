@@ -242,9 +242,8 @@ def test_multiselect_triage_contract():
     # No auto-select: registration must not pre-add every card to the selection.
     assert "_sel.add(id);'});" not in M.MULTISELECT_JS
     assert "function _reg(c)" in M.MULTISELECT_JS
-    assert "_sel.add(id)" not in M.MULTISELECT_JS.split("function _upd")[0].split(
-        "window.jstSelectAll"
-    )[0].replace("window._jst_sel=window._jst_sel||new Set();", "")
+    _reg_body = M.MULTISELECT_JS.split("function _reg(c)")[1].split("function _upd")[0]
+    assert "_sel.add(" not in _reg_body and "_addSelection(" not in _reg_body
     # Hide / hidden-jobs / paging wiring.
     for needle in (
         "window.jstHide=function",
