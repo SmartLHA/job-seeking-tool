@@ -79,6 +79,11 @@ to the "Out of scope" list above.
   round-trip, so Python 3.10 cannot pass them without weakening them. Python 3.10 came from
   the starter workflow (7a7179b "Create python-app.yml"). No other Python target is declared,
   and the project runs on 3.14. Set CI to Python 3.14, including the step name.
+- **Mobile layout, 1 browser test.** Run 42269778292 reached the browser tests.
+  `tests/test_ui.py::test_shared_shell_has_no_mobile_document_overflow` found a button past
+  the right edge of `/digest` at 390px. The "Daily Digest" header row is a non-wrapping flex
+  row. Add `flex-wrap:wrap` to its two containers in `render_digest_page`, `src/ui_render.py`.
+  This is a real layout fix, so it is a second exception to the "Out of scope" list.
 
 ## Group M (approved by Mike 2026-11-06)
 
@@ -105,8 +110,9 @@ assert "_sel.add(" not in _reg_body and "_addSelection(" not in _reg_body
 1. Full suite on a clean tree of the branch: 0 failed, 2766 passed, 17 skipped.
 2. All 50 ids in the failing list pass in that same full-suite run.
 3. `git diff --name-only 6579980...HEAD` lists only this spec, the test files named above,
-   `.github/workflows/python-app.yml` and the three `src/` files named under "CI follow-ups".
-   Nothing under `viewer/`. In `src/`, the diff only removes the 24 named items.
+   `.github/workflows/python-app.yml` and the four `src/` files named under "CI follow-ups".
+   Nothing under `viewer/`. In `src/`, the diff only removes the 24 named items and adds
+   `flex-wrap:wrap` to the two digest header containers.
 4. No existing `assert` line is changed or deleted, except group M's approved rewrite. The
    two moved `assert status == 200` lines in group R are unchanged text.
 5. The moved setup in group R still tests look-ahead: disabling the look-ahead in a scratch
