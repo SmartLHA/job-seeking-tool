@@ -56,6 +56,9 @@ Out of scope, do not change:
 - **CI.** Replace line 20 of `.github/workflows/python-app.yml` with the literal path
   `/tmp/job-tool-playwright`. Leave the step-level `runner.temp` uses at lines 48 and 53;
   they are allowed there.
+- **CI runner.** Pin `runs-on` to `ubuntu-24.04`. The first working run (42263556193) showed
+  `ubuntu-latest` is now Ubuntu 26.04, and Playwright 1.59.1 reports it does not support
+  Chromium there. `requirements-dev.txt` pins `playwright>=1.59,<1.60`.
 
 ## Group M (approved by Mike 2026-11-06)
 
