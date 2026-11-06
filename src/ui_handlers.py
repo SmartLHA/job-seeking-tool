@@ -77,14 +77,11 @@ from src.job_hunt_cover_letter import generate_cover_letter_text, save_cover_let
 from src.job_hunt_cv_storage import write_cv_text
 from src.job_hunt_storage import (
     ensure_storage_layout,
-    archive_qualitative_assessment,
     load_application_outcome,
     load_job_analysis,
-    load_qualitative_assessment,
     load_reviewed_job,
     save_application_outcome,
     save_job_analysis,
-    save_qualitative_assessment,
     save_reviewed_job,
 )
 
@@ -913,7 +910,6 @@ def handle_clear_market_position(req, config, responder, job_id):
 def handle_qualitative_assess(req, config, responder, job_id):
     """POST /job/{id}/qualitative-assess — owned advisory assessment."""
     from src.job_hunt_index import LLMQuotaExhausted, claim_qualitative_assessment
-    from src.job_hunt_llm import RateLimited
     from src.job_hunt_qualitative import PROMPT_VERSION, run_qualitative_assessment_pipeline
     from src.job_hunt_qualitative_state import utc_now, archive_owned, transition, QualitativeOwnershipStopped
     if not job_id.strip():
@@ -1215,7 +1211,6 @@ def handle_source_search(req, config, responder, source_id):
                 search_values["_partial_error_count"] = str(len(_kw_sub_errors))
     except Exception as exc:
         error = f"{source.display_name} search failed: {exc}. Manual fallback is still available."
-        _any_full_page = False
     # Filter out not-interested jobs (display-only: paging math below stays on
     # the RAW count so the skip cursor still advances one full source page).
     # Relevance-bucket (Slice A, 2026-07-21 plan): split into title-matching
@@ -1631,7 +1626,7 @@ def handle_add_gap_skills(req, config, responder, job_id):
 
 def handle_ai_review_cv(req, config, responder, job_id, *, _revise=False):
     """POST /job/{id}/ai-review-cv — Gemini lightly rewrites the master CV for this job."""
-    from src.job_hunt_llm import _MAX_CV_REVIEW_CHARS, ai_rewrite_cv
+    from src.job_hunt_llm import _MAX_CV_REVIEW_CHARS
 
     if not isinstance(job_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", job_id) or job_id in {".", ".."}:
         responder.send_json({"ok": False, "error": "Job not found"}, status=HTTPStatus.NOT_FOUND)
@@ -1666,9 +1661,7 @@ def handle_ai_review_cv(req, config, responder, job_id, *, _revise=False):
 
     from src.job_hunt_cv_review import (
         AI_REVIEW_LOCK, MissingMasterCVError, UnreadableMasterCVError,
-        build_review_source, canonical_cv_body, compute_binding, delete_review_record,
-        item_statuses, link_and_clear, overall_verdict, resolve_master_cv_text,
-        run_blind_review, run_layer0, write_review_record,
+        resolve_master_cv_text,
     )
     try:
         cv_text = resolve_master_cv_text(profile, config.profile_path.parent)

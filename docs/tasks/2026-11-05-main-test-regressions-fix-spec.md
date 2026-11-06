@@ -60,6 +60,26 @@ Out of scope, do not change:
   `ubuntu-latest` is now Ubuntu 26.04, and Playwright 1.59.1 reports it does not support
   Chromium there. `requirements-dev.txt` pins `playwright>=1.59,<1.60`.
 
+## CI follow-ups (under Auto-fix, enabled by Mike 2026-11-06)
+
+CI run 42265841808 reached pytest and found 10 failures that local runs cannot see, because
+the local venv has no pyflakes and runs Python 3.14. Auto-fix authorises fixing CI on this
+branch. The lint fix below is the only product code this PR changes, and it is an exception
+to the "Out of scope" list above.
+
+- **Lint, 1 test.** `tests/test_lint.py::test_no_unexpected_pyflakes_findings` reports 24
+  findings: 23 unused imports and 1 unused local, in `src/job_hunt_qualitative.py`,
+  `src/job_hunt_scheduler.py` and `src/ui_handlers.py`. The test's rule is "clean them or add
+  to the allowlist", and the allowlist is for documented benign items, so clean them. Remove
+  only the named imports and keep the rest of each import statement. For `_any_full_page`,
+  remove the assignment at `src/ui_handlers.py:1218` and keep the tuple unpack at line 1210.
+  Delete no function. Do not change `tests/test_lint.py` or its allowlist.
+- **CSV, 9 tests.** `tests/test_reporting.py` fails on Python 3.10 only, with `_csv.Error:
+  need to escape, but no escapechar set` for values holding a NUL. These tests require NUL to
+  round-trip, so Python 3.10 cannot pass them without weakening them. Python 3.10 came from
+  the starter workflow (7a7179b "Create python-app.yml"). No other Python target is declared,
+  and the project runs on 3.14. Set CI to Python 3.14, including the step name.
+
 ## Group M (approved by Mike 2026-11-06)
 
 This narrows the check: auto-select code added outside `_reg` is no longer caught. Mike was
@@ -84,8 +104,9 @@ assert "_sel.add(" not in _reg_body and "_addSelection(" not in _reg_body
 
 1. Full suite on a clean tree of the branch: 0 failed, 2766 passed, 17 skipped.
 2. All 50 ids in the failing list pass in that same full-suite run.
-3. `git diff --name-only 6579980...HEAD` lists only this spec, the test files named above and
-   `.github/workflows/python-app.yml`. Nothing under `src/` or `viewer/`.
+3. `git diff --name-only 6579980...HEAD` lists only this spec, the test files named above,
+   `.github/workflows/python-app.yml` and the three `src/` files named under "CI follow-ups".
+   Nothing under `viewer/`. In `src/`, the diff only removes the 24 named items.
 4. No existing `assert` line is changed or deleted, except group M's approved rewrite. The
    two moved `assert status == 200` lines in group R are unchanged text.
 5. The moved setup in group R still tests look-ahead: disabling the look-ahead in a scratch
@@ -97,9 +118,8 @@ assert "_sel.add(" not in _reg_body and "_addSelection(" not in _reg_body
 
 ## Not covered locally
 
-- Browser tests: Playwright is not installed locally (17 skipped).
-- CI uses Python 3.10; the local venv is 3.14.
-- flake8 is not in the venv.
+- Browser tests: Playwright is not installed locally.
+- flake8 and pyflakes are not in the venv, so only CI proves the lint fix.
 
 These run for the first time since 2026-09-22 when CI works again, so the first CI run may
 show failures this spec did not predict.
