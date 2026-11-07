@@ -12,6 +12,7 @@ import json
 import sqlite3
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
@@ -161,9 +162,17 @@ def _server(tmp_path):
         thread.join(timeout=5)
 
 
+def _same_origin(url: str) -> str:
+    """Origin header value for a request to url (the server rejects POSTs without one)."""
+    parts = urllib.parse.urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
+
 def _req(url, *, method="GET", body=None):
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    headers = {"Content-Type": "application/json"} if data is not None else {}
+    headers = (
+        {"Content-Type": "application/json", "Origin": _same_origin(url)} if data is not None else {}
+    )
     request = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(request) as resp:
@@ -233,9 +242,8 @@ def test_multiselect_triage_contract():
     # No auto-select: registration must not pre-add every card to the selection.
     assert "_sel.add(id);'});" not in M.MULTISELECT_JS
     assert "function _reg(c)" in M.MULTISELECT_JS
-    assert "_sel.add(id)" not in M.MULTISELECT_JS.split("function _upd")[0].split(
-        "window.jstSelectAll"
-    )[0].replace("window._jst_sel=window._jst_sel||new Set();", "")
+    _reg_body = M.MULTISELECT_JS.split("function _reg(c)")[1].split("function _upd")[0]
+    assert "_sel.add(" not in _reg_body and "_addSelection(" not in _reg_body
     # Hide / hidden-jobs / paging wiring.
     for needle in (
         "window.jstHide=function",

@@ -171,8 +171,6 @@ def test_more_looks_ahead_when_entire_requested_page_is_hidden(tmp_path: Path, m
     monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
     query = urllib.parse.urlencode({"keywords": "Business Analysis", "locationName": "London"})
     with _running_ui_server(tmp_path) as (base_url, config):
-        status, body = _http_get(f"{base_url}/search/reed?{query}")
-        assert status == 200
         hide_jobs(
             [
                 {"source": "reed", "source_job_id": str(job_id), "title": "Business Analyst", "company": "Acme"}
@@ -180,6 +178,8 @@ def test_more_looks_ahead_when_entire_requested_page_is_hidden(tmp_path: Path, m
             ],
             state_root=config.state_root,
         )
+        status, body = _http_get(f"{base_url}/search/reed?{query}")
+        assert status == 200
         next_url = html.unescape(re.search(r'data-next-url="([^"]+)"', body).group(1))
         status, more_body = _http_get(f"{base_url}{next_url}")
 
@@ -204,8 +204,6 @@ def test_more_stops_hidden_page_lookahead_at_fixed_cap(tmp_path: Path, monkeypat
     monkeypatch.setattr("src.job_sources.reed_source.fetch_reed_jobs", fake_fetch_reed_jobs)
     query = urllib.parse.urlencode({"keywords": "Business Analysis", "locationName": "London"})
     with _running_ui_server(tmp_path) as (base_url, config):
-        status, body = _http_get(f"{base_url}/search/reed?{query}")
-        assert status == 200
         hide_jobs(
             [
                 {"source": "reed", "source_job_id": str(job_id), "title": "Business Analyst", "company": "Acme"}
@@ -213,6 +211,8 @@ def test_more_stops_hidden_page_lookahead_at_fixed_cap(tmp_path: Path, monkeypat
             ],
             state_root=config.state_root,
         )
+        status, body = _http_get(f"{base_url}/search/reed?{query}")
+        assert status == 200
         next_url = html.unescape(re.search(r'data-next-url="([^"]+)"', body).group(1))
         status, more_body = _http_get(f"{base_url}{next_url}")
 

@@ -168,7 +168,7 @@ def run_qualitative_assessment_pipeline(
     from src.job_hunt_llm import RateLimited, _call_gemini_reasoning
     from src.job_hunt_models import effective_decision
     from src.job_hunt_scheduler import rpd_date_key
-    from src.job_hunt_storage import load_job_analysis, load_reviewed_job, save_qualitative_assessment
+    from src.job_hunt_storage import load_job_analysis, load_reviewed_job
 
     reviewed_job = load_reviewed_job(job_id, state_root)
     prompt = build_qualitative_prompt(reviewed_job.description_raw, profile)

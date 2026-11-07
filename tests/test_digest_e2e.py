@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
@@ -123,10 +124,16 @@ def _get_json(url):
     return st, json.loads(body)
 
 
+def _same_origin(url: str) -> str:
+    """Origin header value for a request to url (the server rejects POSTs without one)."""
+    parts = urllib.parse.urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
+
 def _post_json(url, payload=None):
     data = json.dumps(payload).encode() if payload is not None else b""
     req = urllib.request.Request(url, data=data, method="POST",
-                                 headers={"Content-Type": "application/json"})
+                                 headers={"Content-Type": "application/json", "Origin": _same_origin(url)})
     try:
         with urllib.request.urlopen(req) as r:
             return r.status, json.loads(r.read())

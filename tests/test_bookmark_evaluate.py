@@ -146,9 +146,17 @@ def _http_get(url: str) -> tuple[int, str]:
         return exc.code, exc.read().decode("utf-8")
 
 
+def _same_origin(url: str) -> str:
+    """Origin header value for a request to url (the server rejects POSTs without one)."""
+    parts = urllib.parse.urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
+
 def _http_post_form(url: str, form: dict[str, str]) -> tuple[int, str]:
     data = urllib.parse.urlencode(form).encode("utf-8")
-    request = urllib.request.Request(url, data=data, method="POST")
+    request = urllib.request.Request(
+        url, data=data, method="POST", headers={"Origin": _same_origin(url)}
+    )
     try:
         with urllib.request.urlopen(request) as response:
             return response.status, response.read().decode("utf-8")
@@ -159,7 +167,7 @@ def _http_post_form(url: str, form: dict[str, str]) -> tuple[int, str]:
 def _http_post_json(url: str, payload: dict) -> tuple[int, str]:
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
-        url, data=data, method="POST", headers={"Content-Type": "application/json"}
+        url, data=data, method="POST", headers={"Content-Type": "application/json", "Origin": _same_origin(url)}
     )
     try:
         with urllib.request.urlopen(request) as response:
