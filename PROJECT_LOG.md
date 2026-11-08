@@ -1,5 +1,10 @@
 ## 2026-11-08
 
+### Viewer Referer fragments and Tailor/cover results as text
+- **Status:** ✅ Two finished fixes taken from the unmerged branch `codex/p1-remediation` (Mike, 2026-11-08: "Yes, those two"). The rest of that branch is not merged.
+- **Changes:** `viewer/viewer_server.py` — a Referer containing a fragment fails the same-origin check. `src/ui_render.py` — Tailor and cover results are built from text nodes, so HTML in model output is shown literally.
+- **Tests:** `tests/test_viewer_api_boundary.py` and new `tests/test_tailor_cover_dom.py` (its browser tests need Playwright).
+
 ### Strict required-years extractor for paste and URL jobs: kept although the blind test missed its limits
 - **Status:** ⚠️ Built in `153196a` (2026-11-07) and KEPT by Mike on 2026-11-08 ("Keep it", relayed by the parent session, answering "Keep the new years extractor despite missing the targets?"). The blind test (B2) MISSED in both shapes. The decision covers keeping the commit and recording the limits; it gives no approval to push, open a PR or merge. Nothing is pushed.
 - **Motivation:** the old `_extract_years` gave 28 false matches in 43 no-requirement entries on the blind set; paste and URL jobs feed it into the experience score.
