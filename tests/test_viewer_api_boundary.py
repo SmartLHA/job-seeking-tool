@@ -134,6 +134,44 @@ def test_untrusted_post_closes_before_deferred_body(viewer_api, monkeypatch, hea
     assert calls == dict.fromkeys(calls, 0)
 
 
+@pytest.mark.parametrize("method,path", [("GET", "/api/health"), ("POST", "/api/kanban")])
+@pytest.mark.parametrize("suffix", ["/page#", "/page#section"])
+def test_referer_fragment_delimiter_rejected_before_parse_or_private_reads(viewer_api, monkeypatch, method, path, suffix):
+    calls = arm_private_traps(viewer_api, monkeypatch)
+    parse_calls = []
+
+    def unexpected_parse(value):
+        parse_calls.append(value)
+        raise AssertionError("Malformed Referer reached URL parsing")
+
+    monkeypatch.setattr(viewer_api, "urlsplit", unexpected_parse)
+    headers = [("Host", "127.0.0.1:18765"), ("Referer", "http://127.0.0.1:18765" + suffix),
+               ("Content-Type", "application/json"), ("Content-Length", "8192")]
+    sock = RequestSocket(request_bytes(method, path, headers), remaining=b"{}")
+    viewer_api.handle_request(sock)
+    assert sock.response.startswith(b"HTTP/1.1 403 ")
+    assert sock.reads == 1 and sock.closed and sock.shutdown_called
+    assert b"Connection: close" in sock.response and b"Access-Control" not in sock.response
+    assert calls == dict.fromkeys(calls, 0) and parse_calls == []
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+@pytest.mark.parametrize("alias", ["127.0.0.1", "localhost"])
+@pytest.mark.parametrize("suffix", ["/viewer/", "/page%23literal", "/page?encoded=%23", "/page?"])
+def test_referer_paths_encoded_fragment_and_queries_retain_dispatch(viewer_api, monkeypatch, method, alias, suffix):
+    calls = []
+    monkeypatch.setattr(viewer_api, "handle_api_kanban", lambda body: (calls.append(body), b'{"ok":true}')[1])
+    headers = [("Host", alias + ":18765"), ("Referer", "http://" + alias + ":18765" + suffix)]
+    body = b"{}" if method == "POST" else b""
+    if body:
+        headers += [("Content-Type", "application/json; charset=utf-8"), ("Content-Length", "2")]
+    sock = RequestSocket(request_bytes(method, "/api/kanban", headers), remaining=body)
+    viewer_api.handle_request(sock)
+    assert sock.response.startswith(b"HTTP/1.1 200 ") and calls == [body]
+    assert sock.reads == (2 if body else 1) and sock.closed
+    assert b"Access-Control" not in sock.response
+
+
 @pytest.mark.parametrize("path", sorted([
     "/api/kanban", "/api/system-kanban", "/api/jobs", "/api/url-parse",
     "/api/text-parse", "/api/job-submit", "/api/safe-content-analysis",
