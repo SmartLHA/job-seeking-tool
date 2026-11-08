@@ -1,0 +1,642 @@
+[
+ {
+  "id": "h001",
+  "group": "short_requirement",
+  "text": "Essential: 5+ years' experience in a business analyst role within financial services. You will work closely with product owners and delivery leads.",
+  "min": 5,
+  "max": null,
+  "note": "digit plus"
+ },
+ {
+  "id": "h002",
+  "group": "short_requirement",
+  "text": "We are looking for a Project Manager with a minimum of 7 years of experience delivering large-scale IT programmes. PRINCE2 certification is preferred.",
+  "min": 7,
+  "max": null,
+  "note": "minimum N years"
+ },
+ {
+  "id": "h003",
+  "group": "short_requirement",
+  "text": "Candidates must have at least three years' experience of SQL Server development. Knowledge of SSIS would be a plus.",
+  "min": 3,
+  "max": null,
+  "note": "word number, at least"
+ },
+ {
+  "id": "h004",
+  "group": "short_requirement",
+  "text": "Experience required: 3–5 years in a similar data engineering position. Our stack is Azure Databricks and dbt.",
+  "min": 3,
+  "max": 5,
+  "note": "en dash range"
+ },
+ {
+  "id": "h005",
+  "group": "short_requirement",
+  "text": "Requirements:\n- 2 yrs commercial Python experience\n- Familiarity with Django\n- Good written communication",
+  "min": 2,
+  "max": null,
+  "note": "yrs, bullet line"
+ },
+ {
+  "id": "h006",
+  "group": "short_requirement",
+  "text": "You will bring ten or more years of experience in IT service management, ideally within the public sector.",
+  "min": 10,
+  "max": null,
+  "note": "word number, or more"
+ },
+ {
+  "id": "h007",
+  "group": "short_requirement",
+  "text": "Applicants should have 4 to 6 years of relevant experience in test automation. Selenium and Cypress are used daily.",
+  "min": 4,
+  "max": 6,
+  "note": "'to' range"
+ },
+ {
+  "id": "h008",
+  "group": "short_requirement",
+  "text": "A minimum of one year's experience in a first-line support role is required. Full training on our ITSM tool is provided.",
+  "min": 1,
+  "max": null,
+  "note": "word one"
+ },
+ {
+  "id": "h009",
+  "group": "short_requirement",
+  "text": "Skills: 8+ years in programme management across technology change. Strong reporting skills expected.",
+  "min": 8,
+  "max": null,
+  "note": "bare 8+ years"
+ },
+ {
+  "id": "h010",
+  "group": "short_requirement",
+  "text": "Skills and experience: a minimum of 6 years' hands-on experience with Java and Spring Boot.",
+  "min": 6,
+  "max": null,
+  "note": "after colon"
+ },
+ {
+  "id": "h011",
+  "group": "short_requirement",
+  "text": "Three to five years' experience of stakeholder management in a regulated environment is essential.",
+  "min": 3,
+  "max": 5,
+  "note": "words range"
+ },
+ {
+  "id": "h012",
+  "group": "short_requirement",
+  "text": "Must have 5 years or more of experience working with Salesforce administration. Certification is helpful but not mandatory.",
+  "min": 5,
+  "max": null,
+  "note": "N years or more"
+ },
+ {
+  "id": "h013",
+  "group": "short_requirement",
+  "text": "To be considered you will have at least 2 years of experience in an accountancy practice and be part-qualified ACA or ACCA.",
+  "min": 2,
+  "max": null,
+  "note": "non-IT"
+ },
+ {
+  "id": "h014",
+  "group": "short_requirement",
+  "text": "Experience: 10-15 years in enterprise architecture. TOGAF certified.",
+  "min": 10,
+  "max": 15,
+  "note": "hyphen range"
+ },
+ {
+  "id": "h015",
+  "group": "short_requirement",
+  "text": "Candidate profile: minimum of 4 years' proven experience as a Scrum Master in a multi-team environment.",
+  "min": 4,
+  "max": null,
+  "note": "profile line"
+ },
+ {
+  "id": "h016",
+  "group": "short_requirement",
+  "text": "1-2 years' experience in a Power BI reporting role is required. You will build dashboards for the finance team.",
+  "min": 1,
+  "max": 2,
+  "note": "range at start"
+ },
+ {
+  "id": "h017",
+  "group": "short_requirement",
+  "text": "Qualified electrician (NVQ Level 3) with 5 years' post-qualification experience required for our Warrington site.",
+  "min": 5,
+  "max": null,
+  "note": "non-IT trade"
+ },
+ {
+  "id": "h018",
+  "group": "short_requirement",
+  "text": "You have 6+ years of experience as a DevOps engineer. Strong Terraform and Kubernetes skills are expected.",
+  "min": 6,
+  "max": null,
+  "note": "you have"
+ },
+ {
+  "id": "h019",
+  "group": "short_requirement",
+  "text": "Requirement – at least seven (7) years' experience in a business analysis or change role.",
+  "min": 7,
+  "max": null,
+  "note": "word and digit"
+ },
+ {
+  "id": "h020",
+  "group": "short_requirement",
+  "text": "A minimum of two years’ experience in a customer-facing role is needed. Weekend rota applies.",
+  "min": 2,
+  "max": null,
+  "note": "curly apostrophe"
+ },
+ {
+  "id": "h021",
+  "group": "short_requirement",
+  "text": "Experience: 5 yrs+ in cyber security operations. SOC experience is a must.",
+  "min": 5,
+  "max": null,
+  "note": "yrs+"
+ },
+ {
+  "id": "h022",
+  "group": "short_requirement",
+  "text": "Essential criteria: over 3 years of experience in agency recruitment and a track record of hitting targets.",
+  "min": 3,
+  "max": null,
+  "note": "over N"
+ },
+ {
+  "id": "h023",
+  "group": "short_requirement",
+  "text": "Applicants need no fewer than 9 years' experience leading engineering teams. You will report to the CTO.",
+  "min": 9,
+  "max": null,
+  "note": "no fewer than"
+ },
+ {
+  "id": "h024",
+  "group": "short_requirement",
+  "text": "Experience required: 2–3 years as a data analyst using Tableau. Some SQL knowledge is expected.",
+  "min": 2,
+  "max": 3,
+  "note": "en dash range colon"
+ },
+ {
+  "id": "h025",
+  "group": "short_requirement",
+  "text": "Registered nurse with at least 2 years' post-registration experience in community care. Full UK driving licence required.",
+  "min": 2,
+  "max": null,
+  "note": "non-IT"
+ },
+ {
+  "id": "h026",
+  "group": "short_trap",
+  "text": "Founded in 1998, we have over 25 years of experience helping UK retailers modernise their systems. We are proud of our friendly culture.",
+  "min": null,
+  "max": null,
+  "note": "company history"
+ },
+ {
+  "id": "h027",
+  "group": "short_trap",
+  "text": "You must be aged 18 years or over to apply for this role. We welcome applicants from all backgrounds.",
+  "min": null,
+  "max": null,
+  "note": "age limit"
+ },
+ {
+  "id": "h028",
+  "group": "short_trap",
+  "text": "This post requires SC clearance. To be eligible you must have been resident in the UK for the last 5 years.",
+  "min": null,
+  "max": null,
+  "note": "residency rule"
+ },
+ {
+  "id": "h029",
+  "group": "short_trap",
+  "text": "This is an initial 2 year fixed-term contract with the possibility of extension, based in Leeds.",
+  "min": null,
+  "max": null,
+  "note": "contract length"
+ },
+ {
+  "id": "h030",
+  "group": "short_trap",
+  "text": "Join our 3 year graduate programme and rotate through four different teams. No prior experience is needed.",
+  "min": null,
+  "max": null,
+  "note": "programme length"
+ },
+ {
+  "id": "h031",
+  "group": "short_trap",
+  "text": "We reward loyalty: a long service award after 5 years' service, including an extra five days of leave.",
+  "min": null,
+  "max": null,
+  "note": "service award"
+ },
+ {
+  "id": "h032",
+  "group": "short_trap",
+  "text": "You will make sure customer records are retained for 7 years in line with our data retention policy.",
+  "min": null,
+  "max": null,
+  "note": "data retention"
+ },
+ {
+  "id": "h033",
+  "group": "short_trap",
+  "text": "You will join a close-knit team with over 30 years of combined experience in payments. We share knowledge openly.",
+  "min": null,
+  "max": null,
+  "note": "team experience"
+ },
+ {
+  "id": "h034",
+  "group": "short_trap",
+  "text": "Most of our senior analysts were promoted within 2 years of joining. We run a clear progression framework.",
+  "min": null,
+  "max": null,
+  "note": "progression"
+ },
+ {
+  "id": "h035",
+  "group": "short_trap",
+  "text": "Our client is a logistics firm established 15 years ago, now operating from six UK depots.",
+  "min": null,
+  "max": null,
+  "note": "company history"
+ },
+ {
+  "id": "h036",
+  "group": "short_trap",
+  "text": "The system you will support carries a 2 year warranty, and the vendor roadmap runs to 2030.",
+  "min": null,
+  "max": null,
+  "note": "warranty"
+ },
+ {
+  "id": "h037",
+  "group": "short_trap",
+  "text": "This role forms part of a 4 year transformation programme replacing legacy case-management tools.",
+  "min": null,
+  "max": null,
+  "note": "programme length"
+ },
+ {
+  "id": "h038",
+  "group": "short_trap",
+  "text": "The new platform will replace the legacy system over the next 3 years. You will help plan each phase.",
+  "min": null,
+  "max": null,
+  "note": "migration timeline"
+ },
+ {
+  "id": "h039",
+  "group": "short_trap",
+  "text": "Rated outstanding by our staff survey for 6 years running, we are a great place to work.",
+  "min": null,
+  "max": null,
+  "note": "boast"
+ },
+ {
+  "id": "h040",
+  "group": "short_trap",
+  "text": "Salary: £45,000 per year plus a discretionary bonus. Hybrid working, two days in the office.",
+  "min": null,
+  "max": null,
+  "note": "salary period"
+ },
+ {
+  "id": "h041",
+  "group": "short_trap",
+  "text": "Annual leave increases by one day per year of service up to a maximum of 30 days.",
+  "min": null,
+  "max": null,
+  "note": "benefit accrual"
+ },
+ {
+  "id": "h042",
+  "group": "short_trap",
+  "text": "This is a 4 year degree apprenticeship in software engineering, with study one day each week.",
+  "min": null,
+  "max": null,
+  "note": "apprenticeship length"
+ },
+ {
+  "id": "h043",
+  "group": "short_trap",
+  "text": "Our 10 year contract with the council gives you long-term stability on a well-funded service.",
+  "min": null,
+  "max": null,
+  "note": "contract length"
+ },
+ {
+  "id": "h044",
+  "group": "short_trap",
+  "text": "Our managing director started 20 years ago as a junior developer, and we promote from within.",
+  "min": null,
+  "max": null,
+  "note": "leader history"
+ },
+ {
+  "id": "h045",
+  "group": "short_trap",
+  "text": "Apprentices must be 16 years of age or older and have the right to work in the UK.",
+  "min": null,
+  "max": null,
+  "note": "age limit"
+ },
+ {
+  "id": "h046",
+  "group": "short_trap",
+  "text": "Security-cleared staff are re-vetted every 5 years. We will support you through the process.",
+  "min": null,
+  "max": null,
+  "note": "vetting cycle"
+ },
+ {
+  "id": "h047",
+  "group": "short_trap",
+  "text": "Our ISO 27001 certification was renewed for 3 years in March, reflecting our focus on security.",
+  "min": null,
+  "max": null,
+  "note": "certification"
+ },
+ {
+  "id": "h048",
+  "group": "short_trap",
+  "text": "After 2 years' service you will receive enhanced sick pay and a private health plan.",
+  "min": null,
+  "max": null,
+  "note": "benefit"
+ },
+ {
+  "id": "h049",
+  "group": "short_trap",
+  "text": "The company turned over £2m in its first year and has grown steadily since. You will be employee number twelve.",
+  "min": null,
+  "max": null,
+  "note": "company history"
+ },
+ {
+  "id": "h050",
+  "group": "short_trap",
+  "text": "The application has run for 6 years and has about 40 internal users. You will take over day-to-day support.",
+  "min": null,
+  "max": null,
+  "note": "system age"
+ },
+ {
+  "id": "h051",
+  "group": "short_trap",
+  "text": "This is a maternity cover contract for 1 year, starting in January. Training is provided.",
+  "min": null,
+  "max": null,
+  "note": "contract length"
+ },
+ {
+  "id": "h052",
+  "group": "short_trap",
+  "text": "You will have a training budget of £1,500 per year to spend on courses and conferences.",
+  "min": null,
+  "max": null,
+  "note": "benefit"
+ },
+ {
+  "id": "h053",
+  "group": "short_trap",
+  "text": "Our graduates typically progress to team lead within 3 years. We back this with mentoring.",
+  "min": null,
+  "max": null,
+  "note": "progression"
+ },
+ {
+  "id": "h054",
+  "group": "short_trap",
+  "text": "We have supported the NHS for 12 years and hold framework agreements across the North West.",
+  "min": null,
+  "max": null,
+  "note": "company history"
+ },
+ {
+  "id": "h055",
+  "group": "short_trap",
+  "text": "The product has a 5-year support commitment to customers, so you will work on long-lived code.",
+  "min": null,
+  "max": null,
+  "note": "support commitment"
+ },
+ {
+  "id": "h056",
+  "group": "short_mixed",
+  "text": "Established over 20 years ago, we are a growing consultancy. You will need at least 4 years' experience in business analysis.",
+  "min": 4,
+  "max": null,
+  "note": "trap then req"
+ },
+ {
+  "id": "h057",
+  "group": "short_mixed",
+  "text": "Minimum 3 years' experience in project coordination is required. Our graduate scheme runs for 2 years if you know someone who might apply.",
+  "min": 3,
+  "max": null,
+  "note": "req then trap"
+ },
+ {
+  "id": "h058",
+  "group": "short_mixed",
+  "text": "This is a 12-month contract. Candidates should have 5+ years of experience in Azure infrastructure.",
+  "min": 5,
+  "max": null,
+  "note": "contract then req"
+ },
+ {
+  "id": "h059",
+  "group": "short_mixed",
+  "text": "Applicants must be 18 years or older and have 2-3 years' experience in a retail management role.",
+  "min": 2,
+  "max": 3,
+  "note": "age then range"
+ },
+ {
+  "id": "h060",
+  "group": "short_mixed",
+  "text": "You'll need 6 years' experience as a software tester. Long service awards start at 5 years with us.",
+  "min": 6,
+  "max": null,
+  "note": "req then benefit"
+ },
+ {
+  "id": "h061",
+  "group": "short_mixed",
+  "text": "Our team has over 40 years of combined experience. We now need a data engineer with at least two years' experience of Spark.",
+  "min": 2,
+  "max": null,
+  "note": "team then req"
+ },
+ {
+  "id": "h062",
+  "group": "short_mixed",
+  "text": "The programme will run for 3 years. Experience required: 8-10 years in programme delivery.",
+  "min": 8,
+  "max": 10,
+  "note": "programme then range"
+ },
+ {
+  "id": "h063",
+  "group": "short_mixed",
+  "text": "Records are held for 7 years. You should bring a minimum of 5 years' experience in information governance.",
+  "min": 5,
+  "max": null,
+  "note": "retention then req"
+ },
+ {
+  "id": "h064",
+  "group": "short_mixed",
+  "text": "Must have five years' experience in infrastructure support. SC clearance requires 5 years of UK residency.",
+  "min": 5,
+  "max": null,
+  "note": "req then residency"
+ },
+ {
+  "id": "h065",
+  "group": "short_mixed",
+  "text": "Founded 10 years ago and rated outstanding 3 years running. We are seeking a Product Owner with 4+ years' experience in SaaS.",
+  "min": 4,
+  "max": null,
+  "note": "two traps then req"
+ },
+ {
+  "id": "h066",
+  "group": "short_none",
+  "text": "We are looking for an experienced developer to join our friendly team. Several years of hands-on work with .NET is expected.",
+  "min": null,
+  "max": null,
+  "note": "vague several years"
+ },
+ {
+  "id": "h067",
+  "group": "short_none",
+  "text": "Extensive experience in project delivery is essential. You will manage budgets and suppliers.",
+  "min": null,
+  "max": null,
+  "note": "vague extensive"
+ },
+ {
+  "id": "h068",
+  "group": "short_none",
+  "text": "Join a growing team of analysts. No specific background required; we value curiosity and good communication.",
+  "min": null,
+  "max": null,
+  "note": "no years"
+ },
+ {
+  "id": "h069",
+  "group": "short_none",
+  "text": "The successful candidate will be a seasoned service desk professional with a strong track record.",
+  "min": null,
+  "max": null,
+  "note": "vague seasoned"
+ },
+ {
+  "id": "h070",
+  "group": "short_none",
+  "text": "This is an entry-level role in our data team. Training will be provided in SQL and reporting.",
+  "min": null,
+  "max": null,
+  "note": "entry level"
+ },
+ {
+  "id": "h071",
+  "group": "full_advert",
+  "text": "Northgate Digital Services is an independent technology consultancy based in Manchester. We help housing associations and local councils improve the way they run their services, and we are proud of our open, supportive culture. Our people are our greatest asset.\n\nAbout the role\nWe are recruiting a Senior Business Analyst to join a delivery team working on a tenant portal for a large housing provider. You will act as the link between residents, operational teams and developers, turning needs into clear and testable requirements.\n\nResponsibilities\n- Run workshops with stakeholders to capture processes and pain points\n- Write user stories with clear acceptance criteria and maintain the backlog\n- Produce process maps, wireframes and data flow diagrams\n- Support user acceptance testing and help the team resolve defects\n- Present options and recommendations to senior stakeholders\n- Mentor junior analysts and share good practice across the practice\n\nRequirements\n- 5+ years' experience as a business analyst, ideally on digital service projects\n- Strong knowledge of agile delivery and tools such as Jira and Confluence\n- Excellent written and spoken communication\n- A degree or equivalent practical experience\n- Experience in the social housing sector would be an advantage\n\nBenefits\nWe offer a salary of £55,000 to £62,000, 28 days of annual leave plus bank holidays, a pension with 6% employer contribution, private medical cover, a cycle-to-work scheme and a generous training budget. Our office is five minutes from Piccadilly station, and we work in a hybrid pattern with two days a week together. We were founded 12 years ago and have kept our team small enough to know everyone by name.\n\nWe are an equal opportunities employer and welcome applications from everyone. Adjustments are available at every stage of our recruitment process. To apply, please send your CV and a short covering note describing a project you are proud of. Interviews will be held over two stages in the coming weeks.",
+  "min": 5,
+  "max": null,
+  "note": "requirement in bullet; company age is a trap"
+ },
+ {
+  "id": "h072",
+  "group": "full_advert",
+  "text": "Our client is a well-known regional building society with a strong reputation for customer service. They are investing heavily in digital change and are now looking for a Project Manager to lead a portfolio of customer-facing initiatives.\n\nThe role\nReporting to the Head of Change, you will take ownership of projects from initiation through to benefits realisation. You will work with colleagues across lending, operations, risk and technology, and you will be the main point of accountability for time, cost and quality.\n\nKey responsibilities:\n* Plan and manage projects of up to £3m, using both waterfall and agile approaches\n* Maintain RAID logs, financial forecasts and clear status reporting\n* Manage third-party suppliers and agree statements of work\n* Chair steering groups and escalate issues in good time\n* Coach team members and build effective working relationships\n\nAbout you\nYou will have 3-5 years of project management experience in financial services or another regulated sector. You are a confident communicator who can influence at all levels. A recognised qualification such as PRINCE2 or APM is desirable. You are comfortable working with MS Project and can pick up new tools quickly.\n\nWhat is on offer\nA salary of up to £68,000 depending on experience, an annual bonus of up to 10%, 30 days holiday, a defined contribution pension and a flexible approach to working from home. The society offers an enhanced long service award after 10 years, and a structured development path with support towards professional qualifications. The contract is permanent and the location is Leeds city centre, with some travel to other offices in the north of England.\n\nPlease note that all offers are subject to satisfactory references and a credit check. We encourage early applications because we expect strong interest, and we review CVs as they arrive.",
+  "min": 3,
+  "max": 5,
+  "note": "range in About you; long service award is a trap"
+ },
+ {
+  "id": "h073",
+  "group": "full_advert",
+  "text": "Brightwater Learning is a charity that supports adults returning to education across the Midlands. We run community courses, an online learning platform and a careers advice service, and we are growing quickly.\n\nThe opportunity\nWe are looking for a Data Analyst to help us understand who we reach and what difference we make. This is a new post in a small data team, and you will have real influence over how we measure impact.\n\nWhat you will do\n- Build and maintain dashboards in Power BI for trustees and funders\n- Clean, combine and analyse data from our learning platform and CRM\n- Prepare quarterly impact reports and answer ad hoc questions from colleagues\n- Help colleagues use data well, through short training sessions\n- Make sure data is handled in line with GDPR and our retention schedule\n\nWhat we are looking for\nYou are curious, careful and good at explaining numbers in plain English. You are confident with SQL and Excel, and you have used a visualisation tool before. We care more about how you think than about job titles, so if you have gained your skills through study, volunteering or a career change, please apply. Experience in the charity or education sector is welcome, though not needed.\n\nWhat we offer\n- Salary £34,000 to £38,000, depending on experience\n- 27 days annual leave plus bank holidays, rising with length of service\n- Employer pension contribution of 8%\n- Hybrid working from our Birmingham office\n- Paid volunteering days and a wellbeing allowance\n- Personal development budget and regular one-to-ones with your manager\n\nWe are committed to being an inclusive employer. We guarantee an interview to disabled applicants who meet the essential criteria. Closing date is Friday 20 November, with interviews the following week. Please apply with your CV and a short statement of up to 400 words about why this work matters to you.",
+  "min": null,
+  "max": null,
+  "note": "no years stated"
+ },
+ {
+  "id": "h074",
+  "group": "full_advert",
+  "text": "Harlow & Finch Logistics has been moving goods around the UK since 1994. With a fleet of over 300 vehicles and four distribution centres, we deliver for supermarkets, manufacturers and online retailers. This year we began a five-year programme to digitise our warehouses, and we need talented people to help us do it.\n\nRole summary\nAs IT Service Desk Analyst you will be the first point of contact for colleagues who need help with laptops, handheld scanners, printers and business applications. This is a busy, practical role at our Daventry head office, with the chance to grow into second-line support.\n\nDuties\n- Log, prioritise and resolve incidents and requests using our ITSM system\n- Set up new starters and manage accounts in Microsoft 365 and Active Directory\n- Support warehouse staff on shift, including some evening work\n- Keep knowledge articles up to date and spot recurring problems\n- Escalate complex issues to the infrastructure team with clear notes\n\nPerson specification\n- Good working knowledge of Windows 11 and Microsoft 365\n- A calm, friendly manner with non-technical users\n- Willingness to work a rota covering 7am to 7pm\n- A full UK driving licence, as occasional travel between sites is needed\n- Relevant qualifications such as ITIL Foundation or CompTIA A+ are helpful\n\nBenefits\nYou will receive £28,500 per year, overtime at enhanced rates, a contributory pension, free parking, a staff canteen and discounts with local retailers. Employees receive a long service award after 5 years, and we promote from within wherever possible: three of our current team leaders started on the service desk. Our graduate and apprenticeship schemes run for 3 years and give a route into infrastructure and project work.\n\nIf you would like to join us, please apply online with your CV. We will contact shortlisted candidates within a week and hold interviews at Daventry. All appointments are subject to a satisfactory background check.",
+  "min": null,
+  "max": null,
+  "note": "no candidate requirement; several traps"
+ },
+ {
+  "id": "h075",
+  "group": "full_advert",
+  "text": "Aldermoor Analytics is a data consultancy working with energy and utilities clients. Our team of 60 builds data platforms, models and reporting that help our clients make decisions with confidence. We are based in Edinburgh and work with colleagues across the UK.\n\nSenior Data Engineer\nWe are expanding our engineering practice and are looking for a Senior Data Engineer to design and build cloud data pipelines. You will lead technical work on client projects, and you will help us set standards for the team.\n\nYou will\n- Design robust ELT pipelines on Azure using Data Factory, Databricks and Synapse\n- Model data warehouses and data lakes to support analytics and machine learning\n- Review code, write tests and automate deployments through CI/CD\n- Talk with clients to understand their needs and explain technical choices\n- Mentor engineers and take part in our hiring\n\nYou have\n- 7+ years of experience in data engineering or a closely related field\n- Expert SQL and Python\n- Experience designing and running pipelines in a cloud environment\n- A habit of writing clear documentation\n- Good judgement about when to keep things simple\n\nNice to have: Terraform, Spark Structured Streaming, and experience with time-series data from sensors.\n\nOur package\nSalary of £70,000 to £85,000, a discretionary bonus, 30 days of leave, a pension at 7% employer contribution, a laptop of your choice and a conference budget. We offer flexible hours, and you can work from home most of the week, with a trip to Edinburgh once a fortnight for team days. We keep project data for 6 years after contract end, so you will take part in a documented handover process on every engagement.\n\nTo apply, send your CV and a link to any code or write-ups you would like us to see. We aim to respond to every application within five working days. We welcome applicants from all backgrounds and will make reasonable adjustments throughout the process.",
+  "min": 7,
+  "max": null,
+  "note": "requirement among 'You have'; retention is a trap"
+ },
+ {
+  "id": "h076",
+  "group": "full_advert",
+  "text": "Welcome to Kestrel Community Housing, a not-for-profit landlord looking after 9,000 homes in Kent. We believe good housing changes lives, and our staff work every day to make that real for our residents.\n\nAbout the post\nWe are looking for a Digital Project Support Officer to help our small change team deliver a range of projects, from new repairs booking tools to improvements to our website. You will keep plans organised, track tasks and make sure people know what is happening.\n\nMain tasks\n- Maintain project plans, risk logs and action trackers\n- Arrange meetings, take notes and follow up actions\n- Gather feedback from residents and colleagues\n- Help test new features and report issues to suppliers\n- Prepare simple reports for the change board\n- Assist with training sessions for staff\n\nAbout you\nWe want someone organised, who enjoys working with people and has the confidence to chase things up politely. You will have worked in an office or project environment and have a good level of Microsoft Excel. Some knowledge of agile methods would be useful. A project qualification is welcome but not necessary, and we will support you to study for one.\n\nPackage\nSalary of £29,000 to £32,000, 25 days of annual leave plus bank holidays, a pension scheme, an employee assistance programme and a free eye test. Our offices are in Maidstone, and we are happy to talk about flexible and part-time arrangements. This is a permanent post, and there is a clear route to Project Coordinator within a short period of time as you build experience.\n\nKestrel is a Disability Confident employer. If you need the advert in another format, please call our recruitment team. Applications close at midday on Monday 23 November.",
+  "min": null,
+  "max": null,
+  "note": "no years requirement; vague progression"
+ },
+ {
+  "id": "h077",
+  "group": "full_advert",
+  "text": "Redline Software is a product company building scheduling software used by NHS trusts and private clinics. Our platform has been trusted by clinicians for more than 15 years, and we release new features every fortnight. We are a team of 85 split across Bristol and remote working.\n\nThe role: Full Stack Developer\nYou will join one of our four product squads and work on features from idea to release. You will write code on both the front end and the back end, and you will help us keep a high standard of quality and security.\n\nResponsibilities\n- Build and maintain features using React, TypeScript and Node.js\n- Design and expose APIs and work with a PostgreSQL database\n- Write unit and integration tests and take part in code reviews\n- Support live services and take part in a fair on-call rota\n- Work with designers and product managers to refine ideas\n\nSkills and experience\nCandidates should have a minimum of 2 years' commercial experience building web applications with a modern JavaScript framework. You will understand REST principles, version control with Git and automated testing. Knowledge of healthcare standards such as HL7 or FHIR would be a bonus. We welcome people from non-traditional backgrounds, including bootcamp graduates.\n\nBenefits\n- £42,000 to £52,000 depending on experience\n- 25 days holiday, plus your birthday off\n- Enhanced parental leave\n- Learning budget of £1,200 per year\n- Share options after a 1 year probation period\n- Home working allowance and a monthly team lunch\n\nOur hiring process has three steps: a short call, a practical task you can do in your own time, and a final conversation with the squad you would join. We aim to complete the whole process within two weeks and give feedback to everyone.",
+  "min": 2,
+  "max": null,
+  "note": "requirement under Skills; company age, learning budget, probation are traps"
+ },
+ {
+  "id": "h078",
+  "group": "full_advert",
+  "text": "Our client is a leading UK insurer undertaking one of the largest change programmes in its history, and it is seeking a Head of Programme Delivery to take charge of a portfolio worth over £50m. This is a high-profile role with direct access to the executive team.\n\nOverview\nYou will lead a team of programme and project managers delivering technology and operational change across claims, underwriting and customer service. You will own the delivery plan, the budget and the relationship with the board. The programme is planned over 4 years, with the first major release due next summer.\n\nResponsibilities\n- Set the delivery approach and governance for the programme\n- Report progress, risks and benefits to the executive committee\n- Manage budgets, forecasts and supplier contracts\n- Build and develop a high-performing team of eight direct reports\n- Work with the regulator and internal audit where required\n- Create a culture of accountability and open challenge\n\nEssential experience\n- A minimum of 10 years' experience in programme or portfolio management within financial services\n- A record of delivering multi-million-pound change on time and within budget\n- Strong commercial awareness and supplier management skills\n- Senior stakeholder management and excellent presentation skills\n- MSP, PMP or equivalent qualification\n\nPackage and location\nThe base salary is up to £120,000, with a bonus of up to 20% and a car allowance. You will receive a pension, private medical insurance for you and your family, and 28 days of holiday. The role is based in London with two days a week working from home. The company offers a long service award after 10 years and has been named a top employer for 7 consecutive years.\n\nInterested candidates should send their CV in confidence. All discussions will be treated as strictly private, and we will not share your details without your permission. We expect to hold first interviews in early December.",
+  "min": 10,
+  "max": null,
+  "note": "Essential experience bullet; programme length and awards are traps"
+ },
+ {
+  "id": "h079",
+  "group": "full_advert",
+  "text": "Millbrook Technical Services supplies engineering and IT support to schools across Yorkshire. For 18 years we have kept classrooms connected, and our friendly team is trusted by more than 120 schools.\n\nWe are recruiting a Network Engineer to join our field team. You will travel between schools to install, configure and maintain networks, wireless systems and firewalls, and you will help school staff make the most of their technology.\n\nWhat you will be doing\n- Installing and maintaining switches, access points and firewalls\n- Troubleshooting network faults and carrying out root cause analysis\n- Managing VLANs, DHCP and DNS in Windows Server environments\n- Documenting networks and keeping inventories up to date\n- Completing planned maintenance during school holidays\n- Advising on security and safeguarding filtering\n\nWhat we are looking for\nYou will have 4-6 years of experience in a network engineering or infrastructure role. You will know Cisco, Ubiquiti or similar kit well. A CCNA or equivalent is expected. As you will work with children's data and be on school sites, you must be willing to undergo an enhanced DBS check. Experience in an education setting is a plus, though not essential.\n\nRewards\nSalary of £38,000 to £44,000, a company van for work use, 25 days of leave and bank holidays, a pension, and a Christmas bonus. All staff receive a service award after 3 years, and a tools and equipment allowance of £500 per year. School holiday working patterns mean your time is varied, with a mix of site visits and remote work.\n\nWe interview on a rolling basis and may close the vacancy early. To apply, send your CV with a covering message that tells us about a network problem you solved and how you did it.",
+  "min": 4,
+  "max": 6,
+  "note": "range in 'looking for'; company age, service award, allowance traps"
+ },
+ {
+  "id": "h080",
+  "group": "full_advert",
+  "text": "Tamar Health Partnership is a group of GP practices across Cornwall working together to deliver better care. We are seeking a Clinical Systems Lead to look after the digital tools our clinicians rely on each day.\n\nAbout the job\nYou will be responsible for how clinical systems are set up, used and improved across 11 practices. This includes the electronic patient record, appointment systems and reporting tools. You will work with GPs, nurses and managers, and you will have a direct effect on patient care.\n\nKey duties\n- Configure templates, protocols and searches in the clinical system\n- Train and support clinical and administrative staff\n- Run data quality checks and prepare reports for commissioners\n- Manage system access and information governance requirements\n- Work with suppliers on upgrades and incident resolution\n- Lead small improvement projects across practices\n\nRequirements\nEssential: strong knowledge of a GP clinical system such as SystmOne or EMIS, and a good understanding of data protection and patient confidentiality. You should be organised and able to explain technical ideas simply. Desirable: 3+ years of experience in a similar role in primary care, and a qualification in health informatics.\n\nTerms\nThe post is full-time on a 2 year fixed-term contract, with the potential to become permanent. Salary is £40,000 to £46,000 on the NHS-style pay bands used by the partnership, with 27 days of leave plus bank holidays, rising to 33 days after 5 years of service. The NHS pension scheme is available. The main base is Truro, with travel between practices, so a driving licence and access to a car are essential.\n\nFor an informal chat, please contact the practice manager. Closing date: 30 November. We value diversity and encourage applications from all sections of the community.",
+  "min": null,
+  "max": null,
+  "note": "years only as desirable; contract and leave are traps"
+ }
+]
