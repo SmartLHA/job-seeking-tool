@@ -1,0 +1,802 @@
+[
+ {
+  "id": "b001",
+  "group": "short_requirement",
+  "text": "We are looking for a Business Analyst to join our claims transformation team in Leeds. You will have at least 4 years' experience eliciting requirements in a regulated insurance setting. Strong stakeholder skills are essential.",
+  "min": 4,
+  "max": null,
+  "note": "at least 4 years"
+ },
+ {
+  "id": "b002",
+  "group": "short_requirement",
+  "text": "Our client, a Manchester fintech, is seeking a Senior Java Developer. Candidates must demonstrate 6+ years of commercial Java development, including Spring Boot microservices. Hybrid working, two days a week in the office.",
+  "min": 6,
+  "max": null,
+  "note": "6+ years Java"
+ },
+ {
+  "id": "b003",
+  "group": "short_requirement",
+  "text": "Applicants need three to five years of hands-on experience administering Windows Server and Active Directory. ITIL Foundation is helpful. The role supports a busy NHS trust service desk.",
+  "min": 3,
+  "max": 5,
+  "note": "three to five years"
+ },
+ {
+  "id": "b004",
+  "group": "short_requirement",
+  "text": "Programme Manager, Defence Estates. You must have a minimum of 8 years delivering large capital programmes, along with MSP certification. SC clearance is required before you start.",
+  "min": 8,
+  "max": null,
+  "note": "minimum 8 years"
+ },
+ {
+  "id": "b005",
+  "group": "short_requirement",
+  "text": "Data Engineer wanted by a Bristol retailer. You'll bring 2-4 years working with Azure Data Factory and SQL. Familiarity with Databricks will help you hit the ground running.",
+  "min": 2,
+  "max": 4,
+  "note": "2-4 years"
+ },
+ {
+  "id": "b006",
+  "group": "short_requirement",
+  "text": "Do you have 5+ years of experience in Salesforce administration? This question forms part of the application form for our CRM Lead role. Please answer honestly and give examples.",
+  "min": 5,
+  "max": null,
+  "note": "screening question 5+"
+ },
+ {
+  "id": "b007",
+  "group": "short_requirement",
+  "text": "Service Delivery Manager, Cardiff. Experience required: ten years or more managing outsourced IT contracts. Your CV should show contract renewals you have led.",
+  "min": 10,
+  "max": null,
+  "note": "ten years or more"
+ },
+ {
+  "id": "b008",
+  "group": "short_requirement",
+  "text": "The successful candidate will have at least two years' exposure to automated testing with Selenium or Cypress. You will write test plans, run regression packs and report defects to the delivery lead.",
+  "min": 2,
+  "max": null,
+  "note": "at least two years"
+ },
+ {
+  "id": "b009",
+  "group": "short_requirement",
+  "text": "Cyber Security Architect, central government. We need 7-10 years in security architecture, ideally across cloud and on-premise estates. CISSP would be preferred but is not mandatory.",
+  "min": 7,
+  "max": 10,
+  "note": "7-10 years"
+ },
+ {
+  "id": "b010",
+  "group": "short_requirement",
+  "text": "Project Coordinator for a housing association in Norwich. Minimum 3 years in a project support office is needed. Knowledge of PRINCE2 methods will be assessed at interview.",
+  "min": 3,
+  "max": null,
+  "note": "minimum 3 years"
+ },
+ {
+  "id": "b011",
+  "group": "short_requirement",
+  "text": "Our agency client needs a Scrum Master with a proven record of 5 years or more in agile delivery. The contract sits outside IR35 and starts in January.",
+  "min": 5,
+  "max": null,
+  "note": "5 years or more"
+ },
+ {
+  "id": "b012",
+  "group": "short_requirement",
+  "text": "Finance Business Partner for a university. You should be a qualified accountant with a minimum of four years post-qualification experience. Time spent in the education sector would be an advantage.",
+  "min": 4,
+  "max": null,
+  "note": "four years post-qualification"
+ },
+ {
+  "id": "b013",
+  "group": "short_requirement",
+  "text": "Wanted: Network Engineer with 3+ years of Cisco routing and switching under their belt. CCNA is essential. Shift allowance paid.",
+  "min": 3,
+  "max": null,
+  "note": "3+ years Cisco"
+ },
+ {
+  "id": "b014",
+  "group": "short_requirement",
+  "text": "You will hold a degree and have 9 years' experience in enterprise architecture, backed by a TOGAF certificate. You will advise the board on technology direction.",
+  "min": 9,
+  "max": null,
+  "note": "9 years enterprise architecture"
+ },
+ {
+  "id": "b015",
+  "group": "short_requirement",
+  "text": "Junior Python developer needed in Belfast. We ask for 1 year of professional Python experience. You will fix bugs and build small internal tools.",
+  "min": 1,
+  "max": null,
+  "note": "1 year Python"
+ },
+ {
+  "id": "b016",
+  "group": "short_trap",
+  "text": "With over 25 years' experience in public sector IT recruitment, Halden Ridge Resourcing is a trusted partner to councils across the North West. We are now recruiting a Desktop Support Analyst for a county council client. Duties include first-line fixes and asset tracking.",
+  "min": null,
+  "max": null,
+  "note": "agency boast 25 years"
+ },
+ {
+  "id": "b017",
+  "group": "short_trap",
+  "text": "Marlowe & Pike Consulting has been delivering digital change for 30 years. Join our Edinburgh team as an Associate Consultant and work on projects across utilities and transport. Training is provided from day one.",
+  "min": null,
+  "max": null,
+  "note": "consultancy boast 30 years"
+ },
+ {
+  "id": "b018",
+  "group": "short_trap",
+  "text": "Founded 15 years ago in a Sheffield garage, Brightwater Software now serves 400 clients. We are hiring a QA Engineer to help keep that story going. You will join a friendly team of twelve.",
+  "min": null,
+  "max": null,
+  "note": "company founded 15 years ago"
+ },
+ {
+  "id": "b019",
+  "group": "short_trap",
+  "text": "Tessellate Staffing has 18 years of experience placing infrastructure talent across the Midlands. Our client needs a VMware Engineer on a permanent basis. Full details are available on request.",
+  "min": null,
+  "max": null,
+  "note": "agency boast 18 years"
+ },
+ {
+  "id": "b020",
+  "group": "short_trap",
+  "text": "For more than 40 years Corvane Systems has built payroll software for UK schools. We are recruiting a Support Analyst to look after our customer helpdesk. No previous payroll knowledge is needed.",
+  "min": null,
+  "max": null,
+  "note": "vendor boast 40 years"
+ },
+ {
+  "id": "b021",
+  "group": "short_trap",
+  "text": "Applicants must be 18 years or over to apply for this trainee role. You will shadow our field technicians while studying for a Level 3 qualification. A full driving licence is needed.",
+  "min": null,
+  "max": null,
+  "note": "age limit"
+ },
+ {
+  "id": "b022",
+  "group": "short_trap",
+  "text": "This post requires SC clearance, which normally means you have lived in the UK for the last 5 years. Our analyst will work on a classified network. Nationality restrictions may apply.",
+  "min": null,
+  "max": null,
+  "note": "clearance residency"
+ },
+ {
+  "id": "b023",
+  "group": "short_trap",
+  "text": "This is a 2 year fixed-term contract funded by a government grant, with a possible extension. The Delivery Manager will oversee our website replacement. Daily rate is negotiable.",
+  "min": null,
+  "max": null,
+  "note": "contract length"
+ },
+ {
+  "id": "b024",
+  "group": "short_trap",
+  "text": "Join a 3 year transformation programme replacing our core banking platform. The Release Manager will coordinate monthly deployments. The office is in central Birmingham.",
+  "min": null,
+  "max": null,
+  "note": "programme length"
+ },
+ {
+  "id": "b025",
+  "group": "short_trap",
+  "text": "Our IT apprenticeship lasts 4 years and leads to a degree in digital and technology solutions. You will rotate through service desk, networks and development. No prior experience is required.",
+  "min": null,
+  "max": null,
+  "note": "apprenticeship length"
+ },
+ {
+  "id": "b026",
+  "group": "short_trap",
+  "text": "After 5 years of service you receive an extra week of holiday and a long-service gift. We also offer private medical cover and cycle to work. Come and be our new Data Analyst.",
+  "min": null,
+  "max": null,
+  "note": "long-service benefit"
+ },
+ {
+  "id": "b027",
+  "group": "short_trap",
+  "text": "You will manage the archive that keeps customer records for 7 years in line with regulations. The Records Officer role includes secure disposal of old files. Part time, 22 hours a week.",
+  "min": null,
+  "max": null,
+  "note": "data retention"
+ },
+ {
+  "id": "b028",
+  "group": "short_trap",
+  "text": "Our team has over 50 years of combined experience in cloud migration, and everyone enjoys sharing what they know. As a Junior Cloud Engineer you will learn from them every day. Mentoring is built in.",
+  "min": null,
+  "max": null,
+  "note": "team experience"
+ },
+ {
+  "id": "b029",
+  "group": "short_trap",
+  "text": "Most of our analysts progress to Senior within 3 years. We run a clear promotion framework and fund certifications. This is a Data Analyst post in our Glasgow office.",
+  "min": null,
+  "max": null,
+  "note": "career progression timeline"
+ },
+ {
+  "id": "b030",
+  "group": "short_trap",
+  "text": "Our 100 year old building in the Jewellery Quarter has been converted into a modern studio. We need a Front End Developer to work on our e-commerce site. Dogs are welcome on Fridays.",
+  "min": null,
+  "max": null,
+  "note": "building age"
+ },
+ {
+  "id": "b031",
+  "group": "short_trap",
+  "text": "Northgate Mill Partners, with 12 years of experience in managed IT services, is looking for a Service Desk Analyst for its Newcastle site. Shifts run on a rota. Training in ServiceNow is provided.",
+  "min": null,
+  "max": null,
+  "note": "company boast 12 years"
+ },
+ {
+  "id": "b032",
+  "group": "short_trap",
+  "text": "Over 20 years' experience in digital accessibility sits behind every project at Lumen Bridge. We are looking for a UX Researcher to run sessions with users who have access needs. Remote first.",
+  "min": null,
+  "max": null,
+  "note": "company boast 20 years"
+ },
+ {
+  "id": "b033",
+  "group": "short_trap",
+  "text": "The software we sell comes with a 3 year warranty, and you will handle warranty queries as our Customer Support Executive. Hours are 8am to 4pm. Based in Wrexham.",
+  "min": null,
+  "max": null,
+  "note": "warranty length"
+ },
+ {
+  "id": "b034",
+  "group": "short_trap",
+  "text": "You will maintain a 20 year old COBOL application that still runs our pensions payments. A Mainframe Support Analyst is needed. Training on the system is given.",
+  "min": null,
+  "max": null,
+  "note": "age of system"
+ },
+ {
+  "id": "b035",
+  "group": "short_trap",
+  "text": "Our office lease runs for another 10 years, so we are staying put in Reading. We are seeking a Systems Administrator to look after a small Linux estate. Free parking on site.",
+  "min": null,
+  "max": null,
+  "note": "lease length"
+ },
+ {
+  "id": "b036",
+  "group": "short_mixed",
+  "text": "Kestrel Data has traded for 14 years and now serves 60 clients. We need a Data Scientist with at least 3 years of applied machine learning. Python and SQL are essential.",
+  "min": 3,
+  "max": null,
+  "note": "boast then 3 years ML"
+ },
+ {
+  "id": "b037",
+  "group": "short_mixed",
+  "text": "The role requires a minimum of 5 years in project management. This is a 2 year fixed-term contract within the NHS. Band 7 salary applies.",
+  "min": 5,
+  "max": null,
+  "note": "requirement then contract length"
+ },
+ {
+  "id": "b038",
+  "group": "short_mixed",
+  "text": "Over 35 years' experience of supporting UK schools stands behind Aldwyn Education Systems. We want a Technical Account Manager with 4+ years in SaaS customer success.",
+  "min": 4,
+  "max": null,
+  "note": "boast then 4+ years"
+ },
+ {
+  "id": "b039",
+  "group": "short_mixed",
+  "text": "Applicants should have 6 years or more in infrastructure engineering. Our team has 80 years of collective experience, so you will learn plenty.",
+  "min": 6,
+  "max": null,
+  "note": "6 years then team experience"
+ },
+ {
+  "id": "b040",
+  "group": "short_mixed",
+  "text": "Candidates must be over 18 years of age. We expect 2 years' experience of helpdesk work in a customer-facing role. Evening shifts are paid at a premium.",
+  "min": 2,
+  "max": null,
+  "note": "age limit then 2 years"
+ },
+ {
+  "id": "b041",
+  "group": "short_mixed",
+  "text": "Three years of experience with Power BI is required for this Reporting Analyst post. Our firm celebrated its 50 year anniversary last spring and offers a long-service bonus.",
+  "min": 3,
+  "max": null,
+  "note": "3 years then anniversary"
+ },
+ {
+  "id": "b042",
+  "group": "short_mixed",
+  "text": "Cloud Engineer: 3 to 6 years of AWS delivery is required. The programme runs for 2 years, with a review after the first release.",
+  "min": 3,
+  "max": 6,
+  "note": "3 to 6 years then programme length"
+ },
+ {
+  "id": "b043",
+  "group": "short_mixed",
+  "text": "After 10 years with us, staff get a paid sabbatical. For the Head of Testing role we need at least ten years in QA, of which 4 years should be in management.",
+  "min": 10,
+  "max": null,
+  "note": "highest firm lower bound is 10"
+ },
+ {
+  "id": "b044",
+  "group": "short_mixed",
+  "text": "Logs are kept for 90 days and backups for 6 years. The DBA must have a minimum of 7 years administering Oracle databases.",
+  "min": 7,
+  "max": null,
+  "note": "retention then 7 years Oracle"
+ },
+ {
+  "id": "b045",
+  "group": "short_mixed",
+  "text": "Founded 8 years ago by two ex-bankers, Pennywhistle Labs builds payments tools. We are after a Backend Engineer with 5+ years in Go or Rust.",
+  "min": 5,
+  "max": null,
+  "note": "company age then 5+ years Go"
+ },
+ {
+  "id": "b046",
+  "group": "short_none",
+  "text": "Join our digital team as a Business Analyst. You will gather requirements, map processes and support user acceptance testing. Experience in local government would be useful.",
+  "min": null,
+  "max": null,
+  "note": "no years"
+ },
+ {
+  "id": "b047",
+  "group": "short_none",
+  "text": "We are growing and need a Systems Engineer who enjoys problem solving. You will look after servers and backups across our sites. Training and certification support are available.",
+  "min": null,
+  "max": null,
+  "note": "no years"
+ },
+ {
+  "id": "b048",
+  "group": "short_none",
+  "text": "Graduate programme: we welcome applications from recent graduates in any subject. You will learn on the job alongside a mentor. Successful candidates start in September.",
+  "min": null,
+  "max": null,
+  "note": "no years"
+ },
+ {
+  "id": "b049",
+  "group": "short_none",
+  "text": "Returner programme for IT professionals coming back after a career break. We offer a paid placement, coaching and flexible hours. No fixed level of experience is needed.",
+  "min": null,
+  "max": null,
+  "note": "no years"
+ },
+ {
+  "id": "b050",
+  "group": "short_none",
+  "text": "Programme Support Officer wanted in Cardiff Bay. Duties include maintaining the RAID log, taking minutes and tracking budgets. Strong Excel skills are expected.",
+  "min": null,
+  "max": null,
+  "note": "no years"
+ },
+ {
+  "id": "b051",
+  "group": "full_advert",
+  "text": "Senior Business Analyst - Harbourside Credit Union (Liverpool, hybrid)\n\nAbout us\nHarbourside is a member-owned credit union serving communities across Merseyside. We are replacing our lending platform and need someone who can turn member needs into clear, testable requirements.\n\nThe role\nYou will sit between our lending teams, our supplier and our small in-house development group. Your work will shape how a loan application moves from a member's phone to a decision in minutes rather than days.\n\nWhat you will do\n- Run workshops with frontline staff and write user stories with acceptance criteria\n- Map current and future-state processes using BPMN\n- Maintain the product backlog with the product owner\n- Support supplier testing and lead our own user acceptance sessions\n- Produce clear, short documents that busy managers actually read\n\nWhat we are looking for\n- 5+ years as a Business Analyst, ideally within financial services\n- A track record of working in agile teams on customer-facing change\n- Confident SQL for checking data during testing\n- Calm communication when priorities shift\n- Membership of a professional body such as IIBA or BCS is welcome\n\nWhat we offer\n- Salary of up to 62,000 depending on experience\n- 28 days holiday plus bank holidays\n- Enhanced pension and a generous wellbeing allowance\n- Two office days each week; the rest from home\n- Study leave and a training budget\n\nTo apply, send your CV and a short note on a process you have improved. We will reply to every applicant.",
+  "min": 5,
+  "max": null,
+  "note": "requirement in Requirements bullets"
+ },
+ {
+  "id": "b052",
+  "group": "full_advert",
+  "text": "Infrastructure Engineer - Permanent - Reading\n\nOur client is a well-regarded managed service provider supporting mid-sized businesses across the Thames Valley. Due to new contract wins, they are expanding the infrastructure team and want a hands-on engineer who likes variety.\n\nYou will be responsible for looking after customer environments built on VMware and Hyper-V, working closely with the service desk and a small projects group. Typical days include patching, capacity planning, backup checks and the occasional on-site visit.\n\nKey duties:\n* Build and maintain virtual and physical servers\n* Monitor and tune storage and backup platforms\n* Respond to second and third line escalations\n* Document changes and keep the configuration database up to date\n* Join a rota for out-of-hours support (paid on top of salary)\n\nSkills and experience:\n* Between three and five years in a similar infrastructure role\n* Solid Windows Server and Linux administration\n* Experience with Veeam or a comparable backup product\n* PowerShell scripting\n* A full UK driving licence\n\nPackage: salary 45,000 to 55,000, bonus, private healthcare, 25 days holiday, company laptop and phone.\n\nPlease note that our client is unable to offer sponsorship. To discuss the role in confidence, send your CV to our team quoting the job reference. We are an equal opportunities recruiter and welcome applications from all backgrounds. Shortlisted candidates will be contacted within three working days, and we will give feedback after interview.",
+  "min": 3,
+  "max": 5,
+  "note": "agency client; range in Skills section"
+ },
+ {
+  "id": "b053",
+  "group": "full_advert",
+  "text": "Senior Programme Manager - Department for Rural Services (Newcastle)\n\nClosing date: 14 days from advert. Grade: SCS Pay Band 1 equivalent.\n\nAbout the department\nWe help rural businesses and communities access funding, connectivity and advice. Our digital portfolio is growing quickly, and we need an experienced leader to bring order to a complex set of linked projects.\n\nJob summary\nYou will lead a portfolio of six digital projects with a combined budget of 18 million pounds. You will report to the Director of Digital and chair the programme board each month. You will be accountable for benefits, risks and delivery plans, and you will coach project managers across the portfolio.\n\nEssential criteria\n1. A minimum of 8 years managing complex programmes or portfolios, including at least one in the public sector\n2. Evidence of managing suppliers and large budgets\n3. Recognised qualification (MSP, PRINCE2 Practitioner or equivalent)\n4. Ability to explain risk to senior stakeholders in plain language\n\nDesirable criteria\n- Experience of Government Digital Service standards\n- A background in rural affairs or agriculture\n\nSelection process\nYou will be assessed against the essential criteria on your application, then invited to a panel interview with a presentation. Security checks are required, and the post is open to UK nationals only.\n\nBenefits include a civil service pension, flexible working, 25 days leave rising with service, and a season ticket loan. We are a Disability Confident employer and guarantee an interview to disabled candidates who meet the minimum criteria.",
+  "min": 8,
+  "max": null,
+  "note": "public sector; requirement in essential criteria"
+ },
+ {
+  "id": "b054",
+  "group": "full_advert",
+  "text": "Junior Software Developer - Fernleigh Logistics (Doncaster)\n\nFernleigh moves freight for supermarkets and manufacturers across the north of England. Behind the lorries sits a software team of nine people who build the tools our drivers and planners use every day. We are looking for a developer to join them.\n\nYou will start on bug fixes and small features for our route planning web app, then move to larger pieces as you grow. A senior developer will review your code and pair with you for the first few months.\n\nWhat you'll be doing\n- Writing C# and TypeScript for our internal apps\n- Working with a SQL Server database\n- Taking part in sprint planning and retrospectives\n- Helping the support team when a driver cannot log in\n\nAbout you\nWe care more about attitude than a long CV, but the role needs somebody who has already shipped something. You will have at least two years of commercial software development, or a degree plus equivalent hands-on projects. You are curious, you ask good questions and you do not mind admitting when you are stuck.\n\nNice to have: Azure, unit testing frameworks, an interest in logistics.\n\nOur benefits\n- 30 days holiday including bank holidays\n- Free parking and an on-site canteen\n- Birthday day off\n- Pension with 6 percent employer contribution\n- Funded exams and conference tickets\n\nInterviews are two short conversations and a practical task you can do at home. Apply with a CV and a link to anything you have built.\n\nLife at Fernleigh\nThe team sits together in a bright corner of the Doncaster office, a short walk from the depot. We hold a fifteen-minute stand-up each morning, a demo every other Friday and a team lunch once a month. If you have questions about the role before applying, the engineering lead is happy to answer them by phone.",
+  "min": 2,
+  "max": null,
+  "note": "graduate-adjacent; requirement mid-text"
+ },
+ {
+  "id": "b055",
+  "group": "full_advert",
+  "text": "Data Platform Lead\nLocation: Cambridge (hybrid)\nEmployment type: Full time, permanent\n\nWho we are\nCobaltline Diagnostics develops laboratory testing kits used by hospitals and research groups. Our data is growing fast and we want to build a platform that scientists trust.\n\nWhy this role exists\nToday our data sits in spreadsheets and a handful of ageing databases. You will design a new data platform on Azure, choose the tools, and lead a team of four engineers to build it.\n\nYour responsibilities\n- Set the architecture and standards for ingestion, storage and reporting\n- Manage a small team and recruit a further two engineers\n- Work with scientists to agree what clean, reliable data looks like\n- Control costs in the cloud\n- Keep sensitive data safe and meet our regulatory duties\n\nYour profile\n- Strong with Python, SQL and orchestration tools such as Airflow\n- Hands-on knowledge of Azure Synapse or Databricks\n- Comfortable leading people, giving feedback and growing juniors\n- Able to explain trade-offs to non-technical colleagues\n\nApplication questions\n1. Are you eligible to work in the UK?\n2. Do you have 6+ years of experience building data platforms?\n3. Have you managed engineers before?\n4. What is your notice period?\n\nBenefits: share options, 26 days holiday, private pension, cycle scheme, free lunches on office days, and the chance to improve how diseases are found.\n\nWe review applications as they arrive, so please apply early.\n\nHow we work\nThe data team meets in Cambridge on Tuesdays and Wednesdays; the other days are your choice. We run short planning cycles, write decisions down and hold open design reviews that anyone in the company can join. Scientists sit in our sprint demos, so feedback is quick and honest.",
+  "min": 6,
+  "max": null,
+  "note": "screening question near the end"
+ },
+ {
+  "id": "b056",
+  "group": "full_advert",
+  "text": "Technical Consultant - Stonebridge Advisory (London or Bristol)\n\nStonebridge Advisory is a consultancy of about 150 people helping public bodies and charities to use technology well. We do not sell products, so our advice is independent. Clients include councils, housing groups and health trusts.\n\nThe opportunity\nAs a Technical Consultant you will work in small client teams on projects such as cloud migration, service redesign and supplier selection. You will spend most of your time at client sites or online, with regular days at one of our offices.\n\nWhat the work involves\n- Reviewing existing systems and writing options papers\n- Running procurement exercises, from market engagement to contract award\n- Producing technical designs with clients' in-house teams\n- Presenting findings to boards in clear, jargon-free language\n- Mentoring analysts and graduates\n\nRequirements\n- 4-6 years in technical consulting, architecture or engineering roles\n- Good understanding of cloud platforms, networking and security principles\n- Experience writing and presenting for senior audiences\n- Willingness to travel within the UK\n- Full right to work in the UK\n\nOur approach to people\nWe offer a four-day compressed fortnight option, a personal development fund, paid volunteering days and a mentoring scheme. Progression is based on a published framework, not on who shouts loudest.\n\nPay is competitive and based on level; we publish our salary bands to candidates at first interview. Please apply with a CV and a short statement about a project that did not go to plan and what you learned.",
+  "min": 4,
+  "max": 6,
+  "note": "consultancy; range in bullet"
+ },
+ {
+  "id": "b057",
+  "group": "full_advert",
+  "text": "Head of IT Operations (12+ years' experience required)\n\nEmployer: Wyvern Housing Group, South West England\n\nWyvern is a not-for-profit housing association with 22,000 homes. We are looking for a senior operational leader to run IT services for more than 1,200 colleagues.\n\nYou will run teams covering service desk, infrastructure, applications support and information security. You will hold the technology budget, manage key supplier relationships and be the person the executive team turns to when things go wrong, and the person who stops them going wrong in the first place.\n\nMain responsibilities\n- Lead and develop a team of 38 people across four teams\n- Own service levels, incident management and problem management\n- Deliver the IT roadmap agreed with the executive\n- Manage a budget of 6.5 million pounds\n- Keep disaster recovery tested and the business informed\n- Report to the board's audit committee on cyber risk\n\nThe person we want\n- Wide operational experience in IT, with a decent stretch at senior management level\n- Proven ITIL practice and a clear view on service improvement\n- Confident negotiating with suppliers\n- A leader who builds trust, delivers bad news early and celebrates the team\n- Degree or equivalent; ITIL or similar qualification\n\nWe offer a salary of 85,000 to 95,000, a final-salary-style defined contribution pension, 30 days leave, hybrid working and a car allowance.\n\nClosing date is the end of next month. Applications by CV with a covering letter, please. Interviews will include a meeting with tenant representatives, because they are the people we serve.",
+  "min": 12,
+  "max": null,
+  "note": "head-of role; requirement in opening line"
+ },
+ {
+  "id": "b058",
+  "group": "full_advert",
+  "text": "*** URGENT *** Test Automation Engineer - Milton Keynes - up to 480 per day\n\nOur client, a global payments business, needs a test automation engineer immediately to support a major release. The assignment is expected to run until the end of the project and could be extended.\n\nMUST HAVES\n- 3 years minimum in test automation using Java or C#\n- Experience of API testing with Postman or REST Assured\n- Working knowledge of CI pipelines (Jenkins or Azure DevOps)\n- Strong written English\n- Eligible to work in the UK; no sponsorship available\n\nNICE TO HAVES\n- Payments or banking domain knowledge\n- BDD frameworks such as Cucumber\n- Performance testing exposure\n\nThe role\nYou will extend an existing automation framework, write tests for new payment journeys, analyse failures and keep results visible to the delivery team. You will work alongside developers who are keen on quality, so expect real conversations about design.\n\nWorking pattern: three days on site, two from home. Start date: as soon as possible. Interview: one video call.\n\nTo apply, send an up-to-date CV and your availability. If this is not for you, please pass it on to a friend who might be interested, as we reward referrals.\n\nWe act as an employment business in relation to this vacancy. Rates are inclusive of holiday pay for umbrella workers. Candidates must be able to provide two references from recent roles and complete pre-employment checks.\n\nAbout the programme\nThe release brings a new instant-payments journey to the client's business customers. Testers join daily stand-ups, take part in three-amigos sessions with developers and analysts, and have a say in what counts as done. The client's office has good rail links and a canteen.",
+  "min": 3,
+  "max": null,
+  "note": "recruiter style; requirement in must-haves"
+ },
+ {
+  "id": "b059",
+  "group": "full_advert",
+  "text": "Digital Delivery Manager - Brightfield Children's Trust\n\nSalary: 52,000 | Location: Leicester, with up to three days at home | Contract: Permanent\n\nBrightfield Children's Trust supports families in difficult circumstances through helplines, local centres and online resources. Every pound we spend on technology should help a child, and your job is to make sure of it.\n\nAbout the role\nYou will manage the delivery of our digital projects: a new case management system, an improved website and a series of small improvements to the way staff and volunteers work. You will lead a team of designers, developers and analysts, mostly through external partners, and report to the Director of Services.\n\nResponsibilities\n- Plan, prioritise and deliver projects on time and within budget\n- Run agile ceremonies and keep stakeholders informed\n- Manage relationships with suppliers and challenge them kindly but firmly\n- Track benefits and report on impact to trustees\n- Ensure safeguarding is considered in every design decision\n\nPerson specification\nEssential\n- Five years' experience delivering digital projects in an agile environment\n- Experience of working with suppliers and managing contracts\n- Excellent communication with non-technical people\n- Understanding of data protection requirements\nDesirable\n- Experience in the charity sector\n- Knowledge of Microsoft Dynamics\n\nWe offer 27 days holiday, a pension, an employee assistance programme, flexible hours and a supportive team that cares about the work. We particularly encourage applications from people with lived experience of the issues we work on.\n\nSafeguarding checks, including an enhanced DBS, apply to this role.",
+  "min": 5,
+  "max": null,
+  "note": "charity; requirement in person spec"
+ },
+ {
+  "id": "b060",
+  "group": "full_advert",
+  "text": "Principal Software Engineer - Quillfeather Media (Remote within the UK)\n\nQuillfeather publishes news and magazines read by millions every month. Our engineering group builds the publishing tools, the apps and the advertising systems that keep the business running, and we are looking for a principal engineer to guide the technical direction.\n\nSummary\nThis is a senior, hands-on role for someone with at least seven years of professional software engineering behind them who still enjoys writing code. You will set technical direction for the content platform, mentor engineers and work with product managers to make well-judged decisions.\n\nDay to day\n- Designing and reviewing architecture for our publishing platform\n- Writing production code in Node.js and Python\n- Improving reliability and observability of our services\n- Coaching engineers through code review and pairing\n- Writing short design documents and sharing them widely\n- Representing engineering in planning discussions\n\nAbout you\n- Deep experience with distributed systems and cloud services (we use AWS)\n- Knowledge of event-driven architectures\n- Pragmatic about trade-offs; comfortable saying no\n- Strong communicator in writing\n- Interested in the media industry, although this is not required\n\nPerks\nWe close for a week between Christmas and New Year, give 25 days of holiday, provide a home-office budget and pay for a co-working space if you prefer. Salary range is 90,000 to 110,000.\n\nWe hold interviews online: a conversation, a code review exercise and a design discussion. Each takes around an hour. Please apply with a CV or link to your profile.",
+  "min": 7,
+  "max": null,
+  "note": "senior dev; requirement in sentence in summary"
+ },
+ {
+  "id": "b061",
+  "group": "full_advert",
+  "text": "Clinical Systems Analyst, Band 6 - Lowfield Community NHS Foundation Trust\n\nLowfield Community provides care to around 400,000 people through clinics, home visits and community hospitals. Our clinical systems team keeps electronic patient records working for staff who cannot afford downtime.\n\nJob overview\nThis post is a key link between clinicians and our digital team. You will configure and support the electronic patient record, run training sessions and help to design new forms and workflows that make care safer.\n\nMain duties\n- Respond to user queries and resolve issues in line with service levels\n- Build and test changes to templates, reports and alerts\n- Work with clinical leads to understand their needs\n- Run classroom and online training for new starters\n- Contribute to the digital clinical safety process\n- Produce reports to support audits and service improvement\n\nPerson specification\nEssential:\n- Degree or equivalent level of knowledge and a minimum of three years' experience supporting a clinical or healthcare system\n- Good understanding of information governance\n- Ability to work under pressure and to deadlines\n- Excellent interpersonal skills\nDesirable:\n- Clinical background\n- Knowledge of SystmOne or a similar product\n- Project experience\n\nTerms\nPay is on Agenda for Change Band 6, with NHS pension and 27 days leave plus bank holidays, rising with service. Flexible working is available. Interviews will be held at Lowfield House; a travel allowance is paid.\n\nPlease complete the supporting statement on the application form. CVs alone cannot be considered.",
+  "min": 3,
+  "max": null,
+  "note": "NHS band; requirement as essential knowledge"
+ },
+ {
+  "id": "b062",
+  "group": "full_advert",
+  "text": "Solutions Architect - Insurance - Hybrid (London / Croydon)\n\nTHE COMPANY\nAshdown Mutual is a customer-owned insurer with a long record of fair claims handling. We are modernising our core systems and moving workloads to the cloud.\n\nTHE ROLE\nYou will be the architect on our policy administration programme. You shape the target design, advise delivery teams and make sure that what gets built fits with the wider enterprise picture.\n\nRESPONSIBILITIES\n* Produce solution designs and record decisions\n* Work with security, data and infrastructure architects\n* Review supplier proposals and challenge where needed\n* Attend design authority meetings and present options\n* Keep documentation current and useful\n* Coach engineers and analysts on design thinking\n\nSKILLS AND EXPERIENCE\n* A minimum of 10 years in IT, with substantial time as a solution or technical architect\n* Experience of insurance systems or another heavily regulated sector\n* Strong understanding of integration patterns: APIs, messaging, batch\n* Familiarity with Azure and its security model\n* A relevant certification (TOGAF, Azure Solutions Architect) is preferred\n\nBENEFITS\nSalary 85,000 to 100,000, 15 percent bonus, pension, healthcare, season ticket loan.\n\nHOW TO APPLY\nClick apply and upload your CV. We aim to reply within five working days. Please let us know if you need any adjustments at interview; we are happy to provide them.\n\nLife at Ashdown\nOur architects meet weekly to share what they are learning, and the team has a lively reading group. Colleagues describe the culture as thoughtful and unhurried, with real attention to doing the right thing for policyholders. Interviews are held online, and we ask candidates to prepare a short walk-through of a design they have led.",
+  "min": 10,
+  "max": null,
+  "note": "architect; requirement phrased 'a decade'-free, numeric"
+ },
+ {
+  "id": "b063",
+  "group": "full_advert",
+  "text": "IT Support Technician - Oakmere Academy Trust (Shropshire)\n\nOakmere is a trust of eleven primary schools. Our small technology team keeps classrooms running: laptops, wifi, whiteboards, the lot. A technician is leaving to start a degree, and we are looking for their replacement.\n\nYou will be based at one school but travel to others when needed. You will have a company van for visits.\n\nYour duties\n- Fix hardware and software problems reported by teachers and office staff\n- Set up new equipment and keep the asset register up to date\n- Manage user accounts in Microsoft 365 and Google Workspace\n- Help the network manager with switch and wifi upgrades\n- Support safeguarding filters and report concerns to the designated lead\n- Run short training sessions for staff\n\nWhat we need from you\nWe are looking for somebody patient who likes helping people. Experience in a school is not essential. You will have 2-3 years in an IT support role, whether in education, a small business or an MSP, and a working understanding of Windows, Apple devices and networking basics.\n\nThe small print\n- Term-time only: 39 weeks plus a holiday retainer, so annual pay is pro-rata\n- Enhanced DBS check\n- Local government pension scheme\n- Free tea and coffee, and the occasional cake\n\nSalary: 26,500 to 29,000 pro-rata. Send a CV and covering note, or call the office for an informal chat.\n\nAbout Oakmere\nOur schools are friendly, busy places, and the technology team is a valued part of each community. Staff and pupils know the technicians by name. We hold an annual training day for support staff and encourage everyone to build their skills in areas that interest them, such as networking, security or cloud services.",
+  "min": 2,
+  "max": 3,
+  "note": "apprentice-to-junior; range in small print"
+ },
+ {
+  "id": "b064",
+  "group": "full_advert",
+  "text": "Project Manager - Construction Technology\n\nTallgate Build is a regional contractor with a reputation for school and healthcare buildings. We are digitising the way sites share drawings, snagging lists and safety checks, and need a project manager to run the programme.\n\nWhat you will manage\nYou will lead the rollout of a new site management app to twelve live construction sites. This means planning training, talking with site managers, working with the software vendor and solving problems fast when something does not work in a muddy portacabin.\n\nYou will:\n- Build and track a plan with clear milestones\n- Manage budget, risks and issues\n- Chair a weekly working group with site representatives\n- Capture feedback and turn it into improvements\n- Report progress to the operations director\n\nExperience\n- Six years of delivering IT or change projects, with at least some of that on sites or in operations-heavy environments\n- Skilled with PRINCE2 or agile methods, as suits the work\n- Good at listening, and comfortable with hard hats and high-vis\n- Familiar with project tools such as MS Project or Jira\n\nPracticalities\nSalary 50,000 to 58,000 plus a company car or allowance. Based at our head office in Preston, with regular travel to site. We provide boots, a coat and, importantly, a decent flask.\n\nIf you are wondering whether you know enough about construction: we can teach that. What we cannot teach is the ability to keep a project moving and keep people on side. Send your CV with a few lines about a project you are proud of.",
+  "min": 6,
+  "max": null,
+  "note": "PM; requirement in first bullet of Experience"
+ },
+ {
+  "id": "b065",
+  "group": "full_advert",
+  "text": "DevOps Engineer - 6 month contract (inside IR35) - Remote, occasional Manchester\n\nA leading digital agency's client is rebuilding its deployment pipeline and requires a DevOps Engineer to lead the technical work.\n\nAbout the engagement\nThe goal is to replace a set of hand-built servers with repeatable infrastructure as code and a pipeline that can release several times a day. You will work with a team of four developers and a delivery lead.\n\nTasks\n- Write Terraform modules for AWS networking, compute and databases\n- Build container images and deploy to Kubernetes\n- Create CI/CD pipelines in GitHub Actions\n- Set up monitoring and alerts with Prometheus and Grafana\n- Write runbooks and train the team to take over\n\nSkills required\n- 4 years or more working in a DevOps or SRE role\n- Strong Terraform and AWS knowledge\n- Kubernetes in production\n- Good scripting (Bash, Python)\n- Security awareness: secrets, least privilege, scanning\n\nHelpful extras\n- Experience with Helm and ArgoCD\n- Previous consulting or agency work\n\nDay rate: 550 to 650, depending on experience. Start: within two weeks. Interviews: a 45 minute technical conversation.\n\nThis vacancy is advertised by an employment business. Please apply with a current CV. We will contact only those whose experience matches. Note that this contract is inside IR35; an umbrella company will be required.\n\nAbout the team\nThe developers are friendly and pragmatic, and keen to hand over a pipeline they understand. Stand-ups are at ten, and the delivery lead is flexible about hours. A shared chat channel is open all day for questions, and the client's security team is approachable and quick to review changes.",
+  "min": 4,
+  "max": null,
+  "note": "devops contract; requirement in bullet"
+ },
+ {
+  "id": "b066",
+  "group": "full_advert",
+  "text": "Returner Programme: Business Analyst - Calderwood Energy\n\nHave you spent time away from work caring for family, recovering from illness or travelling, and now want to return to a career in analysis? Calderwood Energy's returner programme is designed for you.\n\nThe programme\nThis is a paid 20-week placement for experienced professionals returning after a career break of at least a year. You will work on real projects in our retail energy business, supported by a buddy, a mentor and a coach. At the end, most participants are offered a permanent position.\n\nWhat you will do\n- Join a delivery team working on billing and customer account improvements\n- Gather requirements and write user stories\n- Help test new features before release\n- Present your work at the end of the programme\n- Take part in a weekly learning session\n\nWho we are looking for\nWe expect that before your break you worked as a business analyst, project coordinator or similar for 1-2 years, in any industry. If you have more, that is great. You should have solid skills in documenting processes, speaking to users and clear writing. Refresher training will be provided for anything you feel rusty on.\n\nWhat you get\n- Salary matching permanent staff on the same grade, pro-rata if you choose part-time hours\n- Flexible working from day one\n- A laptop and a home-working allowance\n- Access to our wellbeing scheme\n\nApplications close in six weeks. Tell us in a few lines about your career before the break and what you hope to do next. We will not ask about your reasons for leaving work.",
+  "min": 1,
+  "max": 2,
+  "note": "returner programme with stated range"
+ },
+ {
+  "id": "b067",
+  "group": "full_advert",
+  "text": "Chief Technology Officer - Series B scale-up - London\n\nWe are advising our client, a fast-growing healthcare technology business, on the appointment of a Chief Technology Officer. The company helps GP practices manage appointments and has just closed a significant funding round.\n\nThe mission\nYou will lead engineering, data, security and IT, and shape a technical strategy that scales from 200 to 2,000 practices. You will sit on the executive team and report to the CEO.\n\nYour remit\n- Build and lead an engineering organisation of 60, growing to 120\n- Set the architecture, security and quality standards\n- Partner with the product and commercial leaders\n- Act as a visible technical voice with customers and regulators\n- Manage the technology budget and supplier contracts\n- Recruit senior leaders and build a culture of learning\n\nCandidate profile\nThe ideal candidate has at least 15 years in technology, including several in senior leadership roles in a product company. You will have scaled engineering teams through growth, handled serious incidents calmly and worked with regulated data. You are a good listener and a clear decision-maker.\n\nThe offer\nBase salary in the range 180,000 to 220,000, significant equity, private healthcare, and a role where the impact on patients is clear.\n\nProcess\nInitial conversations are confidential. Please send a CV to our executive search team, who will set up a call. The process includes meetings with the CEO, a board director and members of the engineering team.",
+  "min": 15,
+  "max": null,
+  "note": "CTO-level; requirement in lead sentence"
+ },
+ {
+  "id": "b068",
+  "group": "full_advert",
+  "text": "Reporting Analyst (Finance Systems) - Elmstead Borough Council\n\nElmstead is a district council serving 96,000 residents. Our finance team is introducing a new ledger system and needs a Reporting Analyst to design the reports that budget holders will use.\n\nAbout the job\nYou will build and maintain management reports, dashboards and data extracts for the finance team and for service managers across the council. You will help to test the new system, tidy the data and make sure that reports reconcile to the ledger.\n\nDuties\n- Translate budget holders' needs into reports\n- Build dashboards in Power BI\n- Write SQL queries against the finance database\n- Check data quality and investigate differences\n- Train managers to read their own reports\n- Support year-end and audit requests\n\nWhat we need\nEssential: three or more years of experience in a reporting or analyst role, strong SQL and Power BI skills, and sound Excel. Desirable: finance or local government knowledge, experience of data migration.\n\nYou'll be a methodical person who likes puzzles and who explains numbers clearly.\n\nWhat the council offers\n- Local government pension\n- Hybrid working with two days a week in the Civic Centre\n- Flexitime\n- 26 days annual leave and public holidays\n- Employee discounts and an employee assistance line\n\nSalary: 38,000 to 42,000. Closing date: the 21st. Interviews are expected the following week. We guarantee interviews to candidates with disabilities and to armed forces veterans who meet the essential criteria.",
+  "min": 3,
+  "max": null,
+  "note": "analyst; requirement within 'Essential' line"
+ },
+ {
+  "id": "b069",
+  "group": "full_advert",
+  "text": "Cloud Security Engineer (5-8 years) - Fenwick & Marsh\n\nFenwick & Marsh is an accountancy and advisory firm with offices in eight UK cities. We hold sensitive financial information for thousands of clients, and our security team is growing.\n\nWhere you fit\nYou will join the cloud security group within the wider information security function, led by our Head of Security. The team covers architecture, monitoring, incident response and awareness.\n\nYour work\n- Design and implement security controls in Azure and Microsoft 365\n- Review cloud configurations and fix risky settings\n- Investigate alerts and support incident response\n- Automate checks with scripts and infrastructure as code\n- Support audits (ISO 27001, Cyber Essentials Plus)\n- Advise project teams on secure design\n\nYou will have\n- Five to eight years in security engineering, with at least some time focused on cloud\n- Practical Azure and Entra ID knowledge\n- Experience with a SIEM, ideally Sentinel\n- Scripting skills (PowerShell, Python)\n- A sense of humour when explaining why the answer is no\n\nWhy join\nHybrid working, 25 days holiday plus the option to buy more, a discretionary bonus, and a budget for training and certification. Salary is in the region of 65,000 to 80,000 and flexible for the right person.\n\nApplicants should email a CV. We will ask for evidence of any relevant certifications at interview stage. Fenwick & Marsh is committed to fair recruitment, so shortlisting is done on anonymised CVs.\n\nAbout the security team\nWe hold a monthly lunch-and-learn where team members present something new, from a recent incident to a conference talk. Colleagues are encouraged to attend events and write about what they find. The Head of Security keeps an open door and holds regular one-to-one conversations about development goals.",
+  "min": 5,
+  "max": 8,
+  "note": "range in heading and bullet"
+ },
+ {
+  "id": "b070",
+  "group": "full_advert",
+  "text": "Service Desk Manager - University of Eastmoor\n\nThe University of Eastmoor has 18,000 students, and each of them expects wifi, logins and printing to work first time. Our service desk deals with about 700 contacts each week, and we want a manager who can improve how we do it.\n\nThe job\nYou will lead a team of twelve analysts, set priorities, handle escalations and keep the experience of our users at the centre of everything. You will report to the Head of IT Operations and work closely with the infrastructure, applications and student services teams.\n\nKey accountabilities\n- Manage team performance, rotas and training\n- Own incident and request processes on ServiceNow\n- Report monthly on service levels and customer satisfaction\n- Run improvement projects, such as a self-service portal\n- Plan for the busy periods around enrolment and exams\n- Contribute to major incident reviews\n\nExperience and knowledge\nHave you led a service desk or technical support team for at least four years? That is what we are looking for. You will know ITIL, understand what makes users happy or unhappy and have the skills to coach staff. Higher education experience would be welcome but is not necessary.\n\nRewards\n- Pension (USS or LGPS depending on your history)\n- 35 days holiday plus bank holidays\n- Staff discounts, gym, and free access to campus events\n- Salary 42,000 to 48,000 on Grade 7\n\nApply online by the closing date. Interviews will include a short presentation on how you would improve first-contact resolution.",
+  "min": 4,
+  "max": null,
+  "note": "service manager; requirement stated as question"
+ },
+ {
+  "id": "b071",
+  "group": "full_advert",
+  "text": "Graduate Technology Programme - Starting September - Multiple UK locations\n\nWhy join us?\nIronvale Bank is a mid-sized retail bank with branches across England and Wales. Our graduate programme gives you real responsibility from your first week, with the support of experienced colleagues and a structured plan.\n\nThe programme\nYou will spend your time on three placements of about eight months each, chosen from software engineering, business analysis, data, testing, infrastructure and cyber security. Between placements you will attend learning weeks with the rest of your cohort.\n\nWhat you will do\n- Join a delivery team and take on real tasks\n- Learn tools and techniques used across the bank\n- Work with colleagues from different parts of the business\n- Present your work to senior leaders at the end of each placement\n- Take part in community projects with local schools\n\nWhat we look for\n- A degree (any discipline, 2:1 or above preferred) or equivalent\n- Curiosity about technology and how it supports customers\n- Good teamwork and communication\n- Problem-solving ability, shown through study, work, volunteering or hobbies\n\nYou do not need previous work experience in banking or IT. If you have built a small app, run a society's website or fixed your family's computers, tell us about it.\n\nWhat you get\n- Starting salary of 32,000, reviewed after each placement\n- Funded professional qualifications\n- 25 days holiday and a generous pension\n- Relocation support if you need it\n- A buddy and a mentor\n\nApplications are open from September and close when places are full. Apply early. The process has an online application, a short video interview and an assessment day.",
+  "min": null,
+  "max": null,
+  "note": "graduate scheme, no years"
+ },
+ {
+  "id": "b072",
+  "group": "full_advert",
+  "text": "Business Systems Analyst - Aldermoor Veterinary Group\n\nAbout us\nAldermoor is a family-run group of 24 veterinary practices across the Midlands and East Anglia. We care for pets, horses and farm animals, and we have a small head office team that supports the practices.\n\nThe role\nWe use a practice management system, an online booking tool and a payments platform. You will make sure these systems work together and change them as the group grows. You will talk to vets, nurses and receptionists, listen to what slows them down and help to fix it.\n\nResponsibilities\n- Gather feedback and write short requirements for system changes\n- Configure our practice management system and test updates\n- Manage the relationship with software suppliers\n- Create simple reports for practice managers\n- Train staff when something new is introduced\n- Keep a log of changes and issues\n\nAbout you\nYou enjoy working with people and technology in equal parts. Experience in business analysis or systems support would be an advantage, and five years in a similar role is desirable but certainly not essential. If you can show us that you learn quickly, we will help you with the rest.\n\nYou will need:\n- Good Excel skills\n- Clear and friendly communication\n- The ability to organise your own work\n- A driving licence, as occasional visits to practices are expected\n\nBenefits\n- 25 days holiday plus bank holidays\n- Pet insurance discount and free health checks for your own animals\n- Contributory pension\n- Flexible hours around the school run\n\nSalary 34,000 to 40,000. Apply with a CV and a short note about why you would like to work with us. Interviews will be at head office near Leicester, and you may bring your dog to the office on a pre-arranged visit.",
+  "min": null,
+  "max": null,
+  "note": "years only desirable"
+ },
+ {
+  "id": "b073",
+  "group": "full_advert",
+  "text": "Senior Developer - Mapleford Interactive (Brighton)\n\nMapleford Interactive makes digital products for cultural organisations: museums, theatres, festivals and galleries. We are a studio of 28 people who enjoy craft, and we ship things people love.\n\nWhat the role is\nWe have an opening for a senior developer who will take technical responsibility for client projects from first workshop to launch. You will work with designers and producers to shape ideas into well-built websites and apps.\n\nWhat you will do\n- Plan and build front-end and back-end features\n- Advise clients on the best technical approach\n- Review colleagues' work and help junior developers grow\n- Keep projects accessible, fast and secure\n- Estimate effort honestly\n- Share knowledge through internal talks\n\nWhat we are looking for\n- Extensive experience of web development, including TypeScript and a modern framework such as React or Vue\n- A deep understanding of accessibility\n- Considerable experience with content management systems, ideally headless\n- Several years of working in client-facing teams would be helpful\n- Strong opinions held lightly\n\nHow we work\nWe value calm, kind collaboration. We keep sensible hours, hold retrospectives and share credit. The studio is five minutes from the station, and we meet in person on Tuesdays and Thursdays.\n\nBenefits include 28 days holiday, a learning budget, a company pension, the week between Christmas and New Year off and plenty of cake. Salary range is 55,000 to 68,000.\n\nPlease send us a CV and examples of work you are proud of. Links to code are always welcome.",
+  "min": null,
+  "max": null,
+  "note": "vague phrases only"
+ },
+ {
+  "id": "b074",
+  "group": "full_advert",
+  "text": "Data Analyst (Fixed-term maternity cover) - Pennine Water Services\n\nPennine Water supplies clean water and treats waste for homes and businesses across West Yorkshire. We are a regulated company that cares about the environment and the communities we serve.\n\nRole overview\nThis is a fixed-term post covering maternity leave for about 10 months. You will work in the performance team, helping managers use data to improve leak response, customer service and reporting to the regulator.\n\nResponsibilities\n- Produce weekly and monthly performance reports\n- Maintain dashboards in Tableau\n- Investigate data quality issues with operations teams\n- Support submissions to the water regulator\n- Answer ad hoc questions from managers\n- Document processes so that others can follow them\n\nSkills and experience\n- At least 18 months' experience in an analyst role (or equivalent project work)\n- Competent in SQL\n- Good at visualising information\n- Able to explain results to people who do not live in data\n- Interest in the water industry or regulated utilities\n\nBenefits\n- 26 days holiday plus bank holidays\n- Pension with up to 10 percent employer contribution\n- Flexible working: hybrid, with core hours\n- Cycle scheme and subsidised canteen\n- Salary 33,000 to 37,000 (pro-rata for any reduced hours)\n\nInterviews will be held in our Bradford office. We will cover technical questions and a short exercise on a sample data set. If you are offered the post, we need two references and a basic criminal records check because some sites hold regulated assets.\n\nClosing date for applications is in three weeks. Please apply via the link, attaching an up-to-date CV.",
+  "min": null,
+  "max": null,
+  "note": "months only"
+ },
+ {
+  "id": "b075",
+  "group": "full_advert",
+  "text": "Service Desk Analyst - Trainee - Northern Quay Shipping\n\nNorthern Quay Shipping is a family firm moving containers between UK ports and mainland Europe. From our office on the Humber we run a modern operation with a small technology team that looks after the people and systems that keep ships on time.\n\nWhat you will do\nThis is a first-line support role. You will answer calls and emails from colleagues, fix common problems and pass trickier ones to the right specialist. In your first months, you will learn our systems, from email and laptops through to the booking system for cargo.\n\nYou will:\n- Log and track requests in our ticketing tool\n- Reset passwords and set up accounts\n- Prepare laptops and phones for new colleagues\n- Help colleagues in the warehouse with handheld scanners\n- Keep a tidy knowledge base\n- Learn from the senior team and take on tasks as you grow\n\nWhat we look for\nNo specific technical background is required. We care about:\n- A friendly, patient manner on the phone\n- Willingness to learn\n- Accuracy and attention to detail\n- Reliability, as you will be needed at the start of each shift\n- Reasonable written English\n\nAny IT qualification or knowledge of Windows is a bonus, as is previous customer service work.\n\nHours and benefits\nMonday to Friday, 8am to 4pm, with an occasional later shift. 24 days holiday plus bank holidays, a pension scheme, free parking and a paid course of your choice after probation. Salary starts at 24,000 and rises with the training programme.\n\nApply with a short CV. If you would like to see how the team works, we are happy to arrange an informal visit before you apply.",
+  "min": null,
+  "max": null,
+  "note": "no experience requirement at all"
+ },
+ {
+  "id": "b076",
+  "group": "full_advert",
+  "text": "Agile Delivery Manager - Outside IR35 - Hybrid, Warrington\n\nOur client is a national utilities company undertaking a programme of digital change, and we are looking for a delivery manager to support a product team building a customer portal.\n\nThe assignment\nYou will work with a product owner, a technical lead, developers and designers to coordinate delivery, remove obstacles and keep the work flowing. The team is relatively new, and you will help it establish healthy ways of working.\n\nDuties include:\n- Facilitating sprint planning, stand-ups, reviews and retrospectives\n- Tracking risks, dependencies and delivery metrics\n- Coaching the team on agile and lean practices\n- Working with stakeholders to manage expectations\n- Helping to set up and refine the delivery cadence\n- Liaising with other delivery managers in the programme\n\nEssential skills\n- Demonstrable experience as a delivery manager or scrum master in a digital product team\n- A good working knowledge of agile frameworks\n- Confidence with Jira and Confluence\n- Stakeholder management at senior level\n- A relevant certification (CSM, PSM or SAFe) is advantageous\n\nLogistics\nRate: up to 575 per day. Duration: until the end of March, with a chance of extension. Location: three days a week on site in Warrington. Security clearance is not required, but background checks will be undertaken.\n\nHow to apply\nSend your CV, and we will call you to discuss. We are a recruitment business and treat all applications confidentially. Please do not apply if you require sponsorship.",
+  "min": null,
+  "max": null,
+  "note": "agency, asks for 'experience' without years"
+ },
+ {
+  "id": "b077",
+  "group": "full_advert",
+  "text": "Office Manager - Hartley & Voss Chartered Surveyors (Chester)\n\nWe are a friendly independent firm of chartered surveyors with a small office near Chester city walls. Our team of fourteen advises on residential and commercial property across Cheshire and North Wales.\n\nAbout the role\nOur long-standing office manager is retiring, and we are looking for someone to take over the running of the office. You will be the first person visitors meet and the person colleagues turn to for almost everything.\n\nWhat you will be doing\n- Greeting clients and managing the reception area\n- Handling post, phone calls and diaries\n- Ordering supplies and dealing with suppliers\n- Preparing invoices and chasing payments with the finance assistant\n- Organising meetings, travel and team events\n- Looking after health and safety records\n- Keeping IT running by liaising with our external support company\n\nWhat we need\n- Good organisation and the ability to juggle tasks\n- Excellent telephone manner and professional appearance\n- Confidence with Microsoft Office\n- Sound judgement and discretion\n- A relevant background in an office or professional services setting is helpful, but we will train the right person\n\nWhat we offer\nHours are 8.30am to 5pm, Monday to Friday, with some flexibility. Salary 28,000 to 32,000 depending on experience, plus pension, 25 days holiday and the chance to leave early on summer Fridays. There is a handover period with our current office manager, who will remain available for questions.\n\nTo apply, please send a letter and CV to the senior partner. We hope to hold interviews in the next fortnight.",
+  "min": null,
+  "max": null,
+  "note": "wholly non-IT, no years"
+ },
+ {
+  "id": "b078",
+  "group": "full_advert",
+  "text": "Digital Project Support Officer - Grade 5 - Westdale Metropolitan Borough Council\n\nAbout Westdale\nWestdale is a metropolitan borough with a diverse population and ambitious plans for regeneration. Our digital service supports services such as housing, social care, waste and libraries.\n\nThe job\nThe Digital Project Support Officer will help project managers to deliver technology projects across the council. This is a great role for someone starting out in project management, or someone from another part of the council who would like to move into digital work.\n\nYour tasks\n- Maintain project plans, risk logs and issues logs\n- Take notes at meetings and chase actions\n- Prepare monthly highlight reports for the programme board\n- Support suppliers and service teams to complete testing\n- Organise workshops and training sessions\n- Keep project folders tidy and up to date\n- Learn from experienced project managers\n\nYou will bring\n- A willingness to learn project management methods\n- Good organisation and attention to detail\n- Strong communication, written and verbal\n- Competence with Microsoft Office, especially Excel and Teams\n- An interest in how public services use technology\n\nA project management qualification (such as APM PFQ or PRINCE2 Foundation) would be an advantage, and we will fund this for the successful candidate if you do not already hold one.\n\nTerms\nSalary is 29,500 to 32,000 on Grade 5. Hybrid working is available once you have settled in. The council offers the Local Government Pension Scheme, 25 days leave, a flexi-time scheme and an employee wellbeing programme.\n\nWe are committed to equality and diversity. Please complete the online application form. The closing date is in two weeks, and interviews are expected soon after.",
+  "min": null,
+  "max": null,
+  "note": "public sector, no years"
+ },
+ {
+  "id": "b079",
+  "group": "full_advert",
+  "text": "Platform Engineer - Marlow Bridge Retail Group\n\nWe are a growing retailer with 80 shops and a busy online store. Our technology team builds the platform that runs both.\n\nYour mission\nHelp us build and run a reliable, secure and efficient platform, so that developers can deploy safely and customers always see a working site. You will join a team of six engineers who share ownership of everything from the cloud accounts to the checkout.\n\nWhat you will do\n- Manage infrastructure on Google Cloud using Terraform\n- Run and improve our Kubernetes clusters\n- Build pipelines and tools that make life easier for developers\n- Respond to incidents and improve our runbooks\n- Reduce cost without compromising resilience\n- Advise teams on observability\n\nEssential skills\n- Hands-on experience with a major cloud provider\n- Knowledge of containers and orchestration\n- Competence in a scripting language\n- A methodical approach to troubleshooting\n\nDesirable\n- Three or more years in a platform or SRE role\n- Experience in e-commerce or retail\n- Certifications such as Google Professional Cloud DevOps Engineer\n\nSalary range is 58,000 to 72,000, depending on skills. We offer a six percent employer pension contribution, a generous staff discount, hybrid working from our Northampton office, a learning allowance and paid on-call duties.\n\nOur hiring process is simple: a call with the engineering manager, a practical session where you and two engineers work through a realistic problem, and a final chat with our CTO. Apply with a CV, or tell us what you would like to know first and we will answer your questions.",
+  "min": null,
+  "max": null,
+  "note": "desirable years only (desirable)"
+ },
+ {
+  "id": "b080",
+  "group": "full_advert",
+  "text": "Test Manager - Greyfriars Health Insurance\n\nGreyfriars Health Insurance has been looking after members for generations, and our technology function is going through a significant transformation. We are looking for a Test Manager to ensure that the changes we deliver work properly.\n\nThe role\nYou will lead testing across our member portal, claims platform and supplier interfaces. You will set test strategy, manage a team of testers (permanent and contract) and work with project managers to plan testing within delivery timelines.\n\nKey responsibilities\n- Define test approaches for each release\n- Estimate, plan and track test effort\n- Lead a team of eight testers, offshore and onshore\n- Oversee automation, performance and security testing\n- Report on quality to senior stakeholders\n- Manage defects and conduct root cause analysis\n- Run user acceptance testing with business teams\n\nExperience and skills\n- Proven experience of managing test teams in a financial services or insurance environment\n- Strong knowledge of test automation approaches\n- Familiarity with agile and waterfall delivery\n- ISTQB Advanced or equivalent\n- Ability to manage conflict and negotiate timelines\n\nBenefits\n- Salary 60,000 to 70,000\n- Annual bonus up to 10 percent\n- Private medical insurance\n- Pension with 8 percent employer contribution\n- 27 days holiday plus bank holidays\n- Hybrid working: two days in our Bournemouth office\n\nNext steps\nPlease upload your CV and complete the short online questionnaire. We will review applications weekly. Interviews consist of a conversation with the Head of Delivery and a presentation on how you would structure testing for a large claims release.",
+  "min": null,
+  "max": null,
+  "note": "ambiguous 'experience' wording only"
+ },
+ {
+  "id": "b081",
+  "group": "full_advert",
+  "text": "Field Support Engineer - Kent - Permanent\n\nAbout Dunmore Talent Partners\nWith 22 years' experience placing engineers, analysts and managers into UK technology businesses, Dunmore Talent Partners has built a reputation for honest advice and long relationships. We are currently representing a security systems installer based near Maidstone.\n\nOur client\nOur client designs, installs and maintains access control and CCTV systems for schools, offices and care homes. Their engineers are respected for turning up on time and leaving sites tidy.\n\nThe position\nYou will visit customer premises to fix faults, carry out planned maintenance and help with installations. You will learn quickly from senior engineers, since the products are well documented and the company runs product training each month.\n\nDuties\n- Diagnose faults on door entry, alarm and camera systems\n- Replace parts and test that systems work\n- Complete job sheets and photograph completed work on a tablet\n- Explain what you have done to customers in plain language\n- Keep your van stocked and tidy\n- Be on call one weekend in six\n\nWhat you need\n- Basic electrical understanding, or an engineering or electronics background\n- A full UK driving licence\n- Good customer manner\n- Reasonable fitness for ladder work\n- The ability to learn new products\n\nPackage\nSalary 30,000 to 36,000 plus overtime, company van, phone and tools, 25 days holiday and a pension.\n\nTo find out more or to apply, call our consultants or send a CV by email. We pride ourselves on telling candidates what is happening at every stage, and we will always give feedback on unsuccessful applications.",
+  "min": null,
+  "max": null,
+  "note": "agency boast 22 years; no requirement"
+ },
+ {
+  "id": "b082",
+  "group": "full_advert",
+  "text": "Trainee Software Developer - Ledgerwood Software (York)\n\nWho we are\nLedgerwood Software has been writing accounting software for small businesses for 35 years. We still have customers who started with us in our first year, and we are proud that they have stayed. Today we employ 70 people and are based in a converted mill on the river in York.\n\nWhat is the job?\nWe are launching a new trainee developer role for people who want to start a career writing software. You will join a team led by an experienced developer and spend the first six months in a structured training plan, working with real code from day one.\n\nYou will learn\n- How to write clean, tested code in C# and JavaScript\n- How to use Git and work in a team\n- How our products work from the customer's point of view\n- How we find and fix bugs\n- How to estimate and plan work\n- How to ask for help (the most important skill)\n\nWho we hope to hear from\nYou might be a recent graduate, a career changer or a self-taught coder. We do not set a minimum level of experience. We look for logical thinking, an interest in how things work and the humility to learn from others. Evidence of having written some code, whether in a degree, a bootcamp or at home, will help you stand out.\n\nThe details\nSalary is 28,000 for the training period, rising to 34,000 on successful completion. Benefits include 25 days holiday, a Friday finish at 3pm, free fruit, a pension and quarterly team lunches.\n\nApply with a CV and, if you like, a link to something you have built. Our interviews include a friendly conversation and a short problem-solving exercise.",
+  "min": null,
+  "max": null,
+  "note": "company boast 35 years; entry role"
+ },
+ {
+  "id": "b083",
+  "group": "full_advert",
+  "text": "Level 4 Software Developer Apprenticeship - Cresswell Engineering Group (Derby)\n\nCresswell Engineering designs precision parts for aircraft and rail vehicles. Our in-house software team writes the applications that schedule production, track quality and connect machines on the factory floor.\n\nAbout the apprenticeship\nThis is a 3 year apprenticeship leading to a Level 6 degree apprenticeship qualification in software engineering, delivered with a local university. You will work four days each week with our software team and spend one day studying. Course fees are paid in full by us and the government levy.\n\nWhat you will do\n- Work on real projects from your first month\n- Write and test code in C# and Python\n- Learn about databases and cloud services\n- Visit the factory floor to see how your software is used\n- Present your progress to the leadership team each term\n- Receive support from a mentor and a line manager\n\nEntry requirements\n- You must be 18 years or over by the start date\n- Right to live and work in the UK and to have lived in England for the last 3 years, as required by apprenticeship funding rules\n- GCSE grades 4 or above in English and maths\n- Two A levels or equivalent, preferably including a science, maths or computing subject\n- Genuine interest in technology and making things\n\nSalary and benefits\nPay starts at 22,000 and rises each year. You will receive 26 days holiday, access to our canteen, a pension and a laptop. At the end of the apprenticeship, there is a guaranteed interview for a permanent developer position.\n\nTo apply, complete our short form and tell us about something you have built or fixed. Applications close on 15 March.",
+  "min": null,
+  "max": null,
+  "note": "apprenticeship durations and age; no requirement"
+ },
+ {
+  "id": "b084",
+  "group": "full_advert",
+  "text": "Network Operations Analyst (SC cleared) - Hartwell Defence Systems - Hampshire\n\nHartwell Defence Systems supplies communications and secure networks to government customers. We are recruiting for our network operations centre on a new managed service.\n\nContract details\nThis is a fixed-term contract lasting 3 years, with the possibility of a permanent offer at the end. The service is delivered on customer premises in Hampshire. Because of the nature of the work, the post is full time and on-site.\n\nThe work\nYou will monitor a secure network, respond to alerts, carry out routine checks and escalate issues according to defined procedures. Shifts run on a four-on, four-off pattern, including nights, and are paid with a shift allowance.\n\nYour tasks\n- Watch dashboards and respond to alarms\n- Log faults and follow incident procedures\n- Perform patching and configuration under change control\n- Hand over clearly at shift change\n- Keep detailed records for audit\n- Support engineers during maintenance windows\n\nSecurity\nYou must hold current SC clearance or be eligible to obtain it. Eligibility normally requires 5 years of continuous UK residency, and we cannot consider anyone who does not meet this. We will support the process for the right candidate.\n\nThe ideal profile\nA good understanding of networking (TCP/IP, routing, switching) and an interest in security. Qualifications such as CompTIA Network+ or Cisco CCNA are desirable, as is any background in a similar monitoring role.\n\nRewards\n- Salary 38,000 to 43,000\n- Shift allowance of 4,500\n- 28 days holiday\n- Pension and life assurance\n- Free parking on site\n\nApply by submitting a CV. Please note that all applications are treated in confidence. Feedback will be provided to those shortlisted.",
+  "min": null,
+  "max": null,
+  "note": "clearance residency and contract length; no requirement"
+ },
+ {
+  "id": "b085",
+  "group": "full_advert",
+  "text": "Associate ERP Consultant - Keldmoor Advisory (Birmingham)\n\nThe firm\nKeldmoor Advisory has over 15 years of experience delivering ERP systems for manufacturers, distributors and charities. We pride ourselves on projects that finish when we said they would, and on a team that people actually want to work in. Our 90 staff are based across Birmingham, Leeds and remote locations.\n\nThe role\nWe are recruiting associates who will train to become functional consultants on our finance and supply chain products. You will be part of a project team from your first month, learning from senior consultants and gradually taking on more responsibility.\n\nTypical activities\n- Attend client workshops and take accurate notes\n- Configure the ERP system under guidance\n- Prepare test scripts and run testing with client users\n- Support data migration activities\n- Write user guides and deliver training sessions\n- Help the project manager to track tasks\n\nWhat we are looking for\n- A degree, or relevant experience, in business, finance, IT or a related subject\n- Good numerical and analytical ability\n- Genuine curiosity about how businesses run\n- Willingness to travel to client sites, typically two or three days a week\n- Strong written and spoken English\n\nPrevious exposure to an ERP product, finance systems or consulting is helpful but not required. We provide thorough training with a defined certification path.\n\nBenefits\nSalary from 30,000 to 36,000, depending on background. Expenses paid, 25 days holiday, a performance bonus, health insurance after probation and a clear progression path.\n\nPlease send your CV and a covering letter explaining why consulting appeals to you.",
+  "min": null,
+  "max": null,
+  "note": "consultancy boast; junior role"
+ },
+ {
+  "id": "b086",
+  "group": "full_advert",
+  "text": "Information Governance Officer - Brackenhurst Hospice\n\nBrackenhurst Hospice provides palliative care to adults and support to their families in a quiet corner of Shropshire. Our work depends on the generosity of the local community, and on careful, respectful handling of the information we hold.\n\nAbout the role\nYou will look after how we collect, store, share and dispose of personal data. You will work with clinical, fundraising and HR colleagues, advise them on data protection law and make sure we meet our obligations.\n\nKey responsibilities\n- Maintain our records of processing and data protection impact assessments\n- Respond to subject access requests within legal timescales\n- Review our retention schedule, which currently keeps patient records for 8 years after discharge and fundraising data for 6 years after last contact\n- Investigate and log data incidents, reporting serious ones to the regulator\n- Deliver short training sessions to staff and volunteers\n- Advise on contracts with suppliers that handle our data\n\nAbout you\n- Understanding of UK GDPR and the Data Protection Act\n- Practical, calm manner and good judgement\n- Careful written work\n- A relevant qualification (such as BCS Data Protection) is helpful\n- Sensitivity to the emotional nature of our work\n\nWorking here\nThis is a part-time role of 24 hours per week, spread over three days. Salary is 36,000 pro-rata. We offer a pension, 27 days holiday pro-rata and a long-service award after 10 years: an extra three days of leave and a celebration lunch. Colleagues get free meals on site and access to counselling.\n\nAn enhanced DBS check is needed. To apply, please send a CV and a few lines about what interests you in information governance.",
+  "min": null,
+  "max": null,
+  "note": "retention and long-service; no requirement"
+ },
+ {
+  "id": "b087",
+  "group": "full_advert",
+  "text": "Sales Support Coordinator (Technology) - Crestline Print & Document Solutions\n\nWelcome to Crestline\nCrestline Print & Document Solutions brings 20 years' experience in managed print and document services to businesses across Scotland and the North of England. We install and maintain printers and scanners, and increasingly we help clients move paper workflows into digital ones.\n\nThe role\nThe sales team is growing. We need a coordinator to keep it organised and in touch with customers. You will take quotation requests, prepare proposals, handle order processing and be the first point of contact for customers when they have simple queries.\n\nDaily duties\n- Prepare quotations from price lists and templates\n- Enter orders and check them against stock\n- Keep our CRM tidy with call notes and updates\n- Arrange delivery and installation with engineers\n- Chase renewals for service contracts\n- Support the sales managers with reports and mailings\n- Answer calls and emails from customers in a helpful manner\n\nAbout you\n- Accurate and organised\n- Confident with Excel and comfortable learning a CRM\n- Friendly, clear and quick on the phone\n- Curious about technology (no technical knowledge required)\n- Previous office or sales administration is an advantage\n\nWhat we offer\nWe offer a starting salary of 25,000 to 28,000, plus commission linked to team targets. You will get 23 days holiday, a pension, a sociable team, regular training and a clear route to account management for those who want it. The office is in Falkirk, with plenty of parking and a bus stop outside.\n\nApplications by email with CV and a short covering note. We will review applications as they come in and aim to interview within a week.",
+  "min": null,
+  "max": null,
+  "note": "boast 20 years; sales support, no requirement"
+ },
+ {
+  "id": "b088",
+  "group": "full_advert",
+  "text": "Digital Communications Officer - Riverside Youth Trust\n\nRiverside Youth Trust is a 60 year old charity that helps young people in Salford gain confidence, skills and work. Our centre includes a music studio, a kitchen, a gym and a small IT suite. Thousands of young people have taken part in our programmes, and some now work with us as youth workers.\n\nThe post\nWe are launching a five-year strategy to reach more young people and raise more money, and good communication is at its heart. We need a digital communications officer to manage our website, newsletters and social media, and to tell our stories with respect and imagination.\n\nYour responsibilities\n- Plan and publish content across our website and social channels\n- Write and send monthly emails to supporters\n- Take photographs and short video, with consent and care\n- Track analytics and report on what works\n- Update the website in WordPress\n- Work with youth workers to capture young people's voices\n- Support fundraising campaigns with digital assets\n\nYou will have\n- A good eye and ear for communication\n- Competence with social media platforms and email tools\n- Basic photo and video editing skills\n- Sensitivity about safeguarding and privacy\n- The ability to work independently and in a small team\n- Lived experience of Salford is welcome, as is experience of working with young people\n\nThe package\nSalary is 27,500. We offer 25 days holiday, a pension, flexible hours, a creative and supportive team and occasional free lunches cooked by our young chefs.\n\nWe will need an enhanced DBS check. Apply with a CV and examples of content you have produced. Interviews involve a short creative task, and we welcome support from friends or family for people who want it.",
+  "min": null,
+  "max": null,
+  "note": "charity age and strategy; no requirement"
+ },
+ {
+  "id": "b089",
+  "group": "full_advert",
+  "text": "Senior Network Engineer - Leeds - Up to 70,000\n\nAbout Ravensworth Recruitment\nRavensworth Recruitment has 25 years' experience of connecting engineers with employers across Yorkshire, and we know the market well. Our consultants are specialists, not generalists, and we only represent roles we understand.\n\nOur client\nWe are working with a regional ISP supplying business broadband and leased lines to more than 3,000 companies. They are expanding their core network team following a major investment.\n\nThe job\nYou will design, build and look after the core network, working with a team of nine engineers. The work includes capacity planning, upgrades, fault investigation and mentoring of junior colleagues.\n\nResponsibilities\n- Configure and maintain routers and switches carrying customer traffic\n- Plan upgrades and migrations with minimal downtime\n- Investigate faults at second and third line\n- Produce network diagrams and documentation\n- Advise sales engineers on technical feasibility\n- Share knowledge with colleagues\n\nRequirements\n- At least 5 years in a service provider or large enterprise network environment\n- Solid BGP and OSPF experience\n- Knowledge of MPLS\n- Cisco or Juniper certifications are an advantage\n- Strong troubleshooting under pressure\n\nBenefits\nCompany bonus, 26 days holiday, flexible working, free breakfast, pension, and an on-call allowance.\n\nTo apply, send your CV to Ravensworth. We will contact you within two working days to discuss the role and the next steps, and we will not submit your CV without your permission.",
+  "min": 5,
+  "max": null,
+  "note": "agency boast 25 years plus 5 years requirement"
+ },
+ {
+  "id": "b090",
+  "group": "full_advert",
+  "text": "Programme Analyst - 2 Year Fixed-Term - Cambridgeshire County Council\n\nWe are looking for an analyst to join our Adult Social Care transformation programme. This post is a fixed-term appointment of 2 years, funded through a government grant.\n\nAbout the programme\nThe programme will redesign how residents get support in later life. It involves new digital services, a refreshed approach to assessments and closer working with the NHS. Around 30 people work on it, from social workers to software developers.\n\nThe post\nAs programme analyst, you will gather evidence about current processes, model options and track the benefits. You will work alongside service managers and project managers and report to the programme lead.\n\nYou will:\n- Analyse data on demand, cost and outcomes\n- Map processes and find where delays happen\n- Develop business cases for new ideas\n- Create dashboards to track progress\n- Write clear papers for the programme board\n- Facilitate workshops with practitioners and residents\n\nYou will have:\n- At least three years' experience as a business or data analyst\n- Strong Excel and the ability to learn new tools\n- Experience of writing business cases\n- The ability to explain complex issues simply\n- Interest in social care (experience is not needed)\n\nWe offer 25 days leave, the Local Government Pension Scheme, flexible and hybrid working, and a supportive manager. Salary is 40,000 to 44,000.\n\nSecondees from other organisations are welcome to apply. The closing date is 30 November, with interviews in early December. Please complete the online form.",
+  "min": 3,
+  "max": null,
+  "note": "requirement plus fixed-term length"
+ },
+ {
+  "id": "b091",
+  "group": "full_advert",
+  "text": "Application Support Analyst - Willowbank Retail Systems (Telford)\n\nWillowbank is a software company providing till and stock management systems to independent shops. Our support team of fourteen is proud of its reputation for friendly, quick answers. Between them, the team has over 70 years of combined experience with our products, so there is always somebody who knows the answer.\n\nThe opportunity\nWe have a vacancy for an application support analyst to help customers get the best from our software. You will take calls and tickets, investigate problems, reproduce bugs and work with developers to fix them.\n\nWhat you will do\n- Diagnose issues using logs and SQL queries\n- Guide customers through fixes by phone and screen share\n- Raise defects with clear steps to reproduce\n- Test new releases before they go out\n- Write articles for our knowledge base\n- Share information in daily team huddles\n\nWhat you will bring\n- 4-6 years in application or technical support, ideally for a software product\n- SQL knowledge to a good level\n- Strong written and spoken communication\n- Patience with users who are having a bad day\n- Retail experience would be useful, since our customers will talk to you about shelves, tills and stock\n\nThe deal\n- Salary 32,000 to 38,000\n- 24 days holiday plus bank holidays, rising by a day for each year of service up to 30\n- Pension and health cash plan\n- Hybrid working after probation\n- Free parking and a cycle scheme\n\nApply with a CV, and tell us about a problem you solved that others had given up on. Interview is by video, followed by a visit to our offices.",
+  "min": 4,
+  "max": 6,
+  "note": "team experience trap plus range"
+ },
+ {
+  "id": "b092",
+  "group": "full_advert",
+  "text": "IT Programme Director - Interim - Southampton\n\nIntroducing Calloway Interim Executives\nCalloway Interim Executives has been placing senior interim managers for 30 years, from specialist directors through to complete turnaround teams. We act for FTSE 250 and public sector clients and are known for matching the right person to the right challenge.\n\nThe assignment\nOur client is a port and logistics operator on the south coast. After an acquisition, it needs an experienced IT programme director to lead the integration of two technology estates.\n\nYou will report to the Group CIO and lead a team of six programme and project managers. You will take over the plan, test its assumptions, reset it where needed and deliver the integration over the next nine months.\n\nDuties\n- Set direction and governance for the integration\n- Manage a budget of 12 million pounds\n- Resolve conflicts between the two legacy teams\n- Handle supplier negotiations and contract changes\n- Report to the board and the finance director\n- Keep staff morale high through change\n\nExperience required\n- A minimum of 8 years running large IT programmes, including at least one post-acquisition integration\n- Excellent stakeholder leadership at board level\n- Knowledge of ERP, port operating systems or similar\n- Commercial awareness and negotiation skill\n- Certification in MSP or equivalent is useful\n\nTerms\nDaily rate 900 to 1,100. Location: Southampton with some travel. Start: January.\n\nTo apply, send your CV to our interim team. All conversations are confidential, and we will not send your details to our client without your agreement.",
+  "min": 8,
+  "max": null,
+  "note": "boast plus 8 years"
+ },
+ {
+  "id": "b093",
+  "group": "full_advert",
+  "text": "IT Technician - Hallam Manufacturing (Sheffield)\n\nHallam Manufacturing makes components for the automotive industry and employs 450 people at a single site. Our IT team of five keeps the business running, from the machines on the shop floor to the laptops in the office.\n\nWhy we are advertising\nOne of our technicians has completed his 4 year apprenticeship with us and is moving to a systems role. We now need to replace him. We have a history of growing people internally, with many of our managers having started as apprentices.\n\nThe role\n- Handle first and second line support for around 200 users\n- Maintain PCs, printers and shop floor terminals\n- Manage user accounts and permissions in Active Directory\n- Support the network team during upgrades\n- Run backups and check them\n- Ensure assets are logged and equipment is ready for new starters\n- Provide cover for the helpdesk during holidays\n\nRequirements\n- At least 2 years' experience in IT support, whether in an office or industrial environment\n- Knowledge of Windows 10 and 11, Microsoft 365 and basic networking\n- Practical, calm and clear with non-technical users\n- Willing to work in a factory environment, including wearing safety boots and glasses\n- Full UK driving licence preferred\n\nWhat you get\nSalary 28,000 to 32,000, 25 days holiday plus the Christmas shutdown, a pension, free lunch on Fridays and on-site parking. We also pay for professional qualifications and encourage staff to take them.\n\nApply with a CV and a covering note. Shortlisted candidates will be invited for a site tour and interview with the IT manager.",
+  "min": 2,
+  "max": null,
+  "note": "apprenticeship trap plus 2 years"
+ },
+ {
+  "id": "b094",
+  "group": "full_advert",
+  "text": "Database Administrator - Oracle and SQL Server - Hybrid, Cheltenham\n\nOverview\nA government-linked organisation requires a Database Administrator to join its infrastructure team. Our client looks after information on millions of citizens, so reliability and care are part of daily life.\n\nThe platform\nYou will be responsible for Oracle and SQL Server estates, supporting live services and development environments. Transaction logs are kept for 90 days. Archived records must be retained for 7 years under legal obligation, and you will help to maintain the processes that guarantee that.\n\nResponsibilities\n- Install, configure and upgrade database servers\n- Monitor performance and tune queries\n- Manage backups, restores and disaster recovery tests\n- Apply patches and security updates\n- Support developers with design and optimisation\n- Maintain documentation and capacity plans\n- Take part in an on-call rota, with additional payment\n\nSkills and experience\n- 6 years or more as a DBA with Oracle in a production environment\n- SQL Server administration (desirable but expected to be learned on the job)\n- Scripting in Bash or PowerShell\n- Understanding of high availability, such as Data Guard or Always On\n- Disciplined approach to change control\n\nPackage\nSalary 58,000 to 66,000, 28 days holiday, civil service style pension, hybrid working with two days on site, and training allowance.\n\nSecurity\nClearance (BPSS, then SC) is required. Applicants must be British citizens or have settled status. To apply, send a CV by email. The agency will arrange a call to discuss the role in more detail.",
+  "min": 6,
+  "max": null,
+  "note": "retention trap plus 6 years"
+ },
+ {
+  "id": "b095",
+  "group": "full_advert",
+  "text": "Senior Business Intelligence Developer - Hayward Group (Nottingham)\n\nHayward Group is an engineering and facilities business with 3,000 employees. Our data team has grown from two people to twelve, and we plan to double it.\n\nAbout our team\nWe have a strong culture of progression. Most of our analysts become senior within 3 years, and several have become team leaders. We publish levels and expectations openly, so you can see exactly how to grow.\n\nThe role\nAs a senior BI developer, you will design the data models and reports that managers use daily, and mentor junior colleagues as they develop. You will work with finance, operations and HR to turn data into decisions.\n\nDuties\n- Build and maintain data models in Power BI\n- Design data warehouse structures in Azure Synapse\n- Write efficient SQL and DAX\n- Establish standards for reports and naming\n- Review colleagues' work and coach juniors\n- Gather requirements and present prototypes to stakeholders\n- Monitor usage and refine reports\n\nRequirements\n- 5 years of working in a BI development role\n- Strong skills with Power BI, SQL and dimensional modelling\n- Experience with Azure data services\n- Good communication with senior stakeholders\n- A bachelor's degree or equivalent\n\nBenefits\nSalary 52,000 to 62,000, annual bonus, 26 days holiday, pension, private healthcare, hybrid working with three days in our Nottingham office, and a learning budget of 1,500 each year.\n\nApply with a CV and a recent example of a dashboard or report you have built (anonymised, please). Interviews take place in two stages, with a technical task in the second.",
+  "min": 5,
+  "max": null,
+  "note": "career progression trap plus 5 years"
+ },
+ {
+  "id": "b096",
+  "group": "full_advert",
+  "text": "Head of Software Engineering - Leighton Digital Studios\n\nLeighton Digital Studios is an award-winning software house with 25 years of experience building bespoke systems for banks, insurers and government agencies. Founded by engineers, we are still led by engineers and we say no to work that does not interest us.\n\nPosition summary\nWe are appointing a Head of Software Engineering to manage our 45 developers, testers and architects across three offices. You will report to the Managing Director and be responsible for technical quality, delivery and people.\n\nWhat you will do\n- Lead, grow and retain a high-performing engineering team\n- Set technical standards and ensure they are followed\n- Manage resource allocation between client projects\n- Support the sales team with technical input on proposals\n- Resolve technical and delivery escalations with clients\n- Introduce modern practices without disrupting live work\n- Develop the team's careers through coaching and training\n\nWhat we require\n- At least 10 years in software engineering, with several in leadership roles\n- Experience of managing teams of 30 or more\n- Strong knowledge of .NET, cloud-native design and CI/CD\n- Commercial awareness in a consultancy or professional services environment\n- Excellent communication and the capacity to inspire\n\nWhat you receive\nSalary 95,000 to 115,000, bonus, 30 days holiday, private health and dental cover, pension, car allowance and the chance to join the leadership team.\n\nOur offices are in Manchester, Leeds and Bristol. You will be expected to spend two days a week in the main office. Applications go through our recruitment partner; please email your CV and we will arrange an initial conversation.",
+  "min": 10,
+  "max": null,
+  "note": "boast plus 10 years"
+ },
+ {
+  "id": "b097",
+  "group": "full_advert",
+  "text": "Business Analyst (SC Clearance) - Home Office Programme - Hybrid, Croydon\n\nOur client, a government supplier, is working on a large immigration technology programme and needs business analysts to join several delivery teams.\n\nProgramme background\nThe programme is rebuilding case management tools for caseworkers who make decisions on applications. It is a multi-supplier programme following agile delivery practices, and the teams are friendly and collaborative.\n\nThe role\nYou will work with caseworkers, product owners and developers to understand how work is done today and how to make it better. You will write user stories, map processes and support testing.\n\nResponsibilities\n- Run discovery sessions with caseworkers\n- Document current and future processes\n- Break epics into stories with acceptance criteria\n- Refine the backlog with the product owner\n- Support the team during sprint demonstrations\n- Identify risks, dependencies and data needs\n\nSkills and experience\n- 3 years minimum as a business analyst, ideally in a government or agile environment\n- Strong stakeholder skills and a calm approach\n- Competence with Jira and Confluence\n- Knowledge of GDS service standards is desirable\n\nSecurity\nSC clearance is mandatory. To be eligible, you need to have lived in the UK for the past 5 years without significant breaks. Candidates with existing clearance will be prioritised. Without it, we cannot proceed.\n\nRates are 450 to 520 per day, outside IR35. The initial term is until the end of the financial year, with likely extension. Interviews are conducted online.\n\nSend your CV to apply, noting your clearance status and availability.",
+  "min": 3,
+  "max": null,
+  "note": "clearance residency trap plus 3 years"
+ },
+ {
+  "id": "b098",
+  "group": "full_advert",
+  "text": "Infrastructure Architect - Ferrant Utilities Group (Hybrid, Glasgow)\n\nAt Ferrant Utilities we keep the lights on for 1.2 million homes. Our technology teams support control rooms, customer systems and field operations, and it is critical that they never stop.\n\nOur culture\nWe look after people. After 5 years of service you receive an extra five days leave, and every 10 years brings a long-service award and a paid sabbatical month. Many colleagues have been with us a long time, and we are proud of it.\n\nThe role\nWe need an infrastructure architect to design the platforms on which our next generation of services will run. You will define how we use cloud, on-premise and edge technologies safely and efficiently.\n\nResponsibilities\n- Create target architectures and roadmaps for infrastructure\n- Review designs from project teams and suppliers\n- Set standards for hosting, networking and resilience\n- Advise on risk and cost\n- Represent infrastructure in design authority forums\n- Partner with operational technology teams\n- Mentor engineers\n\nYou will have\n- 7 years or more in infrastructure engineering or architecture\n- Expert knowledge of virtualisation, networking and storage\n- Practical experience of Azure\n- Understanding of critical national infrastructure security expectations\n- TOGAF or similar architecture certification would be an advantage\n\nBenefits\nSalary 75,000 to 88,000, pension (defined benefit for existing members; defined contribution for new joiners), 30 days holiday, flexible hours, healthcare and a car allowance.\n\nTo apply, send your CV and a short summary of an architecture you designed and what you would change. We will respond to every candidate.",
+  "min": 7,
+  "max": null,
+  "note": "long-service award trap plus 7 years"
+ },
+ {
+  "id": "b099",
+  "group": "full_advert",
+  "text": "Release Manager - Banking Platform Programme - Edinburgh\n\nTHE PROGRAMME\nOur client is a UK bank delivering a 3 year programme to move its mortgage business to a new platform. The programme is in its second quarter, with several delivery teams now live. It involves multiple suppliers, shared environments and lots of coordination.\n\nTHE ROLE\nAs release manager, you will plan and coordinate software releases across environments, from test to production. You will make sure that every release is safe, approved and communicated.\n\nKEY TASKS\n- Maintain the release calendar and manage conflicts\n- Chair the weekly change and release meeting\n- Coordinate environments and deployment activities with engineering teams\n- Run go/no-go decisions with product owners and operations\n- Handle post-release checks and incident reviews\n- Improve release processes and automation\n- Produce release reports for the programme board\n\nREQUIREMENTS\n- Four or more years of release management in a regulated environment\n- Strong understanding of CI/CD and DevOps\n- Knowledge of ITIL change and release practices\n- Experience with ServiceNow or similar tools\n- Excellent organisation and communication\n- Calm in a crisis, and clear when it matters\n\nTERMS\nThis role is available on a contract basis (inside IR35) for six months in the first instance, with expected extensions. Day rate: 500 to 580. Based in Edinburgh, with two days on site per week. Interviews: one stage.\n\nTo apply, send your CV with your availability. We will respond to suitable applicants within one working day.",
+  "min": 4,
+  "max": null,
+  "note": "programme length trap plus 4 years"
+ },
+ {
+  "id": "b100",
+  "group": "full_advert",
+  "text": "Cloud Platform Lead - Fintech Scale-up - Remote UK\n\nBACKGROUND\nBluefen Payments was founded 9 years ago to make payments simpler for small businesses. Today it processes billions of pounds for its merchants. The engineering team of fifty sits within the wider technology function of about a hundred.\n\nTHE OPPORTUNITY\nYou will lead the cloud platform team, which looks after the infrastructure, tooling and reliability of our services. We run on AWS, and the platform team provides the paved road that our developers travel.\n\nRESPONSIBILITIES\n- Lead a team of five platform engineers\n- Own the roadmap for infrastructure, deployment and observability\n- Keep cost, reliability and security in balance\n- Respond to major incidents and lead the reviews afterwards\n- Work with security and compliance on PCI DSS requirements\n- Advise on architecture decisions across engineering\n- Recruit and develop platform engineers\n\nEXPERIENCE\n- At least 5 years in infrastructure, DevOps or SRE roles, of which a minimum of 3 years in AWS\n- Experience leading or mentoring engineers\n- Strong knowledge of Terraform, Kubernetes and CI/CD\n- Understanding of security in a regulated environment\n- A practical approach to reliability, with monitoring and runbooks\n\nBENEFITS\n- Salary 85,000 to 100,000 plus share options\n- 30 days holiday\n- Pension with 7 percent employer contribution\n- Home-office budget and co-working allowance\n- Two company meetups each year\n\nAPPLYING\nSend us your CV, along with a note about the most interesting reliability problem you have solved. We will invite you to a conversation with our CTO, followed by a technical discussion with two engineers.",
+  "min": 5,
+  "max": null,
+  "note": "firm requirement is highest lower bound (5, not 3)"
+ }
+]

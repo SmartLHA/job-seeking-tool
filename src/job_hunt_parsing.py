@@ -508,11 +508,171 @@ def _extract_salary_range(text: str) -> tuple[int | None, int | None]:
     return min(values), max(values)
 
 
+# --- Required years: strict extractor (paste and URL jobs) -------------------
+# A number counts only when it reads as a candidate requirement. Every rule is
+# tested on a short window around the number, never on a whole sentence, so a
+# flattened advert with no line breaks still works.
+_YEARS_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+    "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17,
+    "eighteen": 18, "nineteen": 19, "twenty": 20,
+}
+_YEARS_MAX_PLAUSIBLE = 20.0
+_YEARS_WINDOW = 70
+
+# A number is a digit run (not glued to a longer number, price or hyphen) or a number word.
+_YEARS_NUM = (
+    r"(?:(?<![\d.\-–—£$])\d{1,3}(?:\.\d)?"
+    r"|(?<![\w.\-–—])(?:" + "|".join(_YEARS_WORDS) + r")\b)"
+)
+# Upper end of a range: the dash before it is allowed here.
+_YEARS_NUM_HIGH = r"(?:\d{1,3}(?:\.\d)?|\b(?:" + "|".join(_YEARS_WORDS) + r")\b)"
+_YEARS_UNIT = r"(?:years?|yrs?)\b\+?"
+_YEARS_RANGE_RE = re.compile(
+    rf"(?P<lo>{_YEARS_NUM})\s*\+?\s*(?:[-–—]|\bto\b)\s*(?P<hi>{_YEARS_NUM_HIGH})\s*\+?\s*{_YEARS_UNIT}",
+    re.IGNORECASE,
+)
+_YEARS_BETWEEN_RE = re.compile(
+    rf"\bbetween\s+(?P<lo>{_YEARS_NUM})\s+and\s+(?P<hi>{_YEARS_NUM_HIGH})\s*{_YEARS_UNIT}", re.IGNORECASE
+)
+_YEARS_SINGLE_RE = re.compile(
+    rf"(?<![\-–—])(?P<lo>{_YEARS_NUM})\s*(?:\(\d{{1,2}}\)\s*)?(?:\+|plus\b|or\s+more\b)?\s*{_YEARS_UNIT}",
+    re.IGNORECASE,
+)
+
+# Text is cut into segments at line breaks, sentence ends, semicolons and bullets.
+_YEARS_SEPARATOR_RE = re.compile(r"</li>|<br\s*/?>|\r\n?", re.IGNORECASE)
+_YEARS_SEGMENT_RE = re.compile(r"\n|[•;]|(?<=[a-z0-9)’'\"])[.!?]\s+(?=[A-Z0-9])")
+_YEARS_BULLET_RE = re.compile(r"^\s*[-*•·–]\s+")
+
+# Rule 1: an experience cue next to the number.
+_YEARS_CUE_AFTER_RE = re.compile(
+    r"\b(?:experience|experienced|expertise|working\s+(?:in|as|with|on)|as\s+an?\b|"
+    r"in\s+(?:an?\s+)?(?:similar|relevant|it\b|project|data|software|programme|change|agile|delivery|"
+    r"business\s+(?:analysis|analyst|intelligence|change|development)))",
+    re.IGNORECASE,
+)
+_YEARS_CUE_BEFORE_RE = re.compile(r"\b(?:experience|expertise)\b[^.\n]{0,40}$", re.IGNORECASE)
+
+# Rule 2: trap words. After the number (up to the experience cue) and before it.
+_YEARS_TRAP_AFTER_RE = re.compile(
+    r"\b(?:old|older|ago|running|fixed|contract|term|history|heritage|trading|warranty|retention|"
+    r"retained|residen\w*|clearance|combined|collective|programmes?|schemes?|apprentice\w*|degree|"
+    r"training|roadmap|plan|commitment)\b|of\s+age\b|in\s+business\b|"
+    r"[’']?\s*(?:of\s+)?service\b(?!\s+desk)|\buk\b",
+    re.IGNORECASE,
+)
+_YEARS_TRAP_BEFORE_RE = re.compile(
+    r"\b(?:within|after|every|next|last|past|first|aged?|average|retained|retention|resident|"
+    r"career\s+break|combined|collective|no\s+(?:prior\s+)?experience)\s+(?:(?:the|for)\s+)*(?:(?:next|last|past)\s+)?"
+    r"(?:over\s+)?$|\b(?:retained|held|kept)\s+for\s+(?:over\s+)?$|\bcareer\s+break\b|"
+    r"\b(?:on\s+average|average\s+of)\b|\bno\s+(?:prior\s+)?experience\b",
+    re.IGNORECASE,
+)
+
+# Rule 3: a company boast needs a candidate cue in the same window.
+_YEARS_BOAST_RE = re.compile(
+    r"\b(?:we|we[’']re|we[’']ve|our|established|founded|since|backed\s+by|the\s+company)\b", re.IGNORECASE
+)
+_YEARS_BOAST_INDUSTRY_BEFORE_RE = re.compile(
+    r"\bwith\s+(?:over|more\s+than|nearly|almost)\s+$", re.IGNORECASE
+)
+_YEARS_INDUSTRY_AFTER_RE = re.compile(r"\b(?:industry|sector)\b", re.IGNORECASE)
+_YEARS_NAMED_COMPANY_RE = re.compile(
+    r",\s+[A-Z][\w&]*(?:\s+[A-Z][\w&]*)*\s+(?:is|are|has|have|was|offers?|provides?)\b"
+)
+_YEARS_CANDIDATE_RE = re.compile(
+    r"\b(?:you|your|candidates?|applicants?|must|requir\w*|minimum|at\s+least|looking\s+for|"
+    r"seeking|essential|need\w*)\b",
+    re.IGNORECASE,
+)
+
+# Rule 4: desirable-only gives nothing.
+_YEARS_SOFT_RE = re.compile(
+    r"\b(?:desirable|ideally|preferred|nice\s+to\s+have|advantageous|a\s+plus|bonus)\b", re.IGNORECASE
+)
+_YEARS_SOFT_AFTER_RE = re.compile(
+    r"^[^,.;:]{0,40}?\b(?:is|are|would\s+be|will\s+be)\s+(?:desirable|preferred|advantageous|a\s+plus|a\s+bonus)",
+    re.IGNORECASE,
+)
+
+
+def _years_value(token: str) -> float:
+    lowered = token.lower()
+    return float(_YEARS_WORDS[lowered]) if lowered in _YEARS_WORDS else float(lowered)
+
+
+def _years_matches(segment: str) -> list[tuple[int, int, float]]:
+    """Return (start, end, lower bound) for every "N years" or range in one segment, in order."""
+    found: list[tuple[int, int, float]] = []
+    for regex, is_range in ((_YEARS_RANGE_RE, True), (_YEARS_BETWEEN_RE, True), (_YEARS_SINGLE_RE, False)):
+        for match in regex.finditer(segment):
+            if any(match.start() < end and start < match.end() for start, end, _ in found):
+                continue
+            low = _years_value(match.group("lo"))
+            if is_range and _years_value(match.group("hi")) < low:
+                continue
+            found.append((match.start(), match.end(), low))
+    return sorted(found)
+
+
+def _years_window_passes(before: str, matched: str, after: str, soft_header: bool) -> bool:
+    """Apply rules 1 to 4 to one "N years" match and the short text on each side of it."""
+    if soft_header or _YEARS_SOFT_RE.search(before) or _YEARS_SOFT_AFTER_RE.search(after):
+        return False
+    if _YEARS_TRAP_BEFORE_RE.search(before):
+        return False
+    cue = _YEARS_CUE_AFTER_RE.search(after)
+    if not cue and not _YEARS_CUE_BEFORE_RE.search(before):
+        return False
+    if _YEARS_TRAP_AFTER_RE.search(after[: cue.start()] if cue else after):
+        return False
+    window = f"{before}{matched}{after}"
+    is_boast = (
+        _YEARS_BOAST_RE.search(window)
+        or _YEARS_NAMED_COMPANY_RE.search(after)
+        or (_YEARS_BOAST_INDUSTRY_BEFORE_RE.search(before) and _YEARS_INDUSTRY_AFTER_RE.search(after))
+    )
+    return not (is_boast and not _YEARS_CANDIDATE_RE.search(window))
+
+
+def _is_years_header(line: str) -> bool:
+    """A short heading line such as "Desirable:" or "About you", not a bullet or a sentence."""
+    if _YEARS_BULLET_RE.match(line) or len(line) > 40 or re.search(r"\d", line):
+        return False
+    return line.endswith(":") or len(line.split()) <= 4
+
+
 def _extract_years(text: str) -> float | None:
-    match = re.search(r"([0-9]+(?:\.[0-9]+)?)\+?\s+years?", text, flags=re.IGNORECASE)
-    if not match:
-        return None
-    return float(match.group(1))
+    """Return the advert's required years of experience (lower bound), or None.
+
+    Only a candidate requirement counts: age limits, company history, contract or
+    programme length, desirable-only and implausible numbers (over 20) give None.
+    If several numbers pass, the highest lower bound wins.
+    """
+    best: float | None = None
+    soft_header = False
+    for line in _YEARS_SEPARATOR_RE.sub("\n", text or "").split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            soft_header = False
+            continue
+        if _is_years_header(stripped):
+            soft_header = bool(_YEARS_SOFT_RE.search(stripped))
+        for segment in _YEARS_SEGMENT_RE.split(line):
+            previous_end = 0
+            matches = _years_matches(segment)
+            for index, (start, end, low) in enumerate(matches):
+                next_start = matches[index + 1][0] if index + 1 < len(matches) else len(segment)
+                before = segment[max(previous_end, start - _YEARS_WINDOW):start]
+                after = segment[end:min(next_start, end + _YEARS_WINDOW)]
+                previous_end = end
+                if low > _YEARS_MAX_PLAUSIBLE:
+                    continue
+                if _years_window_passes(before, segment[start:end], after, soft_header):
+                    best = low if best is None else max(best, low)
+    return best
 
 
 def _extract_keyword(text: str, keywords: tuple[str, ...]) -> str | None:

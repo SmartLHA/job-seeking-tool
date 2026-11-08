@@ -1,3 +1,11 @@
+## 2026-11-08
+
+### Strict required-years extractor for paste and URL jobs: kept although the blind test missed its limits
+- **Status:** ⚠️ Built in `153196a` (2026-11-07) and KEPT by Mike on 2026-11-08 ("Keep it", relayed by the parent session, answering "Keep the new years extractor despite missing the targets?"). The blind test (B2) MISSED in both shapes. The decision covers keeping the commit and recording the limits; it gives no approval to push, open a PR or merge. Nothing is pushed.
+- **Motivation:** the old `_extract_years` gave 28 false matches in 43 no-requirement entries on the blind set; paste and URL jobs feed it into the experience score.
+- **Changes:** `src/job_hunt_parsing.py` — `_extract_years` body replaced with strict window rules; new helpers `_years_value`, `_years_matches`, `_years_window_passes`, `_is_years_header`. Signature and sole caller (`parse_job_from_text`) unchanged. `tests/test_required_years.py` — NEW. Both are in commit 153196a. The docs update added design doc section 19, this log entry, and the PROJECT_TODO, INDEX and function_list entries.
+- **Key facts:** blind set `tests/fixtures/required_years_blind2.json`, 100 entries (43 none, 57 requirement), run once. As written: false matches 5/43 (11.6%, limit 5%), correct 27/57 (47.4%, limit 80%), 30 missed, 3 false values above the candidate's configured years. Whitespace squashed: false 11.6%, correct 30/57 (52.6%), 27 missed. Old extractor 28/43 false, 21/57 correct, 24 wrong value, 20 false above the configured years; new 5/43, 27/57, 0 wrong, 3. It misses requirements with no "experience" word (returns None, score stays neutral) and false-matches company-history sentences without "we"/"our". Tests: 216 passed (`tests/test_required_years.py tests/test_parsing.py`); full suite 2950 passed, 16 skipped, 0 failed (baseline `5f32d3d`: 2767 passed, 16 skipped, 0 failed). `git merge-tree` against four branches: no conflicts. `_years_matches` is quadratic on pathological input (about 3.6 s for 100,000 characters of repeated "5 years "). Search-source jobs are unchanged and stay neutral on experience. Details: `docs/tasks/2026-11-06-required-years-search-jobs-design.md` section 19.
+
 ## 2026-11-04
 
 ### AI CV blind review: OpenAI reviewer live check passed and ENABLED (OpenAI spec, steps 1-5)

@@ -209,6 +209,7 @@ Used by SilverHand to brief Handy/Scout precisely, and by any agent to orient qu
 | `tests/test_quality_score.py` | `calculate_quality_score` boundaries and combinations. |
 | `tests/test_relevance.py` | Slice A: local relevance filter and bucketing. |
 | `tests/test_relevance_ui.py` | Slice A: relevance bucketing wired into search results. |
+| `tests/test_required_years.py` | `_extract_years` strict required-years rules (development, holdout and real-text cases). |
 | `tests/test_saved_searches.py` | Digest D1: saved-search CRUD and validation. |
 | `tests/test_scoring_preset_ui.py` | Slice C: `POST /scoring-preset` UI wiring. |
 | `tests/test_scoring_presets.py` | Slice C: named scoring-weight presets and persistence. |
@@ -276,6 +277,7 @@ Used by SilverHand to brief Handy/Scout precisely, and by any agent to orient qu
 | ATS keyword match (F1) | `f1-ats-match-rate-design.md` | `compute_keyword_match`, `_keyword_match_vm_fields`, `render_keyword_match_panel` | — | Job detail page |
 | ATS keyword re-check (F1 v2) | `F1_v2_recheck_design.md` | `load_latest_tailored_cv`, `handle_ats_recheck`, `render_keyword_match_panel` | `POST /job/{id}/ats-recheck` | Job detail page |
 | URL ingestion | `url-ingestion-design.md`, `job-007-url-ingestion-design-creation-brief.md` | `parse_job_from_url`, `parse_job_from_text` | `POST /prefill` | Add Job tab |
+| Required years, paste and URL only (kept 2026-11-08; blind test missed its limits) | `2026-11-06-required-years-search-jobs-design.md` (sections 18, 19) | `_extract_years`, `_years_value`, `_years_matches`, `_years_window_passes`, `_is_years_header` in `job_hunt_parsing.py`; caller `parse_job_from_text` | `POST /prefill` | Add Job tab |
 | Source quality gating | `source-quality-gating-design.md` | `source_quality` on `NormalizedJob`; thresholds in `job_hunt_config.py` | — | Find Jobs / Evaluate |
 | Gap Coach (GAP-J) | `gap-j-gap-coach-design.md` | *(not yet implemented)* `aggregate_gaps`, `top_strengths`, `GET /coach` | `GET /coach` | Gap Coach tab |
 | Saved Searches (Digest D1) ✅ | `backlog-01-daily-digest-design.md` | `job_hunt_saved_searches.py`: `SavedSearch`, `create/load/list/save/delete/toggle_saved_search`, `update_last_run`, `validate_search_id`, `validate_saved_search_fields` (shared name/source_id/params validator used by both create + save; `_validate_source_id` charset allowlist `^[a-z0-9_-]+$`); `ui_handlers`: `handle_saved_searches_list/_create/_delete/_toggle`; `render_profile_page` (Saved Searches section) | `GET/POST /saved-searches`, `POST /saved-searches/{id}/delete`, `POST /saved-searches/{id}/toggle` | My Profile tab |

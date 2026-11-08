@@ -1,5 +1,13 @@
 # Job Seeking Tool — Project TODO
 
+## Required years on paste and URL jobs — 2026-11-08
+
+**Status:** ⚠️ Built in `153196a` and kept by Mike on 2026-11-08 ("Keep it"), although its blind test missed the limits (false matches 11.6% vs 5%; correct 47.4% as written and 52.6% squashed vs 80%). Full suite 2950 passed, 16 skipped, 0 failed. Spec and result: `docs/tasks/2026-11-06-required-years-search-jobs-design.md` sections 18 and 19. Search-source jobs are unchanged and stay neutral on experience.
+
+- ⬜ Pending (optional, later): improve the misses (requirements with no "experience" word) and the company-history false matches. Needs a NEW third blind set; the set `tests/fixtures/required_years_blind2.json` has been seen and must not be tuned against.
+- ⬜ Pending (low, optional): `_years_matches` is quadratic on pathological input (about 3.6 s for 100,000 characters of repeated "5 years "). Real adverts are far smaller.
+- Not approved: push, pull request or merge of `153196a`.
+
 ## AI CV blind review — 2026-10-28
 
 **Status:** ✅ Built 2026-10-28 (C0-C4, commits `231a329` (spec), `10325b2` (C0 consent), `110acba` (rename), `9467fc4` (Layer 0), `762961d` (blind reviewer), `e9812fc` (C3a record and loader gate), `ab3fabc` (C3b approve/revise), `98629a1` (C4 eval set), `a2fdc59` (C3c page UI)) — spec `docs/tasks/2026-10-26-ai-cv-blind-review-spec.md`. Not fully done: the live trial below has not fully run (2026-10-29: 17 of 19 cases; the Fix 3 live check passed 2026-10-30). The OpenAI reviewer (spec `docs/tasks/2026-11-01-openai-cv-reviewer-spec.md`, approved 2026-11-02) is built in `af5c746`, `4c7e6ce`, `9d12c38` and `5819a92` and was enabled 2026-11-04 in `40cc011`; see the items below.
@@ -35,7 +43,7 @@
 
 ---
 
-**Last updated:** 2026-10-31 — AI CV blind review Fix 4 built (reviewer fallback model chain; `gemini-3.8-flash` not enabled until its live check; see PROJECT_LOG 2026-10-31). Prior: 2026-10-30 — AI CV blind review Fix 3 built for swapped numbers (Layer 0 rule L0-7 plus a reviewer prompt rule); live check passed, 8 of 8 (see PROJECT_LOG 2026-10-30). Prior: 2026-10-28 — AI CV blind review built, live trial pending (see PROJECT_LOG 2026-10-28 and "AI CV blind review" above). Prior: 2026-10-25 — P2 documentation reconciliation; implementation and qualification limits above. Prior: 2026-10-13 — test isolation: the test suite no longer writes real files in `data/raw/` and `output/` (see PROJECT_LOG 2026-10-13). Prior: 2026-10-04 — audit fixes F1-F4 (see "Audit fixes 2026-09-20" below).
+**Last updated:** 2026-11-08 — strict required-years extractor for paste and URL kept despite a missed blind test (see PROJECT_LOG 2026-11-08). Prior: 2026-10-31 — AI CV blind review Fix 4 built (reviewer fallback model chain; `gemini-3.8-flash` not enabled until its live check; see PROJECT_LOG 2026-10-31). Prior: 2026-10-30 — AI CV blind review Fix 3 built for swapped numbers (Layer 0 rule L0-7 plus a reviewer prompt rule); live check passed, 8 of 8 (see PROJECT_LOG 2026-10-30). Prior: 2026-10-28 — AI CV blind review built, live trial pending (see PROJECT_LOG 2026-10-28 and "AI CV blind review" above). Prior: 2026-10-25 — P2 documentation reconciliation; implementation and qualification limits above. Prior: 2026-10-13 — test isolation: the test suite no longer writes real files in `data/raw/` and `output/` (see PROJECT_LOG 2026-10-13). Prior: 2026-10-04 — audit fixes F1-F4 (see "Audit fixes 2026-09-20" below).
 
 ## Audit repairs — implementation and remaining verification
 
