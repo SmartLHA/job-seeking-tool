@@ -694,7 +694,7 @@ def test_get_reed_search_endpoint_renders_stubbed_results(tmp_path: Path, monkey
     assert "£60,000 – £70,000" in body
     assert "Lead discovery &amp; stakeholder mapping" in body
     assert "https://reed.example/jobs/123?x=1&amp;y=2" in body
-    assert "Minimum salary is passed to Reed only as a best-effort" in body
+    assert "Minimum salary is not applied on this page. It only filters saved-search runs." in body
     assert 'value="50"' in body
 
 

@@ -43,7 +43,21 @@
 
 ---
 
-**Last updated:** 2026-11-08 — strict required-years extractor for paste and URL kept despite a missed blind test (see PROJECT_LOG 2026-11-08). Prior: 2026-10-31 — AI CV blind review Fix 4 built (reviewer fallback model chain; `gemini-3.8-flash` not enabled until its live check; see PROJECT_LOG 2026-10-31). Prior: 2026-10-30 — AI CV blind review Fix 3 built for swapped numbers (Layer 0 rule L0-7 plus a reviewer prompt rule); live check passed, 8 of 8 (see PROJECT_LOG 2026-10-30). Prior: 2026-10-28 — AI CV blind review built, live trial pending (see PROJECT_LOG 2026-10-28 and "AI CV blind review" above). Prior: 2026-10-25 — P2 documentation reconciliation; implementation and qualification limits above. Prior: 2026-10-13 — test isolation: the test suite no longer writes real files in `data/raw/` and `output/` (see PROJECT_LOG 2026-10-13). Prior: 2026-10-04 — audit fixes F1-F4 (see "Audit fixes 2026-09-20" below).
+**Last updated:** 2026-11-08 — strict required-years extractor for paste and URL kept despite a missed blind test (see PROJECT_LOG 2026-11-08). Prior: 2026-11-05 — saved-search salary floor, visible Reed failures and run records built on branch `claude/agitated-sinoussi-7cc5be` (not merged; see PROJECT_LOG 2026-11-05). Prior: 2026-10-31 — AI CV blind review Fix 4 built (reviewer fallback model chain; `gemini-3.8-flash` not enabled until its live check; see PROJECT_LOG 2026-10-31). Prior: 2026-10-30 — AI CV blind review Fix 3 built for swapped numbers (Layer 0 rule L0-7 plus a reviewer prompt rule); live check passed, 8 of 8 (see PROJECT_LOG 2026-10-30). Prior: 2026-10-28 — AI CV blind review built, live trial pending (see PROJECT_LOG 2026-10-28 and "AI CV blind review" above). Prior: 2026-10-25 — P2 documentation reconciliation; implementation and qualification limits above. Prior: 2026-10-13 — test isolation: the test suite no longer writes real files in `data/raw/` and `output/` (see PROJECT_LOG 2026-10-13). Prior: 2026-10-04 — audit fixes F1-F4 (see "Audit fixes 2026-09-20" below).
+
+## Saved searches: salary floor, Reed failures, run records — 2026-11-05
+
+**Status:** ✅ Built 2026-11-05 on branch `claude/agitated-sinoussi-7cc5be` (commits `ecb7c0b`, `96c40f2`, `1efe433`, `e3842ae`, `fac2eea`); not pushed, not merged; fresh verification in progress. Spec `docs/tasks/2026-11-05-saved-search-salary-failure-runs-spec.md`.
+
+- ⬜ Pending: Adzuna silent-failure fix (`fetch_adzuna_jobs` returns `[]` on failure, so a failing Adzuna saved search still shows "Adzuna returned no jobs"; its client is also used by the market-position feature, so check callers first).
+- ⬜ Pending: raise the 10-job read for saved searches with no salary floor (changes Gemini use for every search).
+- ⬜ Pending: send the floor to Reed, only after a live Reed check of what it drops (UNVERIFIED today).
+- ⬜ Pending: apply the floor on the Reed search page (its "More" logic reads a short page as the last page).
+- ⬜ Pending: record a scheduled profile-load failure (needs an edit to `DigestScheduler`; waits for the Issue 16 scheduler ledger work in the main checkout).
+- ⬜ Pending: stale text. `src/ui_render.py:2796` says "auto-run lands in a later phase"; the `src/ui_handlers.py:2606` docstring of `handle_run_now` says "No LLM calls (D3)" but Run now can call Gemini for each new job (skills extraction).
+- ✅ Done 2026-11-06: fresh-context verifier for this build (spec AC21) passed at `db4b58d`, full suite 64 failed, 2803 passed, 1 skipped, same ids as base `401e48f`.
+- ⬜ Pending: Mike decides on merging this branch.
+
 
 ## Audit repairs — implementation and remaining verification
 

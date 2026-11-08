@@ -15,6 +15,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import math
 import threading
 import time
 from dataclasses import dataclass, field
@@ -42,6 +43,7 @@ from src.job_hunt_index import (
     upsert_job,
     LLMQuotaExhausted,
 )
+from src.job_hunt_saved_searches import record_search_run
 from src.job_hunt_evaluation import evaluate_reviewed_job
 from src.job_hunt_scoring_presets import get_active_scoring_policy
 from src.job_hunt_parsing import extract_skills_from_text
@@ -66,12 +68,18 @@ logger = logging.getLogger(__name__)
 _PIPELINE_LOCK = threading.Lock()
 _LLM_WORKER_LOCK = threading.Lock()
 
+# Search salaries below this amount may be rates with an unknown pay period.
+_ANNUAL_SALARY_THRESHOLD = 10_000
+# A local salary filter reads further while retaining the original attempt budget.
+_SALARY_FLOOR_FETCH_SIZE = 50
+
 # Skip reasons that get logged + counted (already-seen is neither — it's expected).
 _SKIP_REASONS = {
     "missing_source_job_id",
     "missing_description_raw",
     "adapter_error",
     "evaluation_error",
+    "below_salary_floor",
     "linkedin_detail_invalid_id",
     "linkedin_detail_blocked",
     "linkedin_detail_failed",
@@ -91,6 +99,9 @@ class DigestRunResult:
     jobs_skipped: int          # blank id / empty description / adapter / eval error
     jobs_already_seen: int     # dedup hits — expected, not errors (observability)
     errors: list[str] = field(default_factory=list)
+    jobs_below_floor: int = 0
+    jobs_salary_unknown: int = 0
+    jobs_held_over: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -104,7 +115,36 @@ class DigestRunResult:
             "jobs_skipped": self.jobs_skipped,
             "jobs_already_seen": self.jobs_already_seen,
             "errors": list(self.errors),
+            "jobs_below_floor": self.jobs_below_floor,
+            "jobs_salary_unknown": self.jobs_salary_unknown,
+            "jobs_held_over": self.jobs_held_over,
         }
+
+
+def _salary_number(value: Any) -> float | None:
+    """Read a finite positive salary from a number or display string."""
+    try:
+        number = float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) and number > 0 else None
+
+
+def _salary_floor(params: dict[str, Any]) -> float | None:
+    if "minimumSalary" not in params or "resultsToTake" not in params:
+        return None
+    return _salary_number(params["minimumSalary"])
+
+
+def _salary_verdict(result: dict[str, Any], floor: float) -> str:
+    """Apply the ordered salary rule without fetching details or changing input."""
+    salaries = [_salary_number(result.get(key)) for key in ("salary_min_gbp", "salary_max_gbp")]
+    top = max((salary for salary in salaries if salary is not None), default=None)
+    if top is None or top < _ANNUAL_SALARY_THRESHOLD:
+        return "unknown"
+    if top >= floor:
+        return "keep"
+    return "below"
 
 
 def _log_skipped(state_root: Path, run_date: str, *, source: str, saved_search_id: str,
@@ -130,13 +170,15 @@ def run_digest_pipeline(
     saved_searches: list[Any],
     profile: Any,
     db_path: Path,
+    trigger: str = "scheduled",
 ) -> DigestRunResult:
     """Run the deterministic digest pipeline, serialised by the process-wide
     pipeline lock so a scheduled run and a manual "Run now" can't write the same
     job concurrently (D5 review)."""
     with _PIPELINE_LOCK:
         return _run_digest_pipeline_locked(
-            config=config, saved_searches=saved_searches, profile=profile, db_path=db_path
+            config=config, saved_searches=saved_searches, profile=profile, db_path=db_path,
+            trigger=trigger,
         )
 
 
@@ -146,6 +188,7 @@ def _run_digest_pipeline_locked(
     saved_searches: list[Any],
     profile: Any,
     db_path: Path,
+    trigger: str = "scheduled",
 ) -> DigestRunResult:
     """Run the deterministic digest pipeline over the given saved searches.
 
@@ -159,11 +202,42 @@ def _run_digest_pipeline_locked(
 
     searches_run = jobs_fetched = jobs_new = jobs_scored = 0
     jobs_llm_queued = jobs_skipped = jobs_already_seen = 0
+    jobs_below_floor = jobs_salary_unknown = jobs_held_over = 0
     newly_queued = 0                                 # global cap counter (across searches)
     errors: list[str] = []
+    def save_run(ss, search_started, before, error_start, floor, propagating=False):
+        counts = {key: value - before[key] for key, value in totals().items()}
+        try:
+            record_search_run(
+                ss.search_id, state_root=state_root, trigger=trigger,
+                started_at=search_started,
+                finished_at=datetime.now().isoformat(timespec="seconds"),
+                salary_floor=int(floor) if floor is not None else None,
+                errors=errors[error_start:], **counts,
+            )
+        except Exception as exc:
+            logger.warning("digest: run record not saved (%s): %s", ss.search_id, exc)
+            if not propagating:
+                errors.append(f"{ss.search_id}: run record not saved: {exc}")
+
+    def totals():
+        return dict(jobs_fetched=jobs_fetched, jobs_new=jobs_new, jobs_scored=jobs_scored,
+                    jobs_llm_queued=jobs_llm_queued, jobs_skipped=jobs_skipped,
+                    jobs_already_seen=jobs_already_seen, jobs_below_floor=jobs_below_floor,
+                    jobs_salary_unknown=jobs_salary_unknown, jobs_held_over=jobs_held_over)
+
     # Slice C (2026-07-21 plan): score with whichever named weight preset is
     # currently persisted, computed once per run (not per-job).
-    _scoring_policy = get_active_scoring_policy(state_root=state_root)
+    try:
+        _scoring_policy = get_active_scoring_policy(state_root=state_root)
+    except Exception as exc:
+        for ss in saved_searches:
+            if not getattr(ss, "enabled", True):
+                continue
+            error_start = len(errors)
+            errors.append(f"{ss.search_id}: scoring policy load failed: {exc}")
+            save_run(ss, started_at, totals(), error_start, None, propagating=True)
+        raise
 
     def finish_initialization(source_id: str, sjid: str, search_id: str) -> None:
         nonlocal newly_queued, jobs_llm_queued
@@ -182,130 +256,162 @@ def _run_digest_pipeline_locked(
     for ss in saved_searches:
         if not getattr(ss, "enabled", True):
             continue
-        source_id = (ss.source_id or "").lower()
-        source = get_source(source_id)
-        if source is None:
-            errors.append(f"{ss.search_id}: unknown source {source_id!r}")
-            continue
-
-        # Fetch (whole-search failure is logged, never aborts other searches)
+        search_started = datetime.now().isoformat(timespec="seconds")
+        before = totals()
+        error_start = len(errors)
+        salary_floor = None
+        propagating = False
         try:
-            params = source.normalize_search_params(dict(ss.params))
-            results = source.search_handler(params)
-        except Exception as exc:
-            errors.append(f"{ss.search_id}: fetch failed: {exc}")
-            logger.warning("digest: fetch failed for %s: %s", ss.search_id, exc)
-            continue
+            source_id = (ss.source_id or "").lower()
+            source = get_source(source_id)
+            if source is None:
+                errors.append(f"{ss.search_id}: unknown source {source_id!r}")
+                continue
 
-        searches_run += 1
-        # One bounded cache per saved search prevents repeated detail requests for
-        # duplicate cards, including failures. A later run gets a fresh attempt.
-        detail_cache: dict[str, tuple[str, str | None]] = {}
-        # islice so a huge/lazy adapter generator isn't fully materialised.
-        for result in islice(results, profile.digest_max_per_source):
-            jobs_fetched += 1
-            # A non-dict adapter item must not abort the run (per-result isolation).
-            if not isinstance(result, dict):
-                _log_skipped(state_root, run_date, source=source_id,
-                             saved_search_id=ss.search_id, reason="adapter_error",
-                             title="", url="")
-                jobs_skipped += 1
+            # Fetch (whole-search failure is logged, never aborts other searches)
+            try:
+                params = source.normalize_search_params(dict(ss.params))
+                salary_floor = _salary_floor(params)
+                attempt_budget = None
+                if salary_floor is not None and "resultsToTake" not in ss.params:
+                    attempt_budget = int(params["resultsToTake"])
+                    params["resultsToTake"] = str(min(_SALARY_FLOOR_FETCH_SIZE, profile.digest_max_per_source))
+                results = source.search_handler(params)
+            except Exception as exc:
+                errors.append(f"{ss.search_id}: fetch failed: {exc}")
+                logger.warning("digest: fetch failed for %s: %s", ss.search_id, exc)
                 continue
-            title = str(result.get("title") or "")
-            url = str(result.get("url") or "")
 
-            # --- Guards + dedup (skips are input-level, counted as jobs_skipped) ---
-            sjid = source_job_id_from_ui_result(result)
-            if not sjid:
-                _log_skipped(state_root, run_date, source=source_id,
-                             saved_search_id=ss.search_id, reason="missing_source_job_id",
-                             title=title, url=url)
-                jobs_skipped += 1
-                continue
-            has_description = bool(str(result.get("description_raw") or "").strip())
-            # LinkedIn cards need deduplication before their lazy detail request.
-            # Other sources retain their existing blank-description skip policy.
-            if (has_description or source_id == "linkedin") and is_already_indexed(db_path, source_id, sjid):
-                jobs_already_seen += 1
-                finish_initialization(source_id, sjid, ss.search_id)
-                continue
-            if not has_description and source_id == "linkedin":
-                if sjid not in detail_cache:
-                    from src.job_sources.linkedin_source import enrich_digest_result
-                    enriched, reason = enrich_digest_result(result)
-                    detail_cache[sjid] = (enriched.get("description_raw", ""), reason)
-                description, reason = detail_cache[sjid]
-                if reason:
+            searches_run += 1
+            attempts = 0
+            # One bounded cache per saved search prevents repeated detail requests for
+            # duplicate cards, including failures. A later run gets a fresh attempt.
+            detail_cache: dict[str, tuple[str, str | None]] = {}
+            # islice so a huge/lazy adapter generator isn't fully materialised.
+            for result in islice(results, profile.digest_max_per_source):
+                jobs_fetched += 1
+                # A non-dict adapter item must not abort the run (per-result isolation).
+                if not isinstance(result, dict):
                     _log_skipped(state_root, run_date, source=source_id,
-                                 saved_search_id=ss.search_id, reason=reason, title=title, url=url)
+                                 saved_search_id=ss.search_id, reason="adapter_error",
+                                 title="", url="")
                     jobs_skipped += 1
                     continue
-                result = {**result, "description_raw": description}
-                has_description = bool(description.strip())
-            if not has_description:
-                _log_skipped(state_root, run_date, source=source_id,
-                             saved_search_id=ss.search_id, reason="missing_description_raw",
-                             title=title, url=url)
-                jobs_skipped += 1
-                continue
-            # --- Convert + deterministic evaluate (failure here = a skip) ---
-            try:
-                payload = reviewed_job_payload_from_ui_result(result, source_id=source_id)
-                required, preferred, _warn = extract_skills_from_text(payload["description_raw"])
-                payload["required_skills"] = required
-                payload["preferred_skills"] = preferred
-                payload["skill_extraction_method"] = skill_extraction_method_from_warning(_warn)  # Slice 1c
-                job = reviewed_job_from_dict(payload)
-                analysis = evaluate_reviewed_job(profile, job, scoring_policy=_scoring_policy)
-            except Exception as exc:
-                _log_skipped(state_root, run_date, source=source_id,
-                             saved_search_id=ss.search_id, reason="evaluation_error",
-                             title=title, url=url)
-                jobs_skipped += 1
-                errors.append(f"{ss.search_id}/{title[:40]}: eval failed: {exc}")
-                logger.warning("digest: eval failed (%s): %s", ss.search_id, exc)
-                continue
-            jobs_scored += 1
+                title = str(result.get("title") or "")
+                url = str(result.get("url") or "")
 
-            # --- Persist JSON, then index-write LAST. A failure here is an ERROR,
-            # not a skip — the job WAS scored; it just isn't indexed yet (re-tried
-            # next run since it stays not-already-indexed). ---
-            try:
-                save_reviewed_job(job, config.state_root)
-                save_job_analysis(analysis, config.state_root)
-                upsert_job(db_path, {
-                    "job_id": job.job_id,
-                    "job_title": job.job_title,
-                    "company": job.company,
-                    "location": job.location,
-                    "source": source_id,
-                    "source_job_id": sjid,
-                    "apply_url": job.url or job.source_ref,
-                    "match_score": analysis.match_score,
-                    "decision": analysis.decision,
-                    "user_decision": getattr(analysis, "user_decision", None),
-                    "ats_score": getattr(analysis, "ats_score", None),
-                    "tailoring_ready": getattr(analysis, "tailoring_ready", None),
-                    "status": "not_applied",
-                    "updated_at": run_date,
-                    "salary_min": job.salary_min_gbp,
-                    "salary_max": job.salary_max_gbp,
-                    "digest_init_search_id": ss.search_id,
-                    "digest_init_date": run_date,
-                    "digest_init_queue_requested": (
-                        profile.digest_llm_enabled and analysis.match_score is not None
-                        and analysis.match_score >= profile.digest_threshold
-                    ),
-                })
-            except Exception as exc:
-                errors.append(f"{ss.search_id}/{job.job_id}: persist/index failed: {exc}")
-                logger.warning("digest: persist/index failed (%s): %s", job.job_id, exc)
-                continue
-            jobs_new += 1
+                # --- Guards + dedup (skips are input-level, counted as jobs_skipped) ---
+                sjid = source_job_id_from_ui_result(result)
+                if not sjid:
+                    _log_skipped(state_root, run_date, source=source_id,
+                                 saved_search_id=ss.search_id, reason="missing_source_job_id",
+                                 title=title, url=url)
+                    jobs_skipped += 1
+                    continue
+                has_description = bool(str(result.get("description_raw") or "").strip())
+                # LinkedIn cards need deduplication before their lazy detail request.
+                # Other sources retain their existing blank-description skip policy.
+                if (has_description or source_id == "linkedin") and is_already_indexed(db_path, source_id, sjid):
+                    jobs_already_seen += 1
+                    finish_initialization(source_id, sjid, ss.search_id)
+                    continue
+                if salary_floor is not None:
+                    verdict = _salary_verdict(result, salary_floor)
+                    if verdict == "below":
+                        _log_skipped(state_root, run_date, source=source_id,
+                                     saved_search_id=ss.search_id, reason="below_salary_floor",
+                                     title=title, url=url)
+                        jobs_below_floor += 1
+                        continue
+                    if verdict == "unknown":
+                        jobs_salary_unknown += 1
+                if not has_description and source_id == "linkedin":
+                    if sjid not in detail_cache:
+                        from src.job_sources.linkedin_source import enrich_digest_result
+                        enriched, reason = enrich_digest_result(result)
+                        detail_cache[sjid] = (enriched.get("description_raw", ""), reason)
+                    description, reason = detail_cache[sjid]
+                    if reason:
+                        _log_skipped(state_root, run_date, source=source_id,
+                                     saved_search_id=ss.search_id, reason=reason, title=title, url=url)
+                        jobs_skipped += 1
+                        continue
+                    result = {**result, "description_raw": description}
+                    has_description = bool(description.strip())
+                if not has_description:
+                    _log_skipped(state_root, run_date, source=source_id,
+                                 saved_search_id=ss.search_id, reason="missing_description_raw",
+                                 title=title, url=url)
+                    jobs_skipped += 1
+                    continue
+                if attempt_budget is not None and attempts >= attempt_budget:
+                    jobs_held_over += 1
+                    continue
+                # --- Convert + deterministic evaluate (failure here = a skip) ---
+                attempts += 1
+                try:
+                    payload = reviewed_job_payload_from_ui_result(result, source_id=source_id)
+                    required, preferred, _warn = extract_skills_from_text(payload["description_raw"])
+                    payload["required_skills"] = required
+                    payload["preferred_skills"] = preferred
+                    payload["skill_extraction_method"] = skill_extraction_method_from_warning(_warn)  # Slice 1c
+                    job = reviewed_job_from_dict(payload)
+                    analysis = evaluate_reviewed_job(profile, job, scoring_policy=_scoring_policy)
+                except Exception as exc:
+                    _log_skipped(state_root, run_date, source=source_id,
+                                 saved_search_id=ss.search_id, reason="evaluation_error",
+                                 title=title, url=url)
+                    jobs_skipped += 1
+                    errors.append(f"{ss.search_id}/{title[:40]}: eval failed: {exc}")
+                    logger.warning("digest: eval failed (%s): %s", ss.search_id, exc)
+                    continue
+                jobs_scored += 1
 
-            # Metadata, initial queueing and marker completion commit together.
-            # Failed initialization retains its marker for an identical search.
-            finish_initialization(source_id, sjid, ss.search_id)
+                # --- Persist JSON, then index-write LAST. A failure here is an ERROR,
+                # not a skip — the job WAS scored; it just isn't indexed yet (re-tried
+                # next run since it stays not-already-indexed). ---
+                try:
+                    save_reviewed_job(job, config.state_root)
+                    save_job_analysis(analysis, config.state_root)
+                    upsert_job(db_path, {
+                        "job_id": job.job_id,
+                        "job_title": job.job_title,
+                        "company": job.company,
+                        "location": job.location,
+                        "source": source_id,
+                        "source_job_id": sjid,
+                        "apply_url": job.url or job.source_ref,
+                        "match_score": analysis.match_score,
+                        "decision": analysis.decision,
+                        "user_decision": getattr(analysis, "user_decision", None),
+                        "ats_score": getattr(analysis, "ats_score", None),
+                        "tailoring_ready": getattr(analysis, "tailoring_ready", None),
+                        "status": "not_applied",
+                        "updated_at": run_date,
+                        "salary_min": job.salary_min_gbp,
+                        "salary_max": job.salary_max_gbp,
+                        "digest_init_search_id": ss.search_id,
+                        "digest_init_date": run_date,
+                        "digest_init_queue_requested": (
+                            profile.digest_llm_enabled and analysis.match_score is not None
+                            and analysis.match_score >= profile.digest_threshold
+                        ),
+                    })
+                except Exception as exc:
+                    errors.append(f"{ss.search_id}/{job.job_id}: persist/index failed: {exc}")
+                    logger.warning("digest: persist/index failed (%s): %s", job.job_id, exc)
+                    continue
+                jobs_new += 1
+
+                # Metadata, initial queueing and marker completion commit together.
+                # Failed initialization retains its marker for an identical search.
+                finish_initialization(source_id, sjid, ss.search_id)
+        except Exception as exc:
+            propagating = True
+            errors.append(f"{ss.search_id}: unexpected error: {exc}")
+            raise
+        finally:
+            save_run(ss, search_started, before, error_start, salary_floor, propagating)
 
     return DigestRunResult(
         started_at=started_at,
@@ -318,6 +424,9 @@ def _run_digest_pipeline_locked(
         jobs_skipped=jobs_skipped,
         jobs_already_seen=jobs_already_seen,
         errors=errors,
+        jobs_below_floor=jobs_below_floor,
+        jobs_salary_unknown=jobs_salary_unknown,
+        jobs_held_over=jobs_held_over,
     )
 
 
