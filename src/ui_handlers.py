@@ -1031,7 +1031,37 @@ def _prepare_keyword_search(source, params: dict) -> tuple[dict, list[str]]:
     return values, terms
 
 
-def _run_multi_keyword_search(source, search_values: dict, keyword_terms: list[str], *, offsets: list[int | None] | None = None):
+def _keyword_failure_message(source, exc: Exception) -> str:
+    """Text safe to show for a failed keyword: fixed text from the Reed/Adzuna
+    client errors (no key, URL or upstream body); a fixed generic text otherwise."""
+    from src.job_sources.adzuna_client import AdzunaFetchError
+    from src.job_sources.reed_client import ReedFetchError
+    if isinstance(exc, (ReedFetchError, AdzunaFetchError)):
+        return str(exc)
+    return f"{source.display_name} search failed"
+
+
+def _render_keyword_failure_notice(failures: list[dict[str, str]], can_retry_next_page: bool) -> str:
+    """Amber notice naming each keyword that could not be searched (partial failure)."""
+    if not failures:
+        return ""
+    rows = "".join(
+        f'<li><strong>{escape(f.get("keyword", ""))}</strong>: {escape(f.get("message", ""))}</li>'
+        for f in failures
+    )
+    retry = "Next page tries these keywords again." if can_retry_next_page else "Search again to try these keywords again."
+    return (
+        '<div id="jst-keyword-failure-note" style="margin-top:14px;margin-bottom:10px;padding:10px 14px;'
+        'border:1px solid var(--review-line);background:var(--review-bg);color:var(--review);'
+        'border-radius:var(--r-md);font-size:12.5px;">'
+        '<div style="font-weight:600;margin-bottom:4px;">Some keywords could not be searched</div>'
+        f'<ul style="margin:0 0 4px 18px;padding:0;">{rows}</ul>'
+        f'<div>{retry}</div></div>'
+    )
+
+
+def _run_multi_keyword_search(source, search_values: dict, keyword_terms: list[str], *, offsets: list[int | None] | None = None,
+                              failures: list[dict[str, str]] | None = None):
     """Run one search per keyword term (same location/radius/other criteria
     from `search_values`), merge the raw results. Never a cross-product with
     locations — `search_values` carries exactly one location.
@@ -1069,6 +1099,8 @@ def _run_multi_keyword_search(source, search_values: dict, keyword_terms: list[s
             # text is unchanged. Only prefix with the keyword when there is
             # more than one, so a partial multi-keyword failure is legible.
             sub_errors.append(str(exc) if len(terms) == 1 else f"{term!r}: {exc}")
+            if failures is not None:
+                failures.append({"keyword": term, "message": _keyword_failure_message(source, exc)})
             next_offsets.append(offset)
             continue
         if take > 0 and len(sub_results) >= take:
@@ -1202,13 +1234,16 @@ def handle_source_search(req, config, responder, source_id):
     binding, hidden_snapshot = _search_binding(config, source_id, search_values, exclude_raw)
     error: str | None = None
     results: list[dict[str, Any]] = []
+    _kw_failures: list[dict[str, str]] = []
     try:
-        results, _any_full_page, _kw_sub_errors, _next_offsets = _run_multi_keyword_search(source, search_values, keyword_terms)
+        results, _any_full_page, _kw_sub_errors, _next_offsets = _run_multi_keyword_search(
+            source, search_values, keyword_terms, failures=_kw_failures,
+        )
         if _kw_sub_errors:
             if not results and len(_kw_sub_errors) == len(keyword_terms or [""]):
                 error = f"{source.display_name} search failed: {'; '.join(_kw_sub_errors)}. Manual fallback is still available."
             else:
-                search_values["_partial_error_count"] = str(len(_kw_sub_errors))
+                search_values["_keyword_failures"] = _kw_failures
     except Exception as exc:
         error = f"{source.display_name} search failed: {exc}. Manual fallback is still available."
     # Filter out not-interested jobs (display-only: paging math below stays on
@@ -2123,8 +2158,9 @@ def handle_source_search_more(req, config, responder, source_id):
         raw_count = hidden_count = pages_advanced = 0
         next_offsets = current_offsets = offsets
         while True:
+            kw_failures: list[dict[str, str]] = []
             raw_results, any_full_page, kw_sub_errors, next_offsets = _run_multi_keyword_search(
-                source, search_values, effective_terms, offsets=current_offsets,
+                source, search_values, effective_terms, offsets=current_offsets, failures=kw_failures,
             )
             if kw_sub_errors and not raw_results and len(kw_sub_errors) == sum(offset is not None for offset in current_offsets):
                 raise _SearchPageSourceError("; ".join(kw_sub_errors))
@@ -2152,11 +2188,14 @@ def handle_source_search_more(req, config, responder, source_id):
             next_params["keywordCursors"] = _encode_keyword_cursors(next_offsets)
         next_params["searchId"] = search_id
         next_url = f"/search/{source_id}/more?" + _urlencode(next_params)
-        return PreparedSearchPage({
+        payload = {
             "ok": True, "cards_html": cards_html, "other_results_html": other_results_html,
             "has_more": has_more, "next_url": next_url, "count": raw_count,
             "visible_count": len(results) + len(other_results), "hidden_count": hidden_count,
-        }, (display_skip + take, tuple(next_offsets)) if has_more else None)
+        }
+        if kw_failures:
+            payload["keyword_failure_html"] = _render_keyword_failure_notice(kw_failures, has_more)
+        return PreparedSearchPage(payload, (display_skip + take, tuple(next_offsets)) if has_more else None)
 
     try:
         payload = prepare_page(
@@ -2491,7 +2530,13 @@ def handle_jobs_save(req, config, responder):
 # Saved Searches (Daily Job Digest — phase D1)
 # --------------------------------------------------------------------------- #
 
-def _saved_search_to_json(s: SavedSearch) -> dict[str, Any]:
+def _saved_search_source_name(search):
+    from src.job_sources.source_registry import get_source
+    source = get_source(search.source_id)
+    return source.display_name if source else search.source_id.capitalize()
+
+
+def _saved_search_to_json(s: SavedSearch, runs=None) -> dict[str, Any]:
     return {
         "search_id": s.search_id,
         "name": s.name,
@@ -2501,13 +2546,26 @@ def _saved_search_to_json(s: SavedSearch) -> dict[str, Any]:
         "created_at": s.created_at,
         "last_run_at": s.last_run_at,
         "last_run_count": s.last_run_count,
+        "runs": runs if runs is not None else [],
     }
 
 
 def handle_saved_searches_list(req, config, responder):
     """GET /saved-searches — JSON list of all saved searches."""
     searches = list_saved_searches(state_root=config.state_root)
-    responder.send_json({"searches": [_saved_search_to_json(s) for s in searches]})
+    from src.job_hunt_saved_searches import list_search_runs, search_run_summary
+    payload = []
+    for search in searches:
+        try:
+            runs = list_search_runs(search.search_id, state_root=config.state_root, limit=20)
+            for run in runs:
+                run.update(search_run_summary(run, search_id=search.search_id,
+                                             source_name=_saved_search_source_name(search)))
+        except Exception as exc:
+            logger.warning("saved-searches: could not read runs for %s: %s", search.search_id, exc)
+            runs = []
+        payload.append(_saved_search_to_json(search, runs))
+    responder.send_json({"searches": payload})
 
 
 def handle_saved_searches_create(req, config, responder):
@@ -2588,9 +2646,23 @@ def handle_run_now(req, config, responder, search_id):
         responder.send_json({"ok": False, "error": "Invalid search_id"}, status=HTTPStatus.BAD_REQUEST)
         return
 
+    if not search.enabled:
+        responder.send_json({"ok": True, "run_status": "not_run",
+                             "summary": "Not run: this saved search is disabled."})
+        return
+
     try:
         profile = _load_active_profile(config)
     except Exception as exc:
+        from datetime import datetime
+        from src.job_hunt_saved_searches import record_search_run
+        now = datetime.now().isoformat(timespec="seconds")
+        try:
+            record_search_run(search_id, state_root=config.state_root, trigger="manual",
+                              started_at=now, finished_at=now,
+                              errors=[f"Could not load profile: {exc}"])
+        except Exception as record_exc:
+            logger.warning("run-now: run record not saved for %s: %s", search_id, record_exc)
         responder.send_json({"ok": False, "error": f"Could not load profile: {exc}"},
                             status=HTTPStatus.INTERNAL_SERVER_ERROR)
         return
@@ -2600,6 +2672,7 @@ def handle_run_now(req, config, responder, search_id):
         saved_searches=[search],
         profile=profile,
         db_path=_index_db_path(config),
+        trigger="manual",
     )
     # Record run metadata on the saved search (best-effort).
     try:
@@ -2607,7 +2680,9 @@ def handle_run_now(req, config, responder, search_id):
     except Exception as exc:
         logger.warning("run-now: could not update last_run for %s: %s", search_id, exc)
 
-    payload = {"ok": True, **result.to_dict()}
+    from src.job_hunt_saved_searches import search_run_summary
+    payload = {"ok": True, **search_run_summary(result.to_dict(), search_id=search_id,
+                source_name=_saved_search_source_name(search)), **result.to_dict()}
     responder.send_json(payload)
 
 
@@ -3207,6 +3282,14 @@ def _render_search_jobs_tab(
             source_results_html += '<div id="jst-cards-container">' + more_button_html(retry_url) + '</div>'
         source_results_html += ACTION_BAR + STAGING_OVERLAY + multiselect_script()
 
+    # Partly failed multi-keyword search: amber notice above the results. Not
+    # shown with the all-failed/settings-changed banner (reed_error).
+    keyword_failure_html = ""
+    if active_search_source and not reed_error:
+        _kw_failures_view = (search_values or {}).get("_keyword_failures")
+        if _kw_failures_view:
+            keyword_failure_html = _render_keyword_failure_notice(_kw_failures_view, bool(retry_url))
+
     # Not-interested note: explains short (or fully empty) pages caused by the
     # server-side hide filter, so a filtered page never looks broken.
     hidden_note_html = ""
@@ -3256,6 +3339,7 @@ def _render_search_jobs_tab(
       {hidden_note_html}
       {excluded_note_html}
       {capped_note_html}
+      {keyword_failure_html}
       {source_results_html}
       {other_results_html}
     </section>

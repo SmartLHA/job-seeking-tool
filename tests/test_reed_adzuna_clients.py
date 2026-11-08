@@ -62,49 +62,55 @@ class TestFetchReedJobs:
 
         assert results == []
 
-    def test_fetch_reed_jobs_no_api_key_returns_empty(self) -> None:
-        """Missing REED_API_KEY should return empty list after env load."""
+    def test_fetch_reed_jobs_no_api_key_raises(self) -> None:
+        """Missing REED_API_KEY raises after guarded env load."""
         with patch.dict(os.environ, {}, clear=True):
             with patch("src.job_sources.reed_client._ensure_env_loaded"):
                 with patch("os.getenv", return_value=None):
                     with patch("requests.get") as mock_get:
-                        results = reed_client.fetch_reed_jobs("BA", "London", save_raw=False)
+                        with pytest.raises(reed_client.ReedFetchError) as error:
+                            reed_client.fetch_reed_jobs("BA", "London", save_raw=False)
 
         mock_get.assert_not_called()
-        assert results == []
+        assert str(error.value) == "Reed API key is not set"
 
     def test_fetch_reed_jobs_rate_limit_429(self) -> None:
-        """HTTP 429 should be handled gracefully, returning empty list."""
+        """HTTP 429 should be handled gracefully, raising an explicit failure."""
         mock_response = MagicMock()
         mock_response.status_code = 429
 
         with patch("requests.get", return_value=mock_response):
             with patch.dict(os.environ, {"REED_API_KEY": "fake_key"}):
-                results = reed_client.fetch_reed_jobs("BA", "London", save_raw=False)
+                with pytest.raises(reed_client.ReedFetchError) as error:
+                    reed_client.fetch_reed_jobs("BA", "London", save_raw=False)
 
-        assert results == []
+        assert str(error.value) == "Reed rate limit reached (HTTP 429)"
 
     def test_fetch_reed_jobs_http_error(self) -> None:
-        """HTTP error (500, etc) should be caught and return empty list."""
+        """HTTP error (500, etc) should be caught and raise an explicit failure."""
         import requests as req_lib
 
-        with patch("requests.get", side_effect=req_lib.exceptions.HTTPError("Server error")):
+        response = req_lib.Response()
+        response.status_code = 500
+        with patch("requests.get", side_effect=req_lib.exceptions.HTTPError("Server error", response=response)):
             with patch.dict(os.environ, {"REED_API_KEY": "fake_key"}):
-                results = reed_client.fetch_reed_jobs("BA", "London", save_raw=False)
+                with pytest.raises(reed_client.ReedFetchError) as error:
+                    reed_client.fetch_reed_jobs("BA", "London", save_raw=False)
 
-        assert results == []
+        assert str(error.value) == "Reed returned HTTP 500"
 
     def test_fetch_reed_jobs_malformed_json(self) -> None:
-        """Bad JSON in response should return empty list."""
+        """Bad JSON in response should raise an explicit failure."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.side_effect = json.JSONDecodeError("msg", "doc", 0)
 
         with patch("requests.get", return_value=mock_response):
             with patch.dict(os.environ, {"REED_API_KEY": "fake_key"}):
-                results = reed_client.fetch_reed_jobs("BA", "London", save_raw=False)
+                with pytest.raises(reed_client.ReedFetchError) as error:
+                    reed_client.fetch_reed_jobs("BA", "London", save_raw=False)
 
-        assert results == []
+        assert str(error.value) == "Reed returned invalid JSON"
 
     def test_fetch_reed_jobs_respects_skip_parameter(self) -> None:
         """skip parameter should be passed as resultsToSkip to API."""
@@ -136,14 +142,16 @@ class TestFetchReedJobs:
         assert results[0]["jobId"] == 111
 
     def test_fetch_reed_jobs_timeout_error(self) -> None:
-        """Timeout should be caught and return empty list."""
+        """Timeout should be caught and raise an explicit failure."""
         import requests as req_lib
 
         with patch("requests.get", side_effect=req_lib.exceptions.Timeout("timeout")):
             with patch.dict(os.environ, {"REED_API_KEY": "fake_key"}):
-                results = reed_client.fetch_reed_jobs("BA", "London", save_raw=False)
+                with pytest.raises(reed_client.ReedFetchError) as error:
+                    reed_client.fetch_reed_jobs("BA", "London", save_raw=False)
 
-        assert results == []
+        assert str(error.value) == "Reed request timed out"
+
 
 
 # ── Reed Client: save_raw_response ────────────────────────────────────────────
@@ -217,12 +225,12 @@ class TestFetchAdzunaJobs:
 
         with patch("requests.get", side_effect=error):
             with patch.dict(os.environ, {"ADZUNA_APP_ID": "app1", "ADZUNA_APP_KEY": fake_key}):
-                results = adzuna_client.fetch_adzuna_jobs("BA", "London")
+                with pytest.raises(adzuna_client.AdzunaFetchError):
+                    adzuna_client.fetch_adzuna_jobs("BA", "London")
 
         expected = "HTTP error occurred while fetching from Adzuna"
         if type(status) is int and 100 <= status <= 599:
             expected += f" (status {status})"
-        assert results == []
         assert caplog.messages == [expected + "."]
         assert fake_key not in caplog.text
         assert url not in caplog.text
@@ -242,9 +250,9 @@ class TestFetchAdzunaJobs:
 
         with patch("requests.get", side_effect=error):
             with patch.dict(os.environ, {"ADZUNA_APP_ID": "app1", "ADZUNA_APP_KEY": fake_key}):
-                results = adzuna_client.fetch_adzuna_jobs("BA", "London")
+                with pytest.raises(adzuna_client.AdzunaFetchError):
+                    adzuna_client.fetch_adzuna_jobs("BA", "London")
 
-        assert results == []
         assert caplog.messages == [f"Request error occurred while fetching from Adzuna ({exception_name})."]
         assert fake_key not in caplog.text
         assert url not in caplog.text
@@ -288,30 +296,29 @@ class TestFetchAdzunaJobs:
         assert results == []
 
     def test_fetch_adzuna_jobs_missing_credentials(self) -> None:
-        """Missing app_id or app_key should return empty list."""
+        """Missing app_id or app_key should raise AdzunaFetchError, no request made."""
         with patch.dict(os.environ, {}, clear=True):
             with patch("requests.get") as mock_get:
-                results = adzuna_client.fetch_adzuna_jobs("BA", "London")
+                with pytest.raises(adzuna_client.AdzunaFetchError):
+                    adzuna_client.fetch_adzuna_jobs("BA", "London")
 
         mock_get.assert_not_called()
-        assert results == []
 
     @pytest.mark.usefixtures("adzuna_tmp_cwd")
     def test_fetch_adzuna_jobs_rate_limit_429(self) -> None:
-        """HTTP 429 should return empty list."""
+        """HTTP 429 should raise AdzunaFetchError."""
         mock_response = MagicMock()
         mock_response.status_code = 429
         mock_response.text = "{}"
 
         with patch("requests.get", return_value=mock_response):
             with patch.dict(os.environ, {"ADZUNA_APP_ID": "app1", "ADZUNA_APP_KEY": "key1"}):
-                results = adzuna_client.fetch_adzuna_jobs("BA", "London")
-
-        assert results == []
+                with pytest.raises(adzuna_client.AdzunaFetchError):
+                    adzuna_client.fetch_adzuna_jobs("BA", "London")
 
     @pytest.mark.usefixtures("adzuna_tmp_cwd")
     def test_fetch_adzuna_jobs_malformed_json(self) -> None:
-        """Bad JSON should return empty list."""
+        """Bad JSON should raise AdzunaFetchError."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.side_effect = json.JSONDecodeError("msg", "doc", 0)
@@ -319,9 +326,8 @@ class TestFetchAdzunaJobs:
 
         with patch("requests.get", return_value=mock_response):
             with patch.dict(os.environ, {"ADZUNA_APP_ID": "app1", "ADZUNA_APP_KEY": "key1"}):
-                results = adzuna_client.fetch_adzuna_jobs("BA", "London")
-
-        assert results == []
+                with pytest.raises(adzuna_client.AdzunaFetchError):
+                    adzuna_client.fetch_adzuna_jobs("BA", "London")
 
     @pytest.mark.usefixtures("adzuna_tmp_cwd")
     def test_fetch_adzuna_jobs_pagination_calculation(self) -> None:
@@ -411,9 +417,9 @@ class TestEnvLoading:
         """Adzuna client should check for credentials early."""
         with patch.dict(os.environ, {}, clear=True):
             with patch("requests.get") as mock_get:
-                results = adzuna_client.fetch_adzuna_jobs("BA", "London")
+                with pytest.raises(adzuna_client.AdzunaFetchError):
+                    adzuna_client.fetch_adzuna_jobs("BA", "London")
                 mock_get.assert_not_called()
-                assert results == []
 
     def test_reed_fallback_env_parsing_handles_missing_file(self) -> None:
         """Reed's inline .env parser should handle missing .env files gracefully."""

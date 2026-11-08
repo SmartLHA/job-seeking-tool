@@ -117,6 +117,18 @@ superseded by this section where behavior differs.
   provider key. Explicit user-requested qualitative batches use the shared worker
   when a key is available, independently of that digest toggle. Manual AI actions
   remain separate from deterministic scoring; no application is submitted.
+- Saved-search runs (built 2026-11-05 on branch `claude/agitated-sinoussi-7cc5be`,
+  not pushed, not merged): a saved search's minimum salary now filters new jobs
+  locally after the fetch (on Reed saved-search runs it is also sent to Reed since
+  2026-11-06, which may leave out some no-salary jobs; no-salary jobs that arrive are
+  kept and counted); a failed Reed fetch raises `ReedFetchError` and shows its
+  message instead of looking like "no jobs"; every enabled search gets one
+  `saved_search_runs` row per run (Run now and scheduled), shown as a Last run line
+  and Run history on My Profile. Reed's handling of the floor was checked live on one
+  search on 2026-11-06 (evidence kept locally, not in git); the built
+  send has not run against live Reed (UNVERIFIED). Specs:
+  `docs/tasks/2026-11-05-saved-search-salary-failure-runs-spec.md`,
+  `docs/tasks/2026-11-06-reed-floor-send-spec.md`.
 - New marked digest initialization attempts can resume metadata/queue completion
   after failure without rewriting saved analysis or resetting done/processing
   queue states. Unmarked legacy partial rows are not inferred or repaired.

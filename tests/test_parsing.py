@@ -266,7 +266,7 @@ def test_url_hardening_robots_txt_fail_closed() -> None:
 def test_url_hardening_robots_txt_error_is_fail_closed() -> None:
     """robots.txt fetch error causes fail-closed (returns False, not True)."""
     cache = parsing._RobotsCache()
-    with patch("urllib.robotparser.RobotFileParser.read", side_effect=Exception("timeout")):
+    with patch.object(parsing, "_fetch_robots_lines", side_effect=TimeoutError("timeout")):
         result = cache.is_allowed("https://reed.co.uk/jobs/1", parsing.DEFAULT_USER_AGENT)
     assert result is False, "Expected fail-closed (False) on robots.txt error"
 

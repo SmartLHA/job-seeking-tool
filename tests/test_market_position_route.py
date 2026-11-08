@@ -256,3 +256,18 @@ def test_panel_no_saved_block_when_no_snapshot():
     from src.ui_render import render_salary_benchmark_panel
     html = render_salary_benchmark_panel("job-1", market_snapshot=None)
     assert "Saved:" not in html and 'id="sb-clear-btn"' not in html
+
+
+@pytest.mark.parametrize("age, expected", [
+    (ac.SALARY_CACHE_TTL_SECONDS - 1, HTTPStatus.OK),
+    (ac.SALARY_CACHE_TTL_SECONDS, HTTPStatus.CONFLICT),
+    (ac.SALARY_CACHE_TTL_SECONDS + 1, HTTPStatus.CONFLICT),
+])
+def test_route_cached_benchmark_ttl_boundary(config, monkeypatch, age, expected):
+    _seed_cache(config)
+    monkeypatch.setattr(ac, "_utc_now", lambda: T0 + timedelta(seconds=age))
+    response = _Resp()
+    with patch("requests.get") as network:
+        ui_handlers.handle_set_market_position(None, config, response, "job-1")
+    assert response.status == expected
+    network.assert_not_called()

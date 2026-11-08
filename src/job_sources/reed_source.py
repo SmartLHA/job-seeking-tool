@@ -286,12 +286,17 @@ def normalize_reed_search_params(params: dict[str, str]) -> dict[str, str]:
 def search_reed_jobs_for_ui(search_values: dict[str, str]) -> list[dict[str, Any]]:
     take = int(search_values["resultsToTake"])
     skip = int(search_values.get("resultsSkip", "0"))
+    extra: dict[str, Any] = {}
+    if "_reed_api_floor" in search_values:
+        # Set only by the saved-search scheduler; the search page never carries it.
+        extra["minimum_salary"] = int(search_values["_reed_api_floor"])
     raw_jobs = fetch_reed_jobs(
         search_values["keywords"],
         search_values["locationName"],
         take,
         skip=skip,
         save_raw=False,
+        **extra,
     )
     return [reed_job_to_ui_result(raw, search_values) for raw in raw_jobs[:take]]
 
@@ -392,7 +397,7 @@ def reed_filter_notes(normalized: dict[str, Any], search_values: dict[str, str])
     notes: list[str] = []
     requested_salary = search_values.get("minimumSalary")
     if requested_salary:
-        notes.append("Minimum salary is passed to Reed only as a best-effort display filter in this PL.")
+        notes.append("Minimum salary is not applied on this page. It only filters saved-search runs.")
     requested_work_mode = search_values.get("workMode", "any")
     actual_work_mode = (normalized.get("remote_type") or "unknown").lower()
     if requested_work_mode != "any" and actual_work_mode != requested_work_mode:

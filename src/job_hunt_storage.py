@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
+import tempfile
 from dataclasses import asdict, dataclass
 from functools import partial
 from pathlib import Path
@@ -195,12 +198,14 @@ def _archive_qualitative_assessment_raw(job_id: str, root: str | Path) -> Path |
     created_at = str(payload.get("created_at") or "unknown").replace(":", "").replace("/", "-")
     prompt_version = str(payload.get("prompt_version") or "unknown").replace("/", "-")
     archive_dir = path.parent / "archive"
+    _contained_path(path.parent, archive_dir)
     archive_dir.mkdir(parents=True, exist_ok=True)
     archive_path = archive_dir / f"{job_id.strip()}__{prompt_version}__{created_at}.json"
     suffix = 1
     while archive_path.exists():
         archive_path = archive_dir / f"{job_id.strip()}__{prompt_version}__{created_at}__{suffix}.json"
         suffix += 1
+    _contained_path(archive_dir, archive_path)
     path.replace(archive_path)
     return archive_path
 
@@ -382,9 +387,7 @@ _optional_bool = partial(_v.optional_bool, error=StorageError)
 
 
 def _state_file_path(root: str | Path, state_dir_name: str, record_id: str) -> Path:
-    if not isinstance(record_id, str) or not record_id.strip():
-        raise StorageError("record id must be a non-empty string")
-
+    record_id = _validated_record_id(record_id)
     layout = ensure_storage_layout(root)
     state_dirs = {
         "raw_inputs": layout.raw_inputs_dir,
@@ -393,19 +396,59 @@ def _state_file_path(root: str | Path, state_dir_name: str, record_id: str) -> P
         "outcomes": layout.outcomes_dir,
         "logs": layout.logs_dir,
     }
-    return state_dirs[state_dir_name] / f"{record_id.strip()}.json"
+    directory = state_dirs[state_dir_name]
+    _contained_path(layout.root, directory)
+    return _contained_path(directory, directory / f"{record_id}.json")
 
 
 def _qualitative_assessment_path(root: str | Path, job_id: str) -> Path:
-    if not isinstance(job_id, str) or not job_id.strip():
-        raise StorageError("job id must be a non-empty string")
+    job_id = _validated_record_id(job_id)
     layout = ensure_storage_layout(root)
-    return layout.analyses_dir / "qualitative" / f"{job_id.strip()}.json"
+    _contained_path(layout.root, layout.analyses_dir)
+    directory = layout.analyses_dir / "qualitative"
+    _contained_path(layout.analyses_dir, directory)
+    return _contained_path(directory, directory / f"{job_id}.json")
+
+
+def _validated_record_id(record_id: str) -> str:
+    if not isinstance(record_id, str) or not record_id.strip():
+        raise StorageError("record id must be a non-empty string")
+    normalized = record_id.strip()
+    if normalized in {".", ".."} or any(char in normalized for char in ("/", "\\", "\x00")):
+        raise StorageError("record id must be a single filename component")
+    return normalized
+
+
+def _contained_path(directory: Path, path: Path) -> Path:
+    """Reject existing symlinks that resolve outside the intended directory."""
+    try:
+        path.resolve().relative_to(directory.resolve())
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise StorageError("stored path must remain inside its directory") from exc
+    return path
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    # Serialize before touching disk; a failed serialization preserves old data.
+    encoded = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent,
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            if mode is not None:
+                os.fchmod(stream.fileno(), mode)
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _read_json(path: Path) -> Any:

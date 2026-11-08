@@ -43,7 +43,37 @@
 
 ---
 
-**Last updated:** 2026-11-08 — strict required-years extractor for paste and URL kept despite a missed blind test (see PROJECT_LOG 2026-11-08). Prior: 2026-10-31 — AI CV blind review Fix 4 built (reviewer fallback model chain; `gemini-3.8-flash` not enabled until its live check; see PROJECT_LOG 2026-10-31). Prior: 2026-10-30 — AI CV blind review Fix 3 built for swapped numbers (Layer 0 rule L0-7 plus a reviewer prompt rule); live check passed, 8 of 8 (see PROJECT_LOG 2026-10-30). Prior: 2026-10-28 — AI CV blind review built, live trial pending (see PROJECT_LOG 2026-10-28 and "AI CV blind review" above). Prior: 2026-10-25 — P2 documentation reconciliation; implementation and qualification limits above. Prior: 2026-10-13 — test isolation: the test suite no longer writes real files in `data/raw/` and `output/` (see PROJECT_LOG 2026-10-13). Prior: 2026-10-04 — audit fixes F1-F4 (see "Audit fixes 2026-09-20" below).
+**Last updated:** 2026-11-08 — strict required-years extractor for paste and URL kept despite a missed blind test (see PROJECT_LOG 2026-11-08). Prior: 2026-11-06 — partly failed keyword search notice built on branch `claude/cool-faraday-76ed62` (not merged; verifier passed; see PROJECT_LOG 2026-11-06). Prior: 2026-11-06 — Adzuna failures raise AdzunaFetchError on branch `claude/keen-jones-b93b9a` (not merged). Prior: 2026-11-06 — saved-search floor now sent to Reed on Reed saved-search runs (see PROJECT_LOG 2026-11-06). Prior: 2026-11-05 — saved-search salary floor, visible Reed failures and run records built on branch `claude/agitated-sinoussi-7cc5be` (not merged; see PROJECT_LOG 2026-11-05). Prior: 2026-10-31 — AI CV blind review Fix 4 built (reviewer fallback model chain; `gemini-3.8-flash` not enabled until its live check; see PROJECT_LOG 2026-10-31). Prior: 2026-10-30 — AI CV blind review Fix 3 built for swapped numbers (Layer 0 rule L0-7 plus a reviewer prompt rule); live check passed, 8 of 8 (see PROJECT_LOG 2026-10-30). Prior: 2026-10-28 — AI CV blind review built, live trial pending (see PROJECT_LOG 2026-10-28 and "AI CV blind review" above). Prior: 2026-10-25 — P2 documentation reconciliation; implementation and qualification limits above. Prior: 2026-10-19 — scoring consistency Slice 1 done (see PROJECT_LOG 2026-10-19 and "Scoring consistency follow-ups" below). Prior: 2026-10-13 — test isolation: the test suite no longer writes real files in `data/raw/` and `output/` (see PROJECT_LOG 2026-10-13). Prior: 2026-10-04 — audit fixes F1-F4 (see "Audit fixes 2026-09-20" below).
+
+## Saved searches: salary floor, Reed failures, run records — 2026-11-05
+
+**Status:** ✅ Built 2026-11-05 on branch `claude/agitated-sinoussi-7cc5be` (commits `ecb7c0b`, `96c40f2`, `1efe433`, `e3842ae`, `fac2eea`); not pushed, not merged; fresh verification in progress. Spec `docs/tasks/2026-11-05-saved-search-salary-failure-runs-spec.md`.
+
+- ✅ Done 2026-11-06: Adzuna silent-failure fix. `fetch_adzuna_jobs` now raises `AdzunaFetchError` on every failure (commits `87b0919`, `7c23e34` on branch `claude/keen-jones-b93b9a`; not pushed, not merged; fresh verifier passed at `dc164a8`). Callers were checked first: the market-position feature does not call it (spec `docs/tasks/2026-11-06-adzuna-search-failure-spec.md` section 3). Full suite 50 failed, 2838 passed, 16 skipped; the 50 failing ids equal the 50 at `4a515fd` (0 new). One live call confirmed the zero-match body (n=1); real error status codes stay UNVERIFIED.
+- ✅ Done 2026-11-06: notice for a partly failed multi-keyword search (Reed and Adzuna). An amber notice names each failed keyword with its fixed error message; `_partial_error_count` was replaced by `search_values["_keyword_failures"]` (commits `c66a249`, `de8dfa8`, `7ccbe23` on branch `claude/cool-faraday-76ed62`, on top of `claude/keen-jones-b93b9a`; not pushed, not merged; fresh verifier passed 2026-11-06 at 8ed6bda). Spec `docs/tasks/2026-11-06-partial-keyword-failure-notice-spec.md`.
+- ⬜ Pending: the all-failed banner and the More error still show raw text for untyped exceptions (spec section 6).
+- ⬜ Pending: stray `)` in the Reed and Adzuna banner styles (spec section 6).
+- ⬜ Pending: "No Reed results found" still shows under the failure notice when the working keywords return nothing (spec R1).
+- ⬜ Pending: raise the 10-job read for saved searches with no salary floor (changes Gemini use for every search).
+- **Status:** ✅ Done 2026-11-06 — send the floor to Reed on Reed saved-search runs (spec `docs/tasks/2026-11-06-reed-floor-send-spec.md`; Mike approved the live check result and the build; built on `claude/upbeat-mendeleev-6981ed`, not merged, not pushed). Mike can press Run now once on a real Reed saved search to see it live.
+- ⬜ Pending: apply the floor on the Reed search page (its "More" logic reads a short page as the last page).
+- ⬜ Pending: record a scheduled profile-load failure (needs an edit to `DigestScheduler`; waits for the Issue 16 scheduler ledger work in the main checkout).
+- ⬜ Pending: stale text. `src/ui_render.py:2796` says "auto-run lands in a later phase"; the `src/ui_handlers.py:2606` docstring of `handle_run_now` says "No LLM calls (D3)" but Run now can call Gemini for each new job (skills extraction).
+- ✅ Done 2026-11-06: fresh-context verifier for this build (spec AC21) passed at `db4b58d`, full suite 64 failed, 2803 passed, 1 skipped, same ids as base `401e48f`.
+- ⬜ Pending: Mike decides on merging this branch.
+
+## Scoring consistency follow-ups (from the 2026-10-19 design review)
+
+Spec: `docs/tasks/2026-10-19-scoring-consistency-slice1.md`.
+- ✅ Slice 1 — one threshold source, reason text, display rule. **Status:** ✅ Done 2026-10-19 — 50 new tests green; full suite no new failures (commits `7be8c83`, `63dc40b`).
+- ⬜ Pending: Mac-venv (Python 3.14) full-suite run to confirm the 30 Linux-VM failures are environment-only.
+- ⬜ Pending (Slice 1b, re-scoped 2026-10-19): CORRECTION — the digest feed is NOT filtered by `digest_threshold` (`handle_digest` passes no `min_score`; all digest rows show, highest score first, limit 200). `digest_threshold` (default 70) only gates which digest jobs are queued for AI analysis (`job_hunt_scheduler.py` run + re-eval). **Status:** ✅ Done 2026-10-19 — Mike chose "label only": profile label now "AI analysis for jobs scoring ≥ (0–100)" (+1 test). AI-queue gating by decision and a digest-page Apply+Review filter were offered and not chosen.
+- ✅ Slice 1c — record which skill extractor ran per job. **Status:** ✅ Done 2026-10-19 — 28 tests green (commit `e9c4231`). Deferred: "flag when two runs differ" (re-evaluate does not re-extract).
+- ⬜ Pending: clean HEAD fails 4 `tests/test_market_position_route.py` tests (409 vs 200) — already failing at `1a52149`; fixed only by uncommitted working-tree changes. Commit or resolve those.
+- ⬜ Pending (Slice 2, blocked on measurement): borderline flag only after re-extracting 20–30 jobs several times to measure score spread per preset.
+- ⬜ Pending (Slice 3): qualitative rubric — descriptors for all 5 levels (replace 1/3/5 anchors, `job_hunt_qualitative.py`).
+- ✅ `ui_render.py` function-local domain imports removed. **Status:** ✅ Done 2026-10-19 — display copies in `ui_utils` (`market_badge_display`, `MARKET_POSITION_LABELS`, `SCORING_PRESET_LABELS`) pinned by `tests/test_ui_render_purity.py` (11 tests).
+- ⬜ Pending (Mike's decision): low score + critical risk currently → Review (spec); keep, or → Skip?
 
 ## Audit repairs — implementation and remaining verification
 
@@ -51,6 +81,13 @@
 - **⬜ Pending:** Issue 16 scheduler/background-work decision. Do not infer a new startup or provider policy from the completed repairs.
 - **⬜ Pending:** Fresh read-only independent verification of the remaining repair chunks and documentation. The Issues 1–2 checkpoint independently exercised mocks/simulations only; real persistence/HTTP, concurrent races, live provider behavior and browser integration remain unverified.
 - **Limits retained:** Process-local profile locks do not protect multiple processes or explicit stale-form values; JSON and CV writes are separate. Cancellation prevents subsequent calls but cannot recall an in-flight call. Existing user TODOs below remain unchanged.
+
+## Audit remediation — 2026-10-02
+
+**Status:** ⚠️ Implemented; 181 producer-run focused tests green. Independent verification pending. Spec: `docs/tasks/audit-remediation-2026-10-02.md`.
+
+- Storage ID/path confinement, pre-request redirect validation, path-aware robots permissions, bounded robots transport, atomic per-file JSON writes, and deterministic salary-cache route tests implemented sequentially.
+- ⬜ Pending: permitted fresh-context independent verification and HTTP integration checks. No multi-file transaction guarantee or race-proof filesystem confinement is claimed.
 
 ## Audit fixes — 2026-09-20
 

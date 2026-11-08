@@ -1,5 +1,9 @@
 # JOB-007 — URL Ingestion Design
 
+<!-- STATUS -->
+Implementation status: ⚠️ 2026-10-02 — redirect and robots remediation implemented; producer regressions pass, independent verification pending. Key functions: `parse_job_from_url`, `_NoRedirectHandler`, `_RobotsCache.is_allowed`, `_fetch_robots_lines`. Route unchanged: `POST /prefill`. Explicit timeout/shared deadline do not hard-bound DNS or slow-drip reads; DNS is not pinned. See `audit-remediation-2026-10-02.md`.
+<!-- /STATUS -->
+
 **Status:** Canonical design document. **✅ Since implemented** — `parse_job_from_url()` in `src/job_hunt_parsing.py` (host allowlist, SSRF prevention, redirect/scheme revalidation, size/content-type guards) per JOB-009 hardening.  
 **Date:** 2026-05-13  
 **Scope:** User-initiated single job URL paste/fetch ingestion for pre-filling `JobPosting`, followed by user review/edit before evaluation.

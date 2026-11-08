@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import uuid
@@ -63,6 +64,19 @@ _INDEX_SQL: list[str] = [
 _LLM_RPD_SQL = (
     "CREATE TABLE IF NOT EXISTS llm_rpd (date TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0)"
 )
+
+# A claimed local date is never released: failures are retried manually only.
+_DAILY_DIGEST_RUN_SQL = """
+CREATE TABLE IF NOT EXISTS daily_digest_runs (
+    run_date     TEXT PRIMARY KEY,
+    claim_token  TEXT NOT NULL,
+    started_at   TEXT NOT NULL,
+    finished_at  TEXT,
+    outcome      TEXT NOT NULL CHECK (outcome IN ('running', 'success', 'failed', 'partial')),
+    result_json  TEXT,
+    error_text   TEXT
+);
+"""
 
 _QUALITATIVE_INDEX_SQL = """
 CREATE TABLE IF NOT EXISTS qualitative_index (
@@ -172,6 +186,7 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
                 if "duplicate column name" not in str(exc).lower():
                     raise
     conn.execute(_LLM_RPD_SQL)
+    conn.execute(_DAILY_DIGEST_RUN_SQL)
     conn.execute(_QUALITATIVE_INDEX_SQL)
     conn.execute(_EVAL_QUEUE_SQL)
     conn.execute(_EVAL_BATCH_SQL)
@@ -201,6 +216,65 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     for stmt in _EVAL_QUEUE_INDEX_SQL:
         conn.execute(stmt)
     conn.commit()
+
+
+def claim_daily_digest_run(db_path: Path, run_date: str, *, started_at: str) -> str | None:
+    """Commit one local-date claim before any work; competing claimers get None."""
+    conn = open_db(db_path)
+    token = uuid.uuid4().hex
+    try:
+        # FULL sync makes the pre-work claim durable across power loss in WAL mode.
+        conn.execute("PRAGMA synchronous=FULL")
+        conn.execute("BEGIN IMMEDIATE")
+        cursor = conn.execute(
+            "INSERT INTO daily_digest_runs (run_date, claim_token, started_at, outcome) "
+            "VALUES (?, ?, ?, 'running') ON CONFLICT(run_date) DO NOTHING",
+            (run_date, token, started_at),
+        )
+        conn.commit()
+        return token if cursor.rowcount == 1 else None
+    finally:
+        conn.close()
+
+
+def finish_daily_digest_run(db_path: Path, run_date: str, claim_token: str, *,
+                            outcome: str, finished_at: str,
+                            result: dict[str, Any] | None, error_text: str | None) -> None:
+    """Persist an owner's outcome without ever removing its daily claim."""
+    if outcome not in {"success", "failed", "partial"}:
+        raise ValueError("invalid daily digest outcome")
+    result_json = json.dumps(result) if result is not None else None
+    conn = open_db(db_path)
+    try:
+        conn.execute("PRAGMA synchronous=FULL")
+        cursor = conn.execute(
+            "UPDATE daily_digest_runs SET outcome=?, finished_at=?, result_json=?, error_text=? "
+            "WHERE run_date=? AND claim_token=? AND outcome='running'",
+            (outcome, finished_at, result_json, error_text, run_date, claim_token),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("daily digest claim ownership lost")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def daily_digest_run_status(db_path: Path) -> tuple[dict[str, Any] | None, str | None]:
+    """Read latest attempt and latest durable successful date in one snapshot."""
+    conn = open_db(db_path)
+    try:
+        conn.execute("BEGIN")
+        row = conn.execute("SELECT * FROM daily_digest_runs ORDER BY run_date DESC LIMIT 1").fetchone()
+        success = conn.execute(
+            "SELECT MAX(run_date) FROM daily_digest_runs WHERE outcome='success'"
+        ).fetchone()[0]
+        attempt = dict(row) if row else None
+        if attempt is not None:
+            encoded = attempt.pop("result_json")
+            attempt["result"] = json.loads(encoded) if encoded is not None else None
+        return attempt, success
+    finally:
+        conn.close()
 
 
 _UPSERT_SQL = """

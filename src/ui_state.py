@@ -22,7 +22,7 @@ _PAGE_UPDATED: dict[str, str] = {
     "add_job":  "2026-06-24 12:30 UTC",   # Add Job tab — D2 source_job_id hidden field
     "history":  "2026-06-18 01:00 UTC",   # History tab
     "board":    "2026-06-18 01:00 UTC",   # Board View page
-    "profile":  "2026-10-04 22:14 UTC",   # My Profile page — D1 Saved Searches + D3 Digest settings/Run-now
+    "profile":  "2026-11-05 22:17 UTC",   # My Profile page — Saved Searches: salary floor hint, Run now summary, Last run and Run history
     "digest":   "2026-06-25 23:03 UTC",   # Digest page — OQ-2 Re-evaluate all button
     # standalone pages (no sidebar)
     "job":      "2026-10-04 22:14 UTC",   # Job detail page — Outcome card: filtered status dropdown, allowed-next hint, inline feedback, embed kept on POST /outcome

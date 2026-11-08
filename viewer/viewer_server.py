@@ -17,6 +17,7 @@ import socket
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import kanban_store
 import data_outcomes
@@ -1280,6 +1281,81 @@ def _get_topic_version(topic: str) -> float:
         pass
     return time.time() # Fallback
 
+# Only these POST routes consume JSON for a mutation. Body-ignored POST read
+# aliases retain their existing media types; Viewer declares no form routes.
+_JSON_MUTATION_PATHS = frozenset({
+    "/api/kanban", "/api/system-kanban", "/api/jobs", "/api/url-parse",
+    "/api/text-parse", "/api/job-submit", "/api/safe-content-analysis",
+})
+
+
+def _viewer_authority(value: str, port: int) -> str | None:
+    """Validate a loopback HTTP authority against this socket's listener port."""
+    match = re.fullmatch(r"(localhost|127\.0\.0\.1|\[::1\])(?::([0-9]{1,5}))?", value, re.I)
+    if not match:
+        return None
+    requested_port = int(match[2]) if match[2] else 80
+    if requested_port != port or not 1 <= requested_port <= 65535:
+        return None
+    return match[1].lower()
+
+
+def _viewer_source_matches(value: str, host: str, port: int, *, referer=False) -> bool:
+    """Compare exact HTTP origins; loopback aliases never substitute for each other."""
+    if not value or any(ord(c) <= 32 or ord(c) >= 127 for c in value) or "\\" in value:
+        return False
+    try:
+        source = urlsplit(value)
+        if source.scheme != "http" or _viewer_authority(source.netloc, port) != host:
+            return False
+        if source.fragment or (not referer and re.fullmatch(r"http://[^/?#]+", value, re.I) is None):
+            return False
+        return True
+    except ValueError:
+        return False
+
+
+def _viewer_boundary_status(method: str, path: str, occurrences: dict, port: int) -> int | None:
+    """Header-only intent boundary: no body, endpoint, filesystem or provider access.
+
+    Native callers must send an explicit same-origin Origin (or Referer for
+    POST). These headers protect browser requests, not hostile local processes.
+    Forwarded headers are deliberately irrelevant to trust.
+    """
+    hosts = occurrences.get("host", [])
+    if len(hosts) != 1 or (host := _viewer_authority(hosts[0], port)) is None:
+        return 403
+    # Preserve the global GET/POST-only method contract after Host validation.
+    if method not in {"GET", "POST"}:
+        return 405
+    if path.startswith("/api/") or path == "/usage" or method == "POST":
+        for name in ("origin", "referer", "sec-fetch-site"):
+            if len(occurrences.get(name, [])) > 1:
+                return 403
+        origins = occurrences.get("origin", [])
+        referers = occurrences.get("referer", [])
+        if origins and not _viewer_source_matches(origins[0], host, port):
+            return 403
+        if referers and not _viewer_source_matches(referers[0], host, port, referer=True):
+            return 403
+        fetch_sites = occurrences.get("sec-fetch-site", [])
+        if fetch_sites and fetch_sites[0] not in {"same-origin", "none"}:
+            return 403
+        if method == "POST" and not (origins or referers):
+            return 403
+    if method == "POST" and path in _JSON_MUTATION_PATHS:
+        media = occurrences.get("content-type", [])
+        if len(media) != 1 or media[0].split(";", 1)[0].strip().lower() != "application/json":
+            return 415
+    return None
+
+
+def _viewer_refuse(sock: socket.socket, status: int) -> None:
+    reason = {403: "Forbidden", 405: "Method Not Allowed", 415: "Unsupported Media Type"}[status]
+    sock.sendall((f"HTTP/1.1 {status} {reason}\r\nContent-Length: 0\r\n"
+                  "Connection: close\r\n\r\n").encode("ascii"))
+
+
 def handle_request(sock: socket.socket) -> None:
     global _SSE_CONNECTIONS
     try:
@@ -1305,18 +1381,23 @@ def handle_request(sock: socket.socket) -> None:
             return
         method, raw_path, _ = lines[0].split(" ", 2)
         path = raw_path.split("?")[0].split(" ")[0]
-        if method not in ("GET", "POST"):
-            sock.sendall(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n")
-            return
-
-        # Build headers dict from request lines (for API handlers)
-        headers = {}
+        # Keep occurrences until the boundary validates them: a dictionary
+        # alone would silently discard duplicate Host/Origin/Referer headers.
+        occurrences = {}
         for line in lines[1:]:
-            if line == "":
-                break
-            if ":" in line:
-                k, v = line.split(":", 1)
-                headers[k.strip().lower()] = v.strip()
+            if ":" not in line or line[:1].isspace():
+                _viewer_refuse(sock, 403)
+                return
+            k, v = line.split(":", 1)
+            if not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", k):
+                _viewer_refuse(sock, 403)
+                return
+            occurrences.setdefault(k.lower(), []).append(v.strip(" \t"))
+        status = _viewer_boundary_status(method, path, occurrences, sock.getsockname()[1])
+        if status is not None:
+            _viewer_refuse(sock, status)
+            return
+        headers = {k: values[0] for k, values in occurrences.items()}
 
         # Extract POST body as bytes and honor the full Content-Length.  Keep
         # the body bytes-safe: decoding the whole request before slicing can
@@ -1370,7 +1451,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1383,7 +1463,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1396,7 +1475,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1409,7 +1487,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1422,7 +1499,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1435,7 +1511,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1448,7 +1523,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1461,7 +1535,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1474,7 +1547,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1487,7 +1559,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1500,7 +1571,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1513,7 +1583,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1526,7 +1595,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1543,7 +1611,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1559,7 +1626,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1591,7 +1657,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"Content-Type: text/event-stream\r\n"
                 b"Cache-Control: no-cache\r\n"
                 b"Connection: keep-alive\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"\r\n"
             )
             sse_counted = False
@@ -1672,7 +1737,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1685,7 +1749,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1698,7 +1761,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1712,7 +1774,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1725,7 +1786,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1739,7 +1799,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1755,7 +1814,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n"
                 b"\r\n" + data
             )
@@ -1902,7 +1960,6 @@ def handle_request(sock: socket.socket) -> None:
                     b"HTTP/1.1 200 OK\r\n"
                     b"Content-Type: application/json\r\n"
                     b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                    b"Access-Control-Allow-Origin: *\r\n"
                     b"Connection: close\r\n\r\n" + data
                 )
                 sock.sendall(resp)
@@ -1927,7 +1984,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n\r\n" + data
             )
             sock.sendall(resp)
@@ -2080,7 +2136,6 @@ def handle_request(sock: socket.socket) -> None:
                 b"HTTP/1.1 200 OK\r\n"
                 b"Content-Type: application/json\r\n"
                 b"Content-Length: " + str(len(_data)).encode() + b"\r\n"
-                b"Access-Control-Allow-Origin: *\r\n"
                 b"Connection: close\r\n\r\n" + _data
             )
             sock.sendall(_resp)
@@ -2187,7 +2242,7 @@ def handle_request(sock: socket.socket) -> None:
                 "industries": _industries,
                 "url": _job_url
             }, ensure_ascii=False).encode()
-            sock.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + str(len(_dd_data)).encode() + b"\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n" + _dd_data)
+            sock.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + str(len(_dd_data)).encode() + b"\r\nConnection: close\r\n\r\n" + _dd_data)
             return
 
         if serve_file(sock, path):
