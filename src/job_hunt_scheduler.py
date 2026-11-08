@@ -25,6 +25,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.job_hunt_index import (
+    claim_daily_digest_run,
+    daily_digest_run_status,
+    finish_daily_digest_run,
     finish_digest_initialization,
     claim_batch,
     claim_eval_queue_row,
@@ -276,6 +279,10 @@ def _run_digest_pipeline_locked(
                 if salary_floor is not None and "resultsToTake" not in ss.params:
                     attempt_budget = int(params["resultsToTake"])
                     params["resultsToTake"] = str(min(_SALARY_FLOOR_FETCH_SIZE, profile.digest_max_per_source))
+                if salary_floor is not None and source_id == "reed":
+                    # Ask Reed for jobs at or above the floor. Set after normalising, so the
+                    # search page and "More results" never carry it. The local rule still runs.
+                    params["_reed_api_floor"] = str(int(salary_floor))
                 results = source.search_handler(params)
             except Exception as exc:
                 errors.append(f"{ss.search_id}: fetch failed: {exc}")
@@ -987,6 +994,42 @@ class DigestScheduler:
         self._last_result: DigestRunResult | None = None
         self._last_error: str | None = None
         self._running = False
+        self._last_outcome: str | None = None
+        self._last_success_date: str | None = None
+        self._outcome_durable = False
+        self._persistence_error: str | None = None
+        self._outcome_write_failed_date: str | None = None
+        self._claim_error: str | None = None
+
+    def _restore_daily_status(self) -> bool:
+        """Fail closed on ledger reads; never treat an unfinished claim as success."""
+        with self._lock:
+            if self._running:
+                return True
+            try:
+                attempt, success = daily_digest_run_status(self._db_path)
+                result = DigestRunResult(**attempt["result"]) if attempt and attempt["result"] else None
+            except Exception as exc:
+                self._persistence_error = f"Daily digest persistence read failed: {exc}"
+                self._last_error = self._persistence_error
+                return False
+            self._last_success_date = success
+            # Keep useful in-memory results and the write error when only the claim
+            # was durable. A restarted instance can only recover that unfinished claim.
+            if attempt and attempt["run_date"] == self._outcome_write_failed_date:
+                return True
+            self._persistence_error = self._claim_error
+            if attempt:
+                self._last_run_date = attempt["run_date"]
+                self._last_result = result
+                self._last_outcome = ("interrupted" if attempt["outcome"] == "running"
+                                      else attempt["outcome"])
+                self._outcome_durable = attempt["outcome"] != "running"
+                self._last_error = ("Daily digest attempt is unfinished or interrupted; retry manually."
+                                    if attempt["outcome"] == "running" else attempt["error_text"])
+            if self._claim_error:
+                self._last_error = self._claim_error
+            return True
 
     # -- lifecycle --
     def start(self) -> None:
@@ -1000,6 +1043,7 @@ class DigestScheduler:
 
     # -- status snapshot (lock-guarded; read by HTTP threads) --
     def status(self) -> dict:
+        self._restore_daily_status()
         state, reason, enabled = self._describe_state()
         with self._lock:
             return {
@@ -1014,6 +1058,9 @@ class DigestScheduler:
                 "last_run": self._last_result.to_dict() if self._last_result else None,
                 "last_run_date": self._last_run_date,
                 "last_error": self._last_error,
+                "last_outcome": self._last_outcome,
+                "last_success_date": self._last_success_date,
+                "outcome_durable": self._outcome_durable,
                 "next_run": self._compute_next_run_iso(),
             }
 
@@ -1036,7 +1083,11 @@ class DigestScheduler:
             return "running", "A digest run is in progress.", enabled
         if not enabled:
             return "disabled", "Daily digest is disabled in My Profile.", False
+        if self._persistence_error:
+            return "idle", self._persistence_error, enabled
         if self._last_run_date == datetime.now().date().isoformat():
+            if self._last_outcome in {"failed", "partial", "interrupted"}:
+                return "idle", f"Today's digest attempt is {self._last_outcome}; retry manually. Next scheduled run tomorrow.", True
             return "idle", f"Idle: today's digest already ran; next run at {run_time} tomorrow.", True
         return "idle", f"Idle: waiting for today's run at {run_time}.", True
 
@@ -1044,12 +1095,14 @@ class DigestScheduler:
         try:
             profile = self._get_profile()
             hh, mm = (int(x) for x in str(profile.digest_run_time).split(":"))
+            if not (0 <= hh <= 23 and 0 <= mm <= 59):
+                return None
         except Exception:
             return None
         now = datetime.now()
         target = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
         # If today's slot already passed AND we already ran today, next is tomorrow.
-        if target <= now and self._last_run_date == now.date().isoformat():
+        if self._last_run_date == now.date().isoformat():
             target = target + timedelta(days=1)
         elif target <= now and self._last_run_date != now.date().isoformat():
             # slot passed but not yet run today → it's due now
@@ -1068,6 +1121,8 @@ class DigestScheduler:
     def _maybe_run(self) -> None:
         now = datetime.now()
         today = now.date().isoformat()
+        if not self._restore_daily_status():
+            return
         if self._last_run_date == today:
             return   # already ran today — exactly-once-per-day guard
         try:
@@ -1079,6 +1134,8 @@ class DigestScheduler:
             return
         try:
             hh, mm = (int(x) for x in str(profile.digest_run_time).split(":"))
+            if not (0 <= hh <= 23 and 0 <= mm <= 59):
+                return
         except (ValueError, AttributeError):
             return   # invalid time (shouldn't happen — validated on save); wait for a fix
         if (now.hour, now.minute) < (hh, mm):
@@ -1088,23 +1145,65 @@ class DigestScheduler:
         with self._lock:
             if self._last_run_date == today:
                 return
+            try:
+                token = claim_daily_digest_run(self._db_path, today, started_at=now.isoformat(timespec="seconds"))
+            except Exception as exc:
+                self._persistence_error = f"Daily digest persistence claim failed: {exc}"
+                self._claim_error = self._persistence_error
+                self._last_error = self._persistence_error
+                return
+            if token is None:
+                return
+            self._claim_error = None
+            self._persistence_error = None
             self._last_run_date = today
             self._running = True
+            self._last_result = None
+            self._last_error = None
+            self._last_outcome = "running"
+            self._outcome_durable = False
+        result = None
+        outcome = "failed"
+        error = None
         try:
             from src.job_hunt_saved_searches import list_saved_searches
             searches = [s for s in list_saved_searches(state_root=self._config.state_root)
                         if getattr(s, "enabled", True)]
             result = run_digest_pipeline(config=self._config, saved_searches=searches,
                                          profile=profile, db_path=self._db_path)
-            with self._lock:
-                self._last_result = result
-                self._last_error = None
+            outcome = "partial" if result.errors else "success"
+            error = "; ".join(result.errors) if result.errors else None
             logger.info("digest scheduler: ran %s searches, %s new jobs",
                         result.searches_run, result.jobs_new)
         except Exception as exc:
-            with self._lock:
-                self._last_error = str(exc)
+            error = str(exc)
             logger.warning("digest scheduler: run failed: %s", exc)
         finally:
+            # BaseException (e.g. interruption) leaves the pre-work claim unfinished.
+            import sys
+            interrupted = sys.exc_info()[0] is not None
             with self._lock:
+                self._last_result = result
+                self._last_error = error
+                if interrupted:
+                    self._last_outcome = "interrupted"
+                    self._last_error = "Daily digest attempt interrupted; retry manually."
+                else:
+                    try:
+                        finish_daily_digest_run(
+                            self._db_path, today, token, outcome=outcome,
+                            finished_at=datetime.now().isoformat(timespec="seconds"),
+                            result=result.to_dict() if result else None, error_text=error,
+                        )
+                        self._last_outcome = outcome
+                        self._outcome_durable = True
+                        self._outcome_write_failed_date = None
+                        if outcome == "success":
+                            self._last_success_date = today
+                    except Exception as exc:
+                        self._last_outcome = "interrupted"
+                        self._outcome_write_failed_date = today
+                        self._persistence_error = f"Daily digest outcome persistence failed: {exc}"
+                        self._last_error = "; ".join(x for x in (error, self._persistence_error) if x)
+                        logger.warning("digest scheduler: %s", self._persistence_error)
                 self._running = False

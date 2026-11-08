@@ -286,12 +286,17 @@ def normalize_reed_search_params(params: dict[str, str]) -> dict[str, str]:
 def search_reed_jobs_for_ui(search_values: dict[str, str]) -> list[dict[str, Any]]:
     take = int(search_values["resultsToTake"])
     skip = int(search_values.get("resultsSkip", "0"))
+    extra: dict[str, Any] = {}
+    if "_reed_api_floor" in search_values:
+        # Set only by the saved-search scheduler; the search page never carries it.
+        extra["minimum_salary"] = int(search_values["_reed_api_floor"])
     raw_jobs = fetch_reed_jobs(
         search_values["keywords"],
         search_values["locationName"],
         take,
         skip=skip,
         save_raw=False,
+        **extra,
     )
     return [reed_job_to_ui_result(raw, search_values) for raw in raw_jobs[:take]]
 

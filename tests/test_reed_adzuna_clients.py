@@ -225,12 +225,12 @@ class TestFetchAdzunaJobs:
 
         with patch("requests.get", side_effect=error):
             with patch.dict(os.environ, {"ADZUNA_APP_ID": "app1", "ADZUNA_APP_KEY": fake_key}):
-                results = adzuna_client.fetch_adzuna_jobs("BA", "London")
+                with pytest.raises(adzuna_client.AdzunaFetchError):
+                    adzuna_client.fetch_adzuna_jobs("BA", "London")
 
         expected = "HTTP error occurred while fetching from Adzuna"
         if type(status) is int and 100 <= status <= 599:
             expected += f" (status {status})"
-        assert results == []
         assert caplog.messages == [expected + "."]
         assert fake_key not in caplog.text
         assert url not in caplog.text
@@ -250,9 +250,9 @@ class TestFetchAdzunaJobs:
 
         with patch("requests.get", side_effect=error):
             with patch.dict(os.environ, {"ADZUNA_APP_ID": "app1", "ADZUNA_APP_KEY": fake_key}):
-                results = adzuna_client.fetch_adzuna_jobs("BA", "London")
+                with pytest.raises(adzuna_client.AdzunaFetchError):
+                    adzuna_client.fetch_adzuna_jobs("BA", "London")
 
-        assert results == []
         assert caplog.messages == [f"Request error occurred while fetching from Adzuna ({exception_name})."]
         assert fake_key not in caplog.text
         assert url not in caplog.text
@@ -296,30 +296,29 @@ class TestFetchAdzunaJobs:
         assert results == []
 
     def test_fetch_adzuna_jobs_missing_credentials(self) -> None:
-        """Missing app_id or app_key should return empty list."""
+        """Missing app_id or app_key should raise AdzunaFetchError, no request made."""
         with patch.dict(os.environ, {}, clear=True):
             with patch("requests.get") as mock_get:
-                results = adzuna_client.fetch_adzuna_jobs("BA", "London")
+                with pytest.raises(adzuna_client.AdzunaFetchError):
+                    adzuna_client.fetch_adzuna_jobs("BA", "London")
 
         mock_get.assert_not_called()
-        assert results == []
 
     @pytest.mark.usefixtures("adzuna_tmp_cwd")
     def test_fetch_adzuna_jobs_rate_limit_429(self) -> None:
-        """HTTP 429 should return empty list."""
+        """HTTP 429 should raise AdzunaFetchError."""
         mock_response = MagicMock()
         mock_response.status_code = 429
         mock_response.text = "{}"
 
         with patch("requests.get", return_value=mock_response):
             with patch.dict(os.environ, {"ADZUNA_APP_ID": "app1", "ADZUNA_APP_KEY": "key1"}):
-                results = adzuna_client.fetch_adzuna_jobs("BA", "London")
-
-        assert results == []
+                with pytest.raises(adzuna_client.AdzunaFetchError):
+                    adzuna_client.fetch_adzuna_jobs("BA", "London")
 
     @pytest.mark.usefixtures("adzuna_tmp_cwd")
     def test_fetch_adzuna_jobs_malformed_json(self) -> None:
-        """Bad JSON should return empty list."""
+        """Bad JSON should raise AdzunaFetchError."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.side_effect = json.JSONDecodeError("msg", "doc", 0)
@@ -327,9 +326,8 @@ class TestFetchAdzunaJobs:
 
         with patch("requests.get", return_value=mock_response):
             with patch.dict(os.environ, {"ADZUNA_APP_ID": "app1", "ADZUNA_APP_KEY": "key1"}):
-                results = adzuna_client.fetch_adzuna_jobs("BA", "London")
-
-        assert results == []
+                with pytest.raises(adzuna_client.AdzunaFetchError):
+                    adzuna_client.fetch_adzuna_jobs("BA", "London")
 
     @pytest.mark.usefixtures("adzuna_tmp_cwd")
     def test_fetch_adzuna_jobs_pagination_calculation(self) -> None:
@@ -419,9 +417,9 @@ class TestEnvLoading:
         """Adzuna client should check for credentials early."""
         with patch.dict(os.environ, {}, clear=True):
             with patch("requests.get") as mock_get:
-                results = adzuna_client.fetch_adzuna_jobs("BA", "London")
+                with pytest.raises(adzuna_client.AdzunaFetchError):
+                    adzuna_client.fetch_adzuna_jobs("BA", "London")
                 mock_get.assert_not_called()
-                assert results == []
 
     def test_reed_fallback_env_parsing_handles_missing_file(self) -> None:
         """Reed's inline .env parser should handle missing .env files gracefully."""

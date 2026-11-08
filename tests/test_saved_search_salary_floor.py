@@ -249,3 +249,126 @@ def test_ac8_reed_floor_page_paging_server(tmp_path, monkeypatch):
     assert 'data-jst-sjid="1010"' in data["cards_html"]
     assert "resultsSkip=20" in data["next_url"]
     assert calls == [(10,0,False),(10,10,False)]
+
+
+# --- Floor sent to Reed on saved-search runs (spec 2026-11-06-reed-floor-send-spec) ---
+
+def _reed_reply(jobs=(), status=200):
+    response = Mock(status_code=status, text="{}")
+    response.json.return_value = {"results": list(jobs)}
+    response.raise_for_status.return_value = None
+    return response
+
+
+def _reed_job(job_id, low=None, high=None):
+    return {"jobId": job_id, "jobTitle": f"Analyst {job_id}", "employerName": f"Acme {job_id}",
+            "locationName": "London", "minimumSalary": low, "maximumSalary": high,
+            "jobUrl": f"https://reed.example/jobs/{job_id}", "jobDescription": "<p>python and sql</p>"}
+
+
+def run_real_reed(tmp_path, monkeypatch, params, jobs=(), response=None, search_params_holder=None):
+    """Run the pipeline with the real Reed source; only requests.get is replaced."""
+    from src.job_sources import reed_source
+    reed_source._register()
+    get = Mock(return_value=response or _reed_reply(jobs))
+    monkeypatch.setattr(requests, "get", get)
+    config, db = _setup(tmp_path)
+    search = _search("reed", params)
+    result = scheduler.run_digest_pipeline(config=config, db_path=db, profile=_profile(), saved_searches=[search])
+    return result, get, db, search
+
+
+BASE = {"keywords": "business analyst", "locationName": "London"}
+
+
+def test_reedfloor_ac1_sent_with_default_size(tmp_path, monkeypatch):
+    _, get, _, _ = run_real_reed(tmp_path, monkeypatch, {**BASE, "minimumSalary": "65,000"})
+    assert get.call_count == 1
+    sent = get.call_args.kwargs["params"]
+    assert sent["minimumSalary"] == 65000 and isinstance(sent["minimumSalary"], int)
+    assert sent["resultsToTake"] == 50
+    assert (sent["keywords"], sent["locationName"], sent["resultsToSkip"], sent["distanceFromLocation"]) == (
+        "business analyst", "London", 0, 25)
+
+
+def test_reedfloor_ac2_saved_take_respected(tmp_path, monkeypatch):
+    _, get, _, _ = run_real_reed(tmp_path, monkeypatch, {**BASE, "minimumSalary": "65000", "resultsToTake": "7"})
+    sent = get.call_args.kwargs["params"]
+    assert sent["minimumSalary"] == 65000 and sent["resultsToTake"] == 7
+
+
+@pytest.mark.parametrize("floor", ["", "abc", "0", None])
+def test_reedfloor_ac3_no_floor_not_sent(tmp_path, monkeypatch, floor):
+    params = dict(BASE) if floor is None else {**BASE, "minimumSalary": floor}
+    _, get, _, _ = run_real_reed(tmp_path, monkeypatch, params)
+    assert get.call_count == 1 and "minimumSalary" not in get.call_args.kwargs["params"]
+
+
+def test_reedfloor_ac4_manual_and_more_results_not_sent(monkeypatch):
+    from src.job_sources.reed_source import search_reed_jobs_for_ui
+    get = Mock(return_value=_reed_reply())
+    monkeypatch.setattr(requests, "get", get)
+    values = normalize_reed_search_params({**BASE, "minimumSalary": "65000"})
+    search_reed_jobs_for_ui(values)
+    values["resultsSkip"] = "10"
+    search_reed_jobs_for_ui(values)
+    assert get.call_count == 2
+    assert all("minimumSalary" not in c.kwargs["params"] for c in get.call_args_list)
+
+
+def test_reedfloor_ac5_other_sources_not_given_key(tmp_path):
+    _, calls, _ = run(tmp_path / "adzuna", [_result()], source="adzuna", normalize=normalize_adzuna_search_params)
+    assert "_reed_api_floor" not in calls[0]
+    _, calls, _ = run(tmp_path / "linkedin", [_result()], source="linkedin", normalize=normalize_linkedin)
+    assert "_reed_api_floor" not in calls[0]
+    _, calls, _ = run(tmp_path / "reed", [_result()])
+    assert calls[0]["_reed_api_floor"] == "65000"
+
+
+def test_reedfloor_ac6_local_rule_still_applies(tmp_path, monkeypatch):
+    jobs = [_reed_job(1, 38000, 45000), _reed_job(2, None, None), _reed_job(3, 500, 700), _reed_job(4, 70000, 80000)]
+    r, _, db, _ = run_real_reed(tmp_path, monkeypatch, {**BASE, "minimumSalary": "65000"}, jobs)
+    assert r.jobs_below_floor == 1 and r.jobs_salary_unknown == 2 and r.jobs_new == 3
+    assert not is_already_indexed(db, "reed", "1")
+    assert is_already_indexed(db, "reed", "2") and is_already_indexed(db, "reed", "3")
+    count_sum(r)
+
+
+def test_reedfloor_ac7_failed_fetch_same_error(tmp_path, monkeypatch):
+    with_floor, _, _, _ = run_real_reed(tmp_path / "a", monkeypatch, {**BASE, "minimumSalary": "65000"},
+                                        response=_reed_reply(status=429))
+    without, _, _, _ = run_real_reed(tmp_path / "b", monkeypatch, dict(BASE), response=_reed_reply(status=429))
+    assert with_floor.errors == ["s1: fetch failed: Reed rate limit reached (HTTP 429)"]
+    assert with_floor.errors == without.errors and with_floor.searches_run == 0
+
+
+def test_reedfloor_ac9_key_not_stored(tmp_path, monkeypatch):
+    saved = {**BASE, "minimumSalary": "65000"}
+    r, _, db, search = run_real_reed(tmp_path, monkeypatch, saved, [_reed_job(4, 70000, 80000)])
+    assert r.jobs_new == 1
+    assert "_reed_api_floor" not in search.params and search.params == saved
+    assert b"_reed_api_floor" not in open(db, "rb").read()
+    assert "_reed_api_floor" not in json.dumps(r.to_dict())
+    from src.job_sources.reed_source import reed_job_to_ui_result
+    values = {**normalize_reed_search_params(saved), "_reed_api_floor": "65000"}
+    assert "_reed_api_floor" not in json.dumps(reed_job_to_ui_result(_reed_job(4, 70000, 80000), values))
+
+
+def test_reedfloor_client_param_only_when_given(monkeypatch):
+    get = Mock(return_value=_reed_reply())
+    monkeypatch.setattr(requests, "get", get)
+    fetch_reed_jobs("analyst", "London", 50, save_raw=False, minimum_salary=65000)
+    assert get.call_args.kwargs["params"]["minimumSalary"] == 65000
+    fetch_reed_jobs("analyst", "London", 50, save_raw=False)
+    assert "minimumSalary" not in get.call_args.kwargs["params"]
+
+
+def test_reedfloor_ac8_form_hint_text(tmp_path):
+    import urllib.request
+    from test_saved_searches import _server
+    with _server(tmp_path) as base:
+        with urllib.request.urlopen(urllib.request.Request(base + "/profile", method="GET")) as resp:
+            html_text = resp.read().decode("utf-8")
+    assert ("Saved-search runs drop new jobs whose listed pay is below this. Jobs with no listed salary "
+            "are kept, but Reed applies this floor too and may leave some of them out.") in html_text
+    assert "Jobs with no listed salary are kept.</small>" not in html_text

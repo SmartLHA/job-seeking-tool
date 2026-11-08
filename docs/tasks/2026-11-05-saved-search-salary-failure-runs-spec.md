@@ -72,6 +72,8 @@ Source: <https://www.reed.co.uk/developers/jobseeker>, read directly on 2026-11-
 
 ### Gap 1: filter locally; do not send the floor to Reed
 
+> Update 2026-11-06: Mike reversed this for Reed saved-search runs; see `docs/tasks/2026-11-06-reed-floor-send-spec.md`.
+
 Sending the floor could lose no-salary jobs and day-rate jobs, and the tool would have no
 way to see or count that loss. Local filtering gives the same result whatever Reed does,
 can be tested offline, and also covers Adzuna saved searches, which do not send it either
@@ -399,7 +401,7 @@ This table holds one row per search for any run. Their spec keeps Run now out of
 
 - Same failure fix for Adzuna. Its client is also used by the market-position feature, so it
   needs its own check of callers.
-- Sending the floor to Reed. Needs a live Reed check of what it drops.
+- Sending the floor to Reed. Needs a live Reed check of what it drops. (Later done: see `docs/tasks/2026-11-06-reed-floor-send-spec.md`.)
 - Raising the 10-job read for searches with no floor (changes Gemini use for every search).
 - Applying the floor on the Reed search page.
 - Recording the scheduled profile-load failure (needs an edit to `DigestScheduler`, so it waits

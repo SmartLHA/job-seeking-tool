@@ -8,8 +8,21 @@ import uuid
 from html.parser import HTMLParser
 from urllib import robotparser
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.parse import urljoin, urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    """Expose redirects to the caller before contacting their destination."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def urlopen(request, *, timeout):
+    """Open one HTTP hop with automatic redirect following disabled."""
+    return build_opener(_NoRedirectHandler()).open(request, timeout=timeout)
+
 
 DEFAULT_USER_AGENT = "JobSeekingTool/1.0"
 
@@ -178,36 +191,74 @@ class JobParsingError(ValueError):
 # ---------------------------------------------------------------------------
 
 class _RobotsCache:
-    """Per-host robots.txt cache with 5-minute TTL. Fails closed on error."""
+    """Per-origin robots rules with 5-minute TTL. Fails closed on error."""
 
     def __init__(self) -> None:
-        self._cache: dict[str, tuple[bool, float]] = {}  # host -> (allowed, fetched_at)
+        self._cache: dict[str, tuple[robotparser.RobotFileParser | None, float]] = {}
 
-    def is_allowed(self, url: str, user_agent: str) -> bool:
+    def is_allowed(self, url: str, user_agent: str, *, deadline: float | None = None) -> bool:
         parsed = urlparse(url)
         host = parsed.netloc.lower()
+        origin = f"{parsed.scheme}://{host}"
         now = time.time()
 
-        entry = self._cache.get(host)
+        entry = self._cache.get(origin)
         if entry is not None:
-            allowed, fetched_at = entry
+            parser, fetched_at = entry
             if now - fetched_at < ROBOTS_CACHE_TTL:
-                return allowed
+                return parser is not None and parser.can_fetch(user_agent, url)
             # Expired — drop and re-fetch
 
         robots_url = f"{parsed.scheme}://{host}/robots.txt"
         parser = robotparser.RobotFileParser()
         parser.set_url(robots_url)
         try:
-            parser.read()
+            parser.parse(_fetch_robots_lines(robots_url, deadline=deadline))
         except Exception:
             # Fail CLOSED: any error fetching/parsing robots.txt blocks the fetch
-            self._cache[host] = (False, now)
+            self._cache[origin] = (None, now)
             return False
 
         allowed = parser.can_fetch(user_agent, url)
-        self._cache[host] = (allowed, now)
+        self._cache[origin] = (parser, now)
         return allowed
+
+
+def _fetch_robots_lines(url: str, *, deadline: float | None = None) -> list[str]:
+    """Fetch bounded robots text without recursively checking its own rules."""
+    if deadline is None:
+        deadline = time.monotonic() + NETWORK_TIMEOUT_SECONDS
+    current = url
+    visited: set[str] = set()
+    for hop in range(MAX_REDIRECTS + 1):
+        parsed = urlparse(current)
+        if parsed.scheme not in {"http", "https"} or not _is_allowed_host(parsed.netloc.lower()):
+            raise JobParsingError("Robots URL is not allowed")
+        _check_ssrf(parsed.netloc.lower())
+        if current in visited:
+            raise JobParsingError("Robots redirect loop detected")
+        visited.add(current)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Robots network budget exhausted")
+        try:
+            with urlopen(Request(current, headers={"User-Agent": DEFAULT_USER_AGENT}), timeout=remaining) as response:
+                raw = response.read(MAX_CONTENT_BYTES + 1)
+                if len(raw) > MAX_CONTENT_BYTES:
+                    raise JobParsingError("Robots response too large")
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Robots network budget exhausted")
+                return raw.decode("utf-8", errors="replace").splitlines()
+        except HTTPError as exc:
+            location = exc.headers.get("Location") if exc.headers else None
+            exc.close()
+            if exc.code not in {301, 302, 303, 307, 308} or not location:
+                raise
+            if hop >= MAX_REDIRECTS:
+                raise JobParsingError("Too many robots redirects") from exc
+            current = urljoin(current, location)
+            _revalidate_redirect(current)
+    raise JobParsingError("Too many robots redirects")
 
 
 # Module-level robots cache (shared across calls for TTL benefit)
@@ -337,12 +388,13 @@ def parse_job_from_url(url: str) -> dict[str, object]:
     # SSRF prevention: resolve host and check for private IPs
     _check_ssrf(host)
 
-    # Robots.txt check (fail closed)
-    if not _robots_cache.is_allowed(cleaned_url, DEFAULT_USER_AGENT):
+    budget_start = time.monotonic()
+    deadline = budget_start + NETWORK_TIMEOUT_SECONDS
+    # Robots and page requests share the same network budget.
+    if not _robots_cache.is_allowed(cleaned_url, DEFAULT_USER_AGENT, deadline=deadline):
         raise JobParsingError("Fetching this URL is blocked by robots.txt")
 
     # Fetch with per-hop budget and redirect revalidation
-    budget_start = time.monotonic()
     current_url = cleaned_url
     visited: list[str] = []
 
@@ -366,6 +418,8 @@ def parse_job_from_url(url: str) -> dict[str, object]:
                 # If redirected, revalidate final URL
                 if final_url != current_url:
                     _revalidate_redirect(final_url)
+                    if not _robots_cache.is_allowed(final_url, DEFAULT_USER_AGENT, deadline=deadline):
+                        raise JobParsingError("Fetching this URL is blocked by robots.txt")
                     current_url = final_url
                     # Check budget before next hop
                     if time.monotonic() - budget_start >= NETWORK_TIMEOUT_SECONDS:
@@ -393,6 +447,19 @@ def parse_job_from_url(url: str) -> dict[str, object]:
         except JobParsingError:
             raise
         except HTTPError as exc:
+            if exc.code in {301, 302, 303, 307, 308}:
+                location = exc.headers.get("Location")
+                exc.close()
+                if not location:
+                    raise JobParsingError("Redirect response has no Location") from exc
+                if hop >= MAX_REDIRECTS:
+                    raise JobParsingError(f"Too many redirects (>{MAX_REDIRECTS})") from exc
+                destination = urljoin(current_url, location)
+                _revalidate_redirect(destination)
+                if not _robots_cache.is_allowed(destination, DEFAULT_USER_AGENT, deadline=deadline):
+                    raise JobParsingError("Fetching this URL is blocked by robots.txt")
+                current_url = destination
+                continue
             raise JobParsingError(f"URL fetch failed: HTTP {exc.code}") from exc
         except URLError as exc:
             raise JobParsingError(f"URL fetch failed: {exc.reason}") from exc

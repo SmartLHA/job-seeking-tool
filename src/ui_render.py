@@ -2800,7 +2800,7 @@ def render_profile_page(
         + '<label><span>Source</span><select id="ss-source">' + _ss_source_options + '</select></label>'
         + '<label><span>Keywords</span><input id="ss-keywords" placeholder="e.g. business analyst"></label>'
         + '<label><span>Location</span><input id="ss-location" placeholder="e.g. London"></label>'
-        + '<label><span>Min salary (GBP)</span><input id="ss-minsalary" type="number" min="0"><small>Saved-search runs drop new jobs whose listed pay is below this. Jobs with no listed salary are kept.</small></label>'
+        + '<label><span>Min salary (GBP)</span><input id="ss-minsalary" type="number" min="0"><small>Saved-search runs drop new jobs whose listed pay is below this. Jobs with no listed salary are kept, but Reed applies this floor too and may leave some of them out.</small></label>'
         + '</div>'
         + '<div style="margin-top:10px;">'
         + '<button type="button" id="ss-add-btn">+ Save search</button>'

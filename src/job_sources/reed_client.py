@@ -39,7 +39,8 @@ def _ensure_env_loaded() -> None:
             break
 
 
-def fetch_reed_jobs(keyword: str, location: str, max_results: int = 50, *, skip: int = 0, save_raw: bool = True) -> List[Dict[str, Any]]:
+def fetch_reed_jobs(keyword: str, location: str, max_results: int = 50, *, skip: int = 0, save_raw: bool = True,
+                   minimum_salary: int | None = None) -> List[Dict[str, Any]]:
     """
     Fetch jobs from Reed API based on keyword and location.
     Pass skip>0 to page through results (Reed API: resultsToSkip parameter).
@@ -59,6 +60,8 @@ def fetch_reed_jobs(keyword: str, location: str, max_results: int = 50, *, skip:
         "resultsToSkip": skip,  # Reed API param is resultsToSkip (not resultsSkip); wrong name made paging return page 0 every time
         "distanceFromLocation": 25,  # miles; Reed API param is distanceFromLocation (not distance)
     }
+    if minimum_salary is not None:
+        params["minimumSalary"] = minimum_salary
 
     response = None
     try:

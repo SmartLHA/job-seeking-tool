@@ -13,6 +13,11 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+class AdzunaFetchError(RuntimeError):
+    """An Adzuna search failed rather than returning an empty result."""
+
+
 def fetch_adzuna_jobs(keyword: str, location: str, max_results: int = 50, *, skip: int = 0) -> List[Dict[str, Any]]:
     """
     Fetch jobs from Adzuna API based on keyword and location.
@@ -28,7 +33,7 @@ def fetch_adzuna_jobs(keyword: str, location: str, max_results: int = 50, *, ski
 
     if not app_id or not app_key:
         logger.error("ADZUNA_APP_ID or ADZUNA_APP_KEY not found in environment variables.")
-        return []
+        raise AdzunaFetchError("Adzuna API keys are not set")
 
     # Adzuna search endpoint: /v1/api/jobs/{country}/search/{page}
     # Ref: https://developer.adzuna.com/overview and /docs/search
@@ -54,28 +59,42 @@ def fetch_adzuna_jobs(keyword: str, location: str, max_results: int = 50, *, ski
         save_raw_response(response.text, "adzuna")
         
         if response.status_code == 429:
-            logger.warning("Adzuna API rate limit exceeded (429). Returning empty list.")
-            return []
-        
+            logger.warning("Adzuna API rate limit exceeded (429). Raising AdzunaFetchError.")
+            raise AdzunaFetchError("Adzuna rate limit reached (HTTP 429)")
+
         response.raise_for_status()
         data = response.json()
-        
-        # Adzuna puts the jobs in the 'results' key
-        return data.get("results", []) if isinstance(data, dict) else []
 
+        # Adzuna puts the jobs in the 'results' key
+        if (
+            isinstance(data, dict)
+            and isinstance(data.get("results"), list)
+            and all(isinstance(item, dict) for item in data["results"])
+        ):
+            return data["results"]
+        raise AdzunaFetchError("Adzuna returned an unexpected response")
+
+    # Every raise below uses "from None": the Adzuna key is in the request URL,
+    # so a chained requests exception would carry it into tracebacks.
+    except (json.JSONDecodeError, requests.exceptions.JSONDecodeError):
+        logger.error("Failed to decode JSON response from Adzuna.")
+        raise AdzunaFetchError("Adzuna returned invalid JSON") from None
     except requests.exceptions.HTTPError as e:
         status = getattr(e.response, "status_code", None)
         if type(status) is int and 100 <= status <= 599:
             logger.error("HTTP error occurred while fetching from Adzuna (status %s).", status)
+            message = f"Adzuna returned HTTP {status}"
+            if status in (401, 403):
+                message += ": check the API keys"
         else:
             logger.error("HTTP error occurred while fetching from Adzuna.")
-        return []
+            message = "Adzuna returned an HTTP error"
+        raise AdzunaFetchError(message) from None
     except requests.exceptions.RequestException as e:
         logger.error("Request error occurred while fetching from Adzuna (%s).", type(e).__name__)
-        return []
-    except json.JSONDecodeError:
-        logger.error("Failed to decode JSON response from Adzuna.")
-        return []
+        if isinstance(e, requests.exceptions.Timeout):
+            raise AdzunaFetchError("Adzuna request timed out") from None
+        raise AdzunaFetchError(f"Adzuna request failed ({type(e).__name__})") from None
 
 def save_raw_response(content: str, source: str):
     """

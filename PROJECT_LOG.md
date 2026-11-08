@@ -6,6 +6,42 @@
 - **Changes:** `src/job_hunt_parsing.py` — `_extract_years` body replaced with strict window rules; new helpers `_years_value`, `_years_matches`, `_years_window_passes`, `_is_years_header`. Signature and sole caller (`parse_job_from_text`) unchanged. `tests/test_required_years.py` — NEW. Both are in commit 153196a. The docs update added design doc section 19, this log entry, and the PROJECT_TODO, INDEX and function_list entries.
 - **Key facts:** blind set `tests/fixtures/required_years_blind2.json`, 100 entries (43 none, 57 requirement), run once. As written: false matches 5/43 (11.6%, limit 5%), correct 27/57 (47.4%, limit 80%), 30 missed, 3 false values above the candidate's configured years. Whitespace squashed: false 11.6%, correct 30/57 (52.6%), 27 missed. Old extractor 28/43 false, 21/57 correct, 24 wrong value, 20 false above the configured years; new 5/43, 27/57, 0 wrong, 3. It misses requirements with no "experience" word (returns None, score stays neutral) and false-matches company-history sentences without "we"/"our". Tests: 216 passed (`tests/test_required_years.py tests/test_parsing.py`); full suite 2950 passed, 16 skipped, 0 failed (baseline `5f32d3d`: 2767 passed, 16 skipped, 0 failed). `git merge-tree` against four branches: no conflicts. `_years_matches` is quadratic on pathological input (about 3.6 s for 100,000 characters of repeated "5 years "). Search-source jobs are unchanged and stay neutral on experience. Details: `docs/tasks/2026-11-06-required-years-search-jobs-design.md` section 19.
 
+## 2026-11-06
+
+### Saved searches: the salary floor is also sent to Reed
+- **Status:** ✅ Built on branch `claude/upbeat-mendeleev-6981ed` (on top of PR #5 base `4a515fd`); NOT pushed, NOT merged. Fresh verifier passed on 2026-11-06 at `3ff1676` (0 BLOCKER, 0 MAJOR; its 2 MINOR wording items in `PROJECT_CONTEXT.md` fixed afterwards). Full suite: 64 failed, the same set as before the build. The send has not run against live Reed. Spec `docs/tasks/2026-11-06-reed-floor-send-spec.md`; Mike: "Send it to Reed too", then "Approve, build it".
+- **Motivation:** the live Reed check showed the floor removes below-floor jobs, so more of the first 50 jobs are candidates.
+- **Changes:**
+  - `src/job_hunt_scheduler.py` — `run_digest_pipeline` sets `params["_reed_api_floor"]` for a Reed saved search with a numeric floor, after normalising.
+  - `src/job_sources/reed_source.py` — `search_reed_jobs_for_ui` passes it on as `minimum_salary` only when the key is present. `src/job_sources/reed_client.py` — `fetch_reed_jobs` takes keyword-only `minimum_salary` and sends `minimumSalary` only when given.
+  - `src/ui_render.py` — the Min salary hint now says Reed applies the floor too and may leave out some no-salary jobs.
+  - `tests/test_saved_search_salary_floor.py` — new `test_reedfloor_*` tests inspect the request at `requests.get`.
+- **Key facts:** the local rule (`_salary_verdict`) is unchanged and still covers Adzuna. The Reed search page and "More results" never send the floor. Accepted cost: Reed may remove some no-salary jobs, which the tool cannot count. No live Reed call was made.
+
+## 2026-11-06
+
+### Adzuna search: visible failures
+- **Status:** ✅ Built on branch `claude/keen-jones-b93b9a` (based on `4a515fd`); NOT pushed, NOT merged; fresh verifier passed on 2026-11-06 at `dc164a8` (AC1 to AC17: 0 BLOCKER, 0 MAJOR, 3 MINOR, none needing a fix in this build). Spec `docs/tasks/2026-11-06-adzuna-search-failure-spec.md`; Mike approved it on 2026-11-06.
+- **Motivation:** a failing Adzuna search returned `[]`, so it looked like "no jobs" on the Find Jobs page and in saved-search runs.
+- **Changes:**
+  - `87b0919` — `src/job_sources/adzuna_client.py`: `AdzunaFetchError(RuntimeError)`; `fetch_adzuna_jobs` raises it with a fixed message for missing keys, 429, HTTP errors, timeouts, other request errors, invalid JSON and an unusable body; returns `[]` only for a dict whose `results` is an empty list (extra keys allowed). Every raise inside an `except` uses `from None`, because the Adzuna key is in the request URL (different from Reed). The 429 log line no longer says "Returning empty list". `tests/test_reed_adzuna_clients.py`: failure tests now expect `AdzunaFetchError`, log and redaction assertions kept. New `tests/test_adzuna_failure_paths.py` (client cases, AC1-AC6).
+  - `7c23e34` — `tests/test_adzuna_failure_paths.py`: caller tests for the pipeline, run records, Run now, Find Jobs page, More route and a two-keyword search (AC7-AC11). No caller code changed.
+- **Key facts:** full suite with fake keys: 50 failed, 2838 passed, 16 skipped; the 50 failing ids equal the 50 saved at `4a515fd` (0 new, 0 no longer failing, compared with `comm`). The 4 `tests/test_market_position_route.py` failures are among those 50. The build and its tests made no live Adzuna call. The real error status codes are UNVERIFIED; the zero-match body is covered by the live check below.
+- **Limits:** a partly failed multi-keyword search still shows no notice (new item in PROJECT_TODO). Raw response saving, `logging.basicConfig` and the histogram functions were not touched.
+- **Live check:** live run 2026-11-06 (n=1, keyword `zzqxvjkplm`, run by the session that built this, Mike's consent "Yes, one live call"): HTTP 200, keys `__CLASS__`, `count`, `results`, with `results` an empty list; the client returned `[]`. Real error status codes stay UNVERIFIED.
+- **Next:** merge after the Reed branch.
+
+### Partly failed multi-keyword search: visible notice
+- **Status:** ✅ Built on branch `claude/cool-faraday-76ed62` (on top of `claude/keen-jones-b93b9a`); NOT pushed, NOT merged; fresh verifier passed 2026-11-06 at 8ed6bda. Spec `docs/tasks/2026-11-06-partial-keyword-failure-notice-spec.md`; Mike approved it on 2026-11-06 ("Approve, build it", Q1 and Q2 as recommended).
+- **Motivation:** when one keyword of a multi-keyword search failed and another worked, the page showed the results and said nothing. `_partial_error_count` was written and read nowhere.
+- **Changes:**
+  - `c66a249` — `src/ui_handlers.py`: new `_keyword_failure_message(source, exc)` and `_render_keyword_failure_notice(failures, can_retry_next_page)`; `_run_multi_keyword_search` gains keyword-only `failures`; `search_values["_keyword_failures"]` replaces `_partial_error_count`; the More payload gains `keyword_failure_html` only when a keyword failed. New `tests/test_partial_keyword_failure_notice.py` (32 tests).
+  - `de8dfa8` — `src/job_sources/_multiselect.py`: `jstLoadMore` removes, inserts and scrolls to `#jst-keyword-failure-note`. New `tests/test_partial_keyword_failure_browser.py` (1 test; needs Playwright, skips in the venv).
+  - `7ccbe23` — notice bottom margin, seen in the live view.
+- **Key facts:** an amber notice names each failed keyword with its fixed `ReedFetchError`/`AdzunaFetchError` message; any other error (LinkedIn, untyped) shows the fixed text `<display_name> search failed`. The failed keyword's offset was already kept for retry, so Next page retries it and the notice goes when the retry works. Live view (AC17), 2026-11-06, built-in browser against a local scratch server with `requests.get` faked, no live API call: Reed first page; Reed Next page failing again then succeeding (notice gone, retried keyword's jobs shown); Reed no-results case (notice plus Next page button); Adzuna first page. The Browser pane was hidden, so the smooth scroll did not animate; the scroll target was confirmed as the notice by recording the call. This is producer evidence, not a verifier result. Playwright was installed only into the session scratchpad, not the venv. Full suite: baseline at `db8c6b6` 50 failed, 2838 passed, 16 skipped; the implementer's full run before `7ccbe23` 50 failed, 2870 passed, 17 skipped, same failure names.
+- **Limits:** the all-failed banner and the More error still show raw text for untyped exceptions; stray `)` in the Reed and Adzuna banner styles; "No Reed results found" still shows under the notice when working keywords return nothing (new items in PROJECT_TODO).
+- **Next:** fresh verifier and full-suite comparison; Mike decides on merging (after the Adzuna branch).
+
 ## 2026-11-05
 
 ### Saved searches: local salary floor, visible Reed failures, kept run records
@@ -129,6 +165,28 @@
 **Changes:** CV/upload/fallback/ATS containment, Review Queue data handling, marked digest recovery, bounded LinkedIn details, prepared search replay, qualitative paired leases/publication/readers, raw AI retention, required Chromium CI configuration, and current documentation. See the [13-item ledger](docs/tasks/p2-remediation-2026-10-23.md) for commit/evidence mapping.
 **Key facts:** Committed P2 code has synthetic evidence: **645 passed, 75 deselected** in the final non-HTTP/non-browser regression after the LinkedIn diagnostic follow-up. Earlier P2-12 evidence is **86 passed** in the separate owned-loopback HTTP/browser regression, including all **15 mandatory Chromium cases**. The clean HEAD + P2-12 projection at that earlier checkpoint passed **106 cases**, repeating those 86 plus 20 helper checks; this is dependency evidence, not an additional coverage total or a clean HEAD run of the latest 645 cases. Follow-up `c3a8739` corrects strict LinkedIn HTTP error classification before body/redirect heuristics while preserving default UI behavior; its working and clean focused suites each passed **120 cases, 1 HTTP case deselected**. Required-mode setup/call/teardown skip canaries deliberately fail. Each final runner recorded seven expected fence-preflight denials and zero unexpected Python fence events; loopback runners left no owned ports open. Native browser OS egress isolation is UNVERIFIED. Evidence: `/private/tmp/job-tool-p2-20261023/browser-ci/commands.txt`, `acceptance-summary.json`, and the per-run logs/manifests in that directory.  Independent read-only advisory reviews are separate from producer test evidence. The P2-10 follow-up advisory reported no Blocker/Major/Minor findings; the P2-11/12 final-source advisory likewise reported no Blocker/Major/Minor findings (in-memory/static checks; `/private/tmp/job-tool-p2-20261023/final-source-verification/answer.txt`). Raw reviewer startup still includes generic skill instructions, so strict Gate 3 certification remains **PARTIAL** despite read-only/never settings. Remote CI, actual Python 3.10 execution, live providers, production behavior and deployed-writer migration are **UNVERIFIED**. All five P1 designs remain approval-pending and outside these P2 changes.
 
+## 2026-10-19
+
+### Slice 1c — record which skill extractor prefilled each job
+- **Status:** ✅ COMPLETE — commit `e9c4231`. Independent verifier: no BLOCKER/MAJOR.
+- **Motivation:** `extract_skills_from_text` silently falls back from Gemini to a keyword scan; required skills weigh 35, so scores could differ by Gemini availability with no record.
+- **Changes:** `JobPosting.skill_extraction_method` ("llm" | "keyword" | None) in `job_hunt_models.py` / `job_hunt_reviewed_input.py`; set by Reed/Adzuna/LinkedIn select prefill, digest pipeline (`job_hunt_scheduler.py`, 2 lines) and paste/URL prefill (`ui_handlers.handle_prefill`); hidden form field in both job forms; note under Required skills on the job page (`ui_render.skill_method_note`). `tests/test_skill_extraction_method.py` (28).
+- **Key facts:** Records the prefill method only (hand edits keep the label). Not in the SQLite index, digest feed or exports. `job_hunt_parsing.py` untouched (owner's uncommitted work). Spec: `docs/tasks/2026-10-19-scoring-consistency-slice1.md`.
+
+### Scoring consistency Slice 1 — one threshold source, correct reason text, one score display rule (decisions unchanged)
+- **Status:** ✅ COMPLETE — commits `7be8c83` and `63dc40b`. Independently verified (fresh-context verifier rebuilt the old `decide_application`/`derive_base_grade` from the diff: 0 decision and 0 grade differences over 300,270 input combinations).
+- **Motivation:** Results felt unstable near the cut-off. A design-council review (Claude plan + independent reviewer; Codex unavailable in Cowork) found the score is deterministic and the cause was drift: decision 80/65, review-queue colour 75/50, hardcoded grades 80/72/65/50, digest default 70; plus a false critical-risk reason below 65 and truncate-vs-round display mismatch.
+- **Changes:**
+  - `src/job_hunt_decision.py` — `format_score()` (truncate); critical-risk reason per band (no "would otherwise qualify" below 65; risks named in 65–79).
+  - `src/job_hunt_config.py` — `GRADE_B_THRESHOLD = 72.0`, `GRADE_D_THRESHOLD = 50.0`.
+  - `src/job_hunt_qualitative.py` — `derive_base_grade` A/C from `DEFAULT_DECISION_POLICY`, B/D from config (output unchanged).
+  - `src/ui_render.py` — `score_tone(score, apply_threshold, review_threshold)`; `ReviewQueueViewModel.apply_threshold/review_threshold`; no module-level domain imports.
+  - `src/ui_utils.py` — `format_score_display()` (mirrors `format_score`).
+  - `src/ui_handlers.py` — `handle_get_review_queue` passes the policy thresholds into the view model.
+  - `tests/test_decision_boundaries.py` — NEW, 50 tests. `tests/test_ui_render_uncovered.py` — docstrings only.
+  - `docs/tasks/2026-10-19-scoring-consistency-slice1.md` — NEW spec.
+- **Key facts:** Visible change: review-queue colours now 80/65 (75–79 amber, 50–64 skip). Dimension subscore bars (`_subscore_bar`, 75/50) intentionally unchanged — different scale. Full suite in the Linux VM (Python 3.10): 1849 passed / 30 failed / 8 skipped; the 30 failures are identical to the pre-change baseline (environment-related, not investigated). Not yet run on the Mac project venv (Python 3.14).
+
 ## 2026-10-13
 
 ### Test isolation — the test suite no longer writes real files in `data/raw/` and `output/` (test only, no app change)
@@ -139,6 +197,16 @@
 - **Evidence:** Full suite before and after the change: the same 21 failing tests (they failed before this change and are unrelated to it). After the fix, a full run leaves `data/raw/` and `output/` unchanged.
 - **Limits:** `data/state` still changes during a test run while the UI server (port 9000) is running. That is the server, not pytest: exclude `data/state` or stop the server when checking.
 
+## 2026-10-11
+
+### Nimble blind check — does the local Nimble 9B model judge ads the way Mike does? (test only, no app change)
+- **Status:** ⚠️ Built and producer-checked; not yet verified by a fresh-context verifier. Mike has not labelled yet, so there is no Nimble-vs-Mike result.
+- **Motivation:** Learn whether the local `nimble:9b-q4_K_M` decision model (Ollama, `POST /v1/systemone`) agrees with Mike on two yes/no questions (material red flags; culture clash) before any app feature is connected to it. No Gemini calls.
+- **Changes:** New `scripts/nimble_check.py` ([spec](docs/tasks/2026-10-11-nimble-check-spec.md)) and `tests/test_nimble_check.py`. `export` writes `archive/nimble-check/labels.csv` (full ads and stubs, blank RF/CU columns for blind labelling); `run` asks Nimble the same two frozen questions plus 4 dimension scores and a posting tier (display only), caches results per job (resumable) and writes `archive/nimble-check/report-<date>.md`; `run --smoke` sends one built-in sample ad. Stored jobs are read as plain JSON; nothing is written under `data/` and the SQLite DB is not opened.
+- **Why the qualitative assessment was not switched to Nimble yet:** no stored qualitative results existed to compare against; Nimble returns numbers only, with no verbatim quotes or reasons, which the current assessment requires; a full switch touches about 7+ files (estimate from the independent design reviews, 2026-10-11: qualitative pipeline, ui_handlers, scheduler, index, ui_render, export, profile/settings).
+- **Evidence:** `tests/test_nimble_check.py` + `tests/test_qualitative.py`: 141 passed (123 + 18; requests mocked; no live HTTP in pytest). `export` on the real stored jobs worked. `run --smoke` on local Ollama: answer types match the spec. `data/` mtime listing identical before and after.
+- **Limits:** The full `run` has not been done (Mike labels first, blind). Tokens (measured 2026-10-11): `usage.input_tokens` is a SUM over the per-question prompts. The smoke sample gave 7,626 in total over 7 questions = 1,089 per question, and a 5,000-character JD with 1 question gave 869, so the 8,192 limit (which applies per prompt) is not close. Rows are flagged only when tokens per question > 7,000. Few exported jobs have base grade A or B, so the harmful-case list is small by construction.
+
 ## 2026-10-04
 
 ### Audit repair contracts and documentation refresh
@@ -147,6 +215,15 @@
 - **Changes:** Local UI validates Host before dispatch and requires matching POST Origin/Referer; explanation uses POST. Viewer binds loopback and serves a fixed public allowlist. CV skill suggestions are local unless cloud consent is explicit; extracted text uses `.txt`. Profile JSON saves are atomic and process-local canonical locks cover load/merge/save. Letters are scoped by profile/job and ZIP export fails closed on missing or legacy letters. Cancellation prevents later claims/retries/provider calls, without undoing an in-flight call. Stable selection identities, normalized term vectors and indexed batch acknowledgements preserve failed/updated payloads for retry; selections are capped at 20. Extraction dependencies are declared.
 - **Evidence:** [Repair record](docs/tasks/audit-remediation-2026-10-04.md) ties tests to the immutable chunks. Producer synthetic checks include Issue 10: 227 passed/4 skipped; Issue 12: 35 passed; Issue 14: 58 passed/1 skipped plus 6 Node tests; Issue 15: 79 passed with real synthetic PDF/DOCX extraction using pypdf 6.19.0/python-docx 1.2.0. These are not live-service or fresh independent integration results.
 - **Independent limits:** The Issues 1–2 checkpoint ran 13 checker entries and simulated serving checks (22 public files, 3 aliases, 19 rejections, 2 simulated symlinks); reevaluation tests were inspected rather than independently executed. Real persistent filesystem/HTTP behavior, races, external providers and browser behavior remain unverified. Profile locking is process-local; CV text plus JSON is not one transaction. Cancellation cannot undo a provider call already in flight. No services/providers were started by this documentation refresh.
+
+## 2026-10-02
+
+### Sequential audit remediation — storage, URL import, and deterministic tests
+- **Status:** ⚠️ Implemented with producer-run regression evidence; independent verification remains unavailable.
+- **Motivation:** Prevent unsafe storage paths, requests to unvalidated redirect destinations, incorrect robots permissions, unbounded robots reads, interrupted JSON writes, and calendar-dependent cache tests.
+- **Changes:** `src/job_hunt_storage.py` validates ID components and resolved containment, including existing symlink escapes, and writes JSON through unique sibling temporary files with flush/fsync and atomic replacement. `src/job_hunt_parsing.py` disables automatic redirects, validates destinations before requesting them, caches robots rules per origin, evaluates each path/user agent, and fetches robots with explicit timeout and a shared network budget. `tests/test_market_position_route.py` uses a deterministic cache clock and checks the TTL boundary.
+- **Evidence:** Focused regression suites in a disposable source/tests copy: **181 passed**; no personal state or credentials copied, no live provider requests. Project-venv full suite in a credential-free environment: **1194 passed, 8 skipped, 101 failed**; all failure blocks are sandbox socket `PermissionError`. No dependencies installed.
+- **Limits:** Atomicity is per JSON file, not a transaction across pipeline files. Path checks are not race-proof against concurrent symlink replacement. DNS resolution is not pinned or hard-time-limited; socket timeout does not guarantee a strict wall-clock cap for slow-drip reads. Independent fresh-context verification, live network behavior, and visual UX remain UNVERIFIED.
 
 ## 2026-08-10
 
