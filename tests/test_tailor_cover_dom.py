@@ -252,7 +252,7 @@ def test_ai_shared_result_keeps_original_copy_consent_and_bound_actions(syntheti
     page.click('#ai-cv-btn')
     page.wait_for_selector('.ai-cv-panel')
     assert not page.locator('#ai-cv-consent').is_checked()
-    assert calls == [('', {'use_cloud': True})]
+    assert calls == [('', {'use_cloud': True, 'consent_scope': 'gemini'})]
     assert page.locator('.ai-cv-flagged').count() >= 1
     assert HOSTILE in page.locator('#tailor-result').text_content()
     _safe(page, '#tailor-result')
@@ -266,7 +266,7 @@ def test_ai_shared_result_keeps_original_copy_consent_and_bound_actions(syntheti
     page.locator('#ai-cv-consent').check()
     page.get_by_role('button', name='Revise once with findings', exact=True).click()
     page.wait_for_function('!Array.from(document.querySelectorAll(".ai-cv-panel button")).some(b=>b.textContent==="Revise once with findings")')
-    assert calls[-1] == ('/revise', {'use_cloud': True, 'generation_id': 's2-gen'})
+    assert calls[-1] == ('/revise', {'use_cloud': True, 'consent_scope': 'gemini', 'generation_id': 's2-gen'})
     assert not page.locator('#ai-cv-consent').is_checked()
     assert page.get_by_role('button', name='Revise once with findings', exact=True).count() == 0
     _safe(page, '#tailor-result')
