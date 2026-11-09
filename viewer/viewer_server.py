@@ -1302,7 +1302,7 @@ def _viewer_authority(value: str, port: int) -> str | None:
 
 def _viewer_source_matches(value: str, host: str, port: int, *, referer=False) -> bool:
     """Compare exact HTTP origins; loopback aliases never substitute for each other."""
-    if not value or any(ord(c) <= 32 or ord(c) >= 127 for c in value) or "\\" in value:
+    if not value or any(ord(c) <= 32 or ord(c) >= 127 for c in value) or "\\" in value or "#" in value:
         return False
     try:
         source = urlsplit(value)
