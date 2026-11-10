@@ -50,6 +50,7 @@ jobs:
         mkdir -p "$JOB_TOOL_BROWSER_TEST_HOME"
         env HOME="$JOB_TOOL_BROWSER_TEST_HOME" PYTHONPATH=. pytest --strict-markers -m required_browser \
           tests/test_ui.py tests/test_bulk_paste.py tests/test_review_queue_browser.py tests/test_search_replay_browser.py \
+          tests/test_tailor_cover_dom.py tests/test_viewer_api_boundary_browser.py \
           --junitxml="${{ runner.temp }}/job-tool-browser-results.xml"
     - name: Test proof-of-concepts
       run: |
