@@ -1,6 +1,7 @@
 """Start scripts must use the project venv interpreter (never system python3)."""
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import sys
@@ -13,7 +14,7 @@ SCRIPTS = ["restart.sh", "start.command"]
 def test_scripts_use_venv_python_not_system():
     for name in SCRIPTS:
         text = (ROOT / name).read_text()
-        assert 'exec "$PY" -m src.job_hunt_ui' in text
+        assert 'exec "$PY" scripts/app_lifecycle.py' in text
         assert "exec python3" not in text
 
 
@@ -23,11 +24,17 @@ def test_dry_run_prints_venv_interpreter(tmp_path):
     venv_bin.mkdir(parents=True)
     fake_py = venv_bin / "python"
     fake_py.symlink_to(sys.executable)
+    (tmp_path / "scripts").mkdir()
+    shutil.copy(ROOT / "scripts" / "app_lifecycle.py", tmp_path / "scripts")
+    with socket.socket() as s:  # a free port for the helper's plan
+        s.bind(("127.0.0.1", 0))
+        port = str(s.getsockname()[1])
     for name in SCRIPTS:
         shutil.copy(ROOT / name, tmp_path / name)
         r = subprocess.run(["bash", str(tmp_path / name)], capture_output=True, text=True,
-                           env={**os.environ, "DRY_RUN": "1"})
+                           env={**os.environ, "DRY_RUN": "1", "PORT": port})
         assert r.returncode == 0, r.stderr
+        assert "DRY_RUN:" in r.stdout and not (tmp_path / "data").exists()
         assert f"Interpreter: {fake_py}" in r.stdout.splitlines()
         assert "Python 3" in r.stdout
 
