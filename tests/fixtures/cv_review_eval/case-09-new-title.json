@@ -83,7 +83,7 @@
         "expected_l0": [
           {
             "rule": "L0-3",
-            "severity": "MAJOR"
+            "severity": "BLOCKER"
           },
           {
             "rule": "L0-2",
