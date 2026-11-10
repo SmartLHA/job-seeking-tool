@@ -431,6 +431,7 @@ def _term_in(term: str, text: str, case_sensitive: bool = False) -> bool:
 
 
 _TITLE_NOUNS = frozenset('analyst manager director head lead consultant engineer architect officer owner specialist coordinator administrator developer designer president vp chief partner associate executive advisor adviser scientist programmer tester strategist planner controller supervisor assistant principal intern trainee'.split())
+_TITLE_STOP_WORDS = frozenset('the a an with to for on by from across into at as via our my their his her its weekly daily monthly'.split())
 _TITLE_ABBREVIATIONS = {'ba': 'business analyst', 'pm': 'project manager', 'sr': 'senior', 'snr': 'senior', 'mgr': 'manager',
                         'dir': 'director', 'eng': 'engineer', 'dev': 'developer', 'vp': 'vice president'}
 
@@ -446,7 +447,10 @@ def _invented_titles(original_cv: str, rewrite: str) -> list[str]:
     found = []
     for line in sorted(role_adjacent_lines(rewrite) - role_adjacent_lines(original_cv)):
         raw = set(re.findall(r"[a-z0-9]+", line))
-        if len(line.split()) <= 8 and raw & _TITLE_NOUNS and not any(_title_tokens(line) <= tokens for tokens in held):
+        first = next(iter(re.findall(r"[a-z0-9]+", line)), '')
+        if (len(line.split()) <= 8 and raw & _TITLE_NOUNS and not raw & _TITLE_STOP_WORDS
+                and not (first.endswith(('ed', 'ing')) and first not in _TITLE_NOUNS)
+                and not any(_title_tokens(line) <= tokens for tokens in held)):
             found.append(line)
     return found
 

@@ -78,6 +78,15 @@ def test_role_adjacent_held_title_not_blocked(before, after):
     assert not any(f.severity == 'BLOCKER' for f in findings)
 
 
+@pytest.mark.parametrize('line', [
+    'Supported the product owner with backlog', 'Worked with the project manager',
+    'Reported to the director weekly', 'Led analyst team',
+])
+def test_role_adjacent_responsibility_mentioning_title_not_blocked(line):
+    findings = check(POST_DATE.format('Analyst'), POST_DATE.format(line))
+    assert not any(f.severity == 'BLOCKER' for f in rules(findings, 'L0-3'))
+
+
 def test_date_prose_and_bullets_are_not_roles():
     before = 'Summary\nCurrent responsibilities include reporting.\nExperience\nAnalyst\nExample Ltd\n2020-2022\n- Reported in 2021.'
     after = before.replace('Reported in 2021.', 'Produced reports in 2021.')
