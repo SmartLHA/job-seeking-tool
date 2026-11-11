@@ -8,7 +8,7 @@ and a fresh verifier check of r3 (0 BLOCKER, 0 MAJOR, 5 MINOR). The Gemini pre-c
 skipped: the brief bars Gemini calls without Mike's consent. -->
 
 <!-- STATUS (implementation, 2026-11-05)
-Implementation status: ✅ built on branch claude/agitated-sinoussi-7cc5be, NOT pushed, NOT merged.
+Implementation status: ✅ built on branch claude/agitated-sinoussi-7cc5be; merged to main 2026-11-08 via PR 7 (751b253).
 Fresh verifier passed on 2026-11-06 at db4b58d: 0 BLOCKER, 0 MAJOR, 3 MINOR. Fresh Codex code review: 0 high, 0 medium, 1 low, fixed in db4b58d.
 Commits (oldest first): ecb7c0b (ReedFetchError), 96c40f2 (local salary floor, 10-attempt budget),
 1efe433 (saved_search_runs records), e3842ae (Run now summary, Last run and Run history display),

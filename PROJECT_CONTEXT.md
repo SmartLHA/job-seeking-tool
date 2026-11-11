@@ -118,7 +118,7 @@ superseded by this section where behavior differs.
   when a key is available, independently of that digest toggle. Manual AI actions
   remain separate from deterministic scoring; no application is submitted.
 - Saved-search runs (built 2026-11-05 on branch `claude/agitated-sinoussi-7cc5be`,
-  not pushed, not merged): a saved search's minimum salary now filters new jobs
+  merged to main 2026-11-08 via PR 7): a saved search's minimum salary now filters new jobs
   locally after the fetch (on Reed saved-search runs it is also sent to Reed since
   2026-11-06, which may leave out some no-salary jobs; no-salary jobs that arrive are
   kept and counted); a failed Reed fetch raises `ReedFetchError` and shows its
@@ -181,8 +181,8 @@ advisory likewise reported no Blocker/Major/Minor findings (in-memory/static
 checks; `/private/tmp/job-tool-p2-20261023/final-source-verification/answer.txt`). Raw reviewer startup still includes generic skill
 instructions, so strict Gate 3 certification remains **PARTIAL** despite
 read-only/never settings. Remote CI, actual Python 3.10 execution, live providers,
-production behavior and deployed-writer migration are **UNVERIFIED**. All five P1
-designs remain approval-pending and outside these P2 changes.
+production behavior and deployed-writer migration are **UNVERIFIED**. P1 status as of 2026-11-11: S1 is on
+main; S2 (PR 8) and O1 safe start/restart (PR 11) are merged; D1 and B1 remain open.
 
 ## Historical recovered baseline — recorded 2026-06-22
 

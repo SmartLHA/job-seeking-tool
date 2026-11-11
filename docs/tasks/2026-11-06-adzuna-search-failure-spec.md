@@ -1,11 +1,11 @@
 # Adzuna search: visible failures
 
-<!-- IMPLEMENTATION STATUS (2026-11-06): built on branch claude/keen-jones-b93b9a in commits 87b0919 (client and tests AC1-AC6, AC13) and 7c23e34 (caller tests AC7-AC11); docs commit dc164a8. NOT pushed, NOT merged. Fresh verifier passed on 2026-11-06 at dc164a8: AC1 to AC17, 0 BLOCKER, 0 MAJOR, 3 MINOR, none needing a fix in this build. Full suite: 50 failed, 2838 passed, 16 skipped; failing ids equal the 50 baseline ids. Zero-match body checked by one live call, live run 2026-11-06 (n=1, keyword `zzqxvjkplm`, run by the session that built this, Mike's consent "Yes, one live call"): HTTP 200, keys `__CLASS__`, `count`, `results`, with `results` an empty list; the client returned `[]`. Real error status codes remain UNVERIFIED. -->
+<!-- IMPLEMENTATION STATUS (2026-11-06): built on branch claude/keen-jones-b93b9a in commits 87b0919 (client and tests AC1-AC6, AC13) and 7c23e34 (caller tests AC7-AC11); docs commit dc164a8. Merged to main 2026-11-08 via PR 7 (751b253). Fresh verifier passed on 2026-11-06 at dc164a8: AC1 to AC17, 0 BLOCKER, 0 MAJOR, 3 MINOR, none needing a fix in this build. Full suite: 50 failed, 2838 passed, 16 skipped; failing ids equal the 50 baseline ids. Zero-match body checked by one live call, live run 2026-11-06 (n=1, keyword `zzqxvjkplm`, run by the session that built this, Mike's consent "Yes, one live call"): HTTP 200, keys `__CLASS__`, `count`, `results`, with `results` an empty list; the client returned `[]`. Real error status codes remain UNVERIFIED. -->
 <!-- STATUS: APPROVED r2 2026-11-06. Mike answered "Build to this spec, reading saved Adzuna files
 to check the zero-result response?" with "Build, read saved files". So Q1 = read saved files,
 Q2 = keep the multi-keyword notice out of this build, Q3 = approved.
 Base: branch claude/keen-jones-b93b9a at 4a515fd, which equals claude/agitated-sinoussi-7cc5be
-(the Reed failure build, not merged yet). All file:line references are at 4a515fd.
+(the Reed failure build, since merged to main via PR 7 on 2026-11-08). All file:line references are at 4a515fd.
 A fresh verifier checked this draft on 2026-11-06: 0 BLOCKER, 0 MAJOR, 3 MINOR, all fixed in r1.
 No Codex or Gemini design review was run on this draft. -->
 
