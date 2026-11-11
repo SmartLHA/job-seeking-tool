@@ -430,6 +430,31 @@ def _term_in(term: str, text: str, case_sensitive: bool = False) -> bool:
     return bool(re.search(r'(?<![\w+#.])' + re.escape(term) + r'(?![\w+#])', text, 0 if case_sensitive else re.I))
 
 
+_TITLE_NOUNS = frozenset('analyst manager director head lead consultant engineer architect officer owner specialist coordinator administrator developer designer president vp chief partner associate executive advisor adviser scientist programmer tester strategist planner controller supervisor assistant principal intern trainee'.split())
+_TITLE_STOP_WORDS = frozenset('the a an with to for on by from across into at as via our my their his her its weekly daily monthly'.split())
+_TITLE_ABBREVIATIONS = {'ba': 'business analyst', 'pm': 'project manager', 'sr': 'senior', 'snr': 'senior', 'mgr': 'manager',
+                        'dir': 'director', 'eng': 'engineer', 'dev': 'developer', 'vp': 'vice president'}
+
+
+def _title_tokens(line: str) -> set[str]:
+    words = re.findall(r"[a-z0-9]+", _canonical_role(line))
+    return set(' '.join(_TITLE_ABBREVIATIONS.get(w, w) for w in words).split())
+
+
+def _invented_titles(original_cv: str, rewrite: str) -> list[str]:
+    """Return new title-like role-adjacent lines whose words no original title line covers."""
+    held = [_title_tokens(line) for line in role_lines(original_cv) | role_adjacent_lines(original_cv)]
+    found = []
+    for line in sorted(role_adjacent_lines(rewrite) - role_adjacent_lines(original_cv)):
+        raw = set(re.findall(r"[a-z0-9]+", line))
+        first = next(iter(re.findall(r"[a-z0-9]+", line)), '')
+        if (len(line.split()) <= 8 and raw & _TITLE_NOUNS and not raw & _TITLE_STOP_WORDS
+                and not (first.endswith(('ed', 'ing')) and first not in _TITLE_NOUNS)
+                and not any(_title_tokens(line) <= tokens for tokens in held)):
+            found.append(line)
+    return found
+
+
 def run_layer0(original_cv: str, evidence: str, context: str, rewrite: str,
                job_skills: list[str], known_skills: list[str], aliases: dict[str, str] | None = None) -> list[Finding]:
     """Run deterministic checks using evidence and context separately."""
@@ -451,8 +476,11 @@ def run_layer0(original_cv: str, evidence: str, context: str, rewrite: str,
         add('L0-3', line, 'BLOCKER', 'role line changed or removed')
     for line in sorted(role_lines(rewrite) - role_lines(original_cv)):
         add('L0-3', line, 'BLOCKER', 'new role line')
-    if role_adjacent_lines(original_cv) != role_adjacent_lines(rewrite):
+    invented = _invented_titles(original_cv, rewrite)
+    if not invented and role_adjacent_lines(original_cv) != role_adjacent_lines(rewrite):
         add('L0-3', '', 'MAJOR', 'role-adjacent line changed')
+    for line in invented:
+        add('L0-3', line, 'BLOCKER', 'job title not held in the original CV: ' + line)
     alias_map = {alias.casefold(): canonical.casefold() for alias, canonical in
                  {'MS Teams': 'Microsoft Teams', **(aliases or {})}.items()}
     groups = []

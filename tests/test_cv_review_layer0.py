@@ -52,12 +52,39 @@ def test_role_change_blocked(before, after):
     assert overall_verdict(findings, []) == 'BLOCKED'
 
 
-def test_role_adjacent_title_major():
-    before = 'Experience\nExample Ltd\n2020-2022\nAnalyst\n- Wrote reports.'
-    findings = check(before, before.replace('Analyst', 'Lead Analyst'))
-    assert any(f.severity == 'MAJOR' for f in rules(findings, 'L0-3'))
+POST_DATE = 'Experience\nExample Ltd\n2020-2022\n{}\n- Wrote reports.'
+
+
+def test_role_adjacent_new_title_blocks():
+    before = POST_DATE.format('Analyst')
+    findings = check(before, POST_DATE.format('Lead Analyst'))
+    assert any(f.severity == 'BLOCKER' for f in rules(findings, 'L0-3'))
+    assert overall_verdict(findings, []) == 'BLOCKED'
+
+
+@pytest.mark.parametrize('title', ['Director', 'Head of Data'])
+def test_role_adjacent_invented_title_blocks(title):
+    findings = check(POST_DATE.format('Analyst'), POST_DATE.format(title))
+    assert any(f.severity == 'BLOCKER' for f in rules(findings, 'L0-3'))
+    assert overall_verdict(findings, []) == 'BLOCKED'
+
+
+@pytest.mark.parametrize('before,after', [
+    ('Senior Business Analyst', 'Senior BA'), ('Business Analyst', 'business analyst'),
+    ('Senior Analyst', 'Analyst'),
+])
+def test_role_adjacent_held_title_not_blocked(before, after):
+    findings = check(POST_DATE.format(before), POST_DATE.format(after))
+    assert not any(f.severity == 'BLOCKER' for f in findings)
+
+
+@pytest.mark.parametrize('line', [
+    'Supported the product owner with backlog', 'Worked with the project manager',
+    'Reported to the director weekly', 'Led analyst team',
+])
+def test_role_adjacent_responsibility_mentioning_title_not_blocked(line):
+    findings = check(POST_DATE.format('Analyst'), POST_DATE.format(line))
     assert not any(f.severity == 'BLOCKER' for f in rules(findings, 'L0-3'))
-    assert overall_verdict(findings, []) != 'PASS'
 
 
 def test_date_prose_and_bullets_are_not_roles():
