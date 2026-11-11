@@ -81,3 +81,6 @@ data/state/cache/
 data/raw/
 data/state/analyses/
 data/state/reviewed_jobs/
+
+# Runtime ownership records for start/restart (scripts/app_lifecycle.py)
+data/state/runtime/
