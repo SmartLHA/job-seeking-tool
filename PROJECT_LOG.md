@@ -16,10 +16,10 @@
 - **Status:** ✅ Recorded; nothing built.
 - **Key facts:** Issue 16 (daily scheduler semantics): remember the day's successful run; on failure do not retry automatically, wait for the next day or a manual "Run now" (decided, not implemented). Old app copy: its remaining jobs and outcomes are not migrated. Profile settings `target_roles` and `digest_max_per_source`: keep current values. Branch `claude/recursing-keller-c507e3` (46/49 failing-test fix) abandoned: main's full suite already has 0 failures. Old local work branches were deleted 2026-11-11.
 
-## 2026-11-09
+## 2026-11-10
 
 ### CI runs the Tailor, cover and Viewer browser tests (PR 9)
-- **Status:** ✅ Merged 2026-11-09 as PR 9 (`0830754`; commit `1bf5682`).
+- **Status:** ✅ Merged 2026-11-10 as PR 9 (`0830754`; commit `1bf5682`).
 - **Motivation:** the browser tests added with PR 8 were not run in CI.
 - **Changes:** `.github/workflows/python-app.yml` — the "Required browser coverage" step now also runs `tests/test_tailor_cover_dom.py` and `tests/test_viewer_api_boundary_browser.py`.
 - **Key facts:** CI browser tests 15 to 28.
