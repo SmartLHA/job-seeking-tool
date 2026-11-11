@@ -2,11 +2,11 @@
 
 ## Required years on paste and URL jobs — 2026-11-08
 
-**Status:** ⚠️ Built in `153196a` and kept by Mike on 2026-11-08 ("Keep it"), although its blind test missed the limits (false matches 11.6% vs 5%; correct 47.4% as written and 52.6% squashed vs 80%). Full suite 2950 passed, 16 skipped, 0 failed. Spec and result: `docs/tasks/2026-11-06-required-years-search-jobs-design.md` sections 18 and 19. Search-source jobs are unchanged and stay neutral on experience.
+**Status:** ⚠️ Built in `153196a` (public copy on main: `44aa300`, PR 6) and kept by Mike on 2026-11-08 ("Keep it"), although its blind test missed the limits (false matches 11.6% vs 5%; correct 47.4% as written and 52.6% squashed vs 80%). Full suite 2950 passed, 16 skipped, 0 failed. Spec and result: `docs/tasks/2026-11-06-required-years-search-jobs-design.md` sections 18 and 19. Search-source jobs are unchanged and stay neutral on experience.
 
 - ⬜ Pending (optional, later): improve the misses (requirements with no "experience" word) and the company-history false matches. Needs a NEW third blind set; the set `tests/fixtures/required_years_blind2.json` has been seen and must not be tuned against.
 - ⬜ Pending (low, optional): `_years_matches` is quadratic on pathological input (about 3.6 s for 100,000 characters of repeated "5 years "). Real adverts are far smaller.
-- Not approved: push, pull request or merge of `153196a`.
+- ✅ Merged 2026-11-08: the public copy on main is the clean single commit `44aa300` via PR 6 (merge `225edd8`); the original local branch was deleted 2026-11-11. (Was: not approved for push, pull request or merge of `153196a`.)
 
 ## AI CV blind review — 2026-10-28
 

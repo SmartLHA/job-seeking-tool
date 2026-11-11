@@ -1,6 +1,6 @@
 # Partly failed multi-keyword search: visible notice
 
-<!-- IMPLEMENTATION STATUS: built (commits c66a249, de8dfa8, 7ccbe23). Branch claude/cool-faraday-76ed62, on top of claude/keen-jones-b93b9a (Adzuna failure build) at db8c6b6. Not pushed, not merged. Fresh verifier passed 2026-11-06 at 8ed6bda (AC1-AC16; AC17 is producer evidence). -->
+<!-- IMPLEMENTATION STATUS: built (commits c66a249, de8dfa8, 7ccbe23). Branch claude/cool-faraday-76ed62, on top of claude/keen-jones-b93b9a (Adzuna failure build) at db8c6b6. Merged to main 2026-11-08 via PR 7 (751b253). Fresh verifier passed 2026-11-06 at 8ed6bda (AC1-AC16; AC17 is producer evidence). -->
 <!-- STATUS: APPROVED by Mike, 2026-11-06 ("Approve, build it"), with the recommended answers to Q1 and Q2. -->
 
 Line numbers refer to base `db8c6b6`.
@@ -131,7 +131,7 @@ Stop and ask Mike if a finding survives two fixes, if the design needs a change 
 
 ## 9. Build record
 
-- Commits: `c66a249` (backend and tests), `de8dfa8` (`jstLoadMore` and browser test), `7ccbe23` (notice bottom margin, seen in the live view). Not pushed, not merged.
+- Commits: `c66a249` (backend and tests), `de8dfa8` (`jstLoadMore` and browser test), `7ccbe23` (notice bottom margin, seen in the live view). Merged to main 2026-11-08 via PR 7 (751b253).
 - Tests: `tests/test_partial_keyword_failure_notice.py` (32 tests); `tests/test_partial_keyword_failure_browser.py` (1 test, needs Playwright, skips in the venv; Playwright was installed only into the session scratchpad).
 - Live view (AC17), 2026-11-06, built-in browser against a local scratch server with `requests.get` faked, no live API call: Reed first page; Reed Next page failing again then succeeding (notice gone, retried keyword's jobs shown); Reed no-results case (notice plus Next page button); Adzuna first page. The Browser pane was hidden, so the smooth scroll did not animate; the scroll target was confirmed as the notice by recording the call. Producer evidence, not a verifier result.
 - Full suite: baseline at `db8c6b6` 50 failed, 2838 passed, 16 skipped; the implementer's full run before `7ccbe23` 50 failed, 2870 passed, 17 skipped, same failure names.
