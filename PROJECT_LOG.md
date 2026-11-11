@@ -1,3 +1,29 @@
+## 2026-11-11
+
+### CV blind review Layer 0: an invented job title always ends BLOCKED (PR 10)
+- **Status:** ✅ Merged 2026-11-11 as PR 10 (`eaa8c18`; commits `0d1225b`, `ca98257`). Mike's decision 2026-11-10: invented titles always block.
+- **Motivation:** the AI reviewer sometimes labelled an invented title EXAGGERATED instead of UNSUPPORTED, so the case did not end BLOCKED on its own.
+- **Changes:** `src/job_hunt_cv_review.py` — Layer 0 rule L0-3: a new title-like line after the dates that no original title line covers is a BLOCKER, whichever AI reviewer runs. Abbreviations, case changes and downgrades are not blocked; short responsibility lines that only mention a title noun are not treated as titles. `tests/test_cv_review_layer0.py` and the eval fixture `tests/fixtures/cv_review_eval/case-09-new-title.json` updated.
+- **Key facts:** closes the "titles" decision item in PROJECT_TODO.
+
+### Safe start/restart (O1, PR 11)
+- **Status:** ✅ Merged 2026-11-11 as PR 11 (`33a8bab`; commit `d8e9c55`).
+- **Motivation:** restart must never stop a process this tool did not start.
+- **Changes:** `scripts/app_lifecycle.py` (new) — records the instance it starts and only sends SIGINT to a verified own instance; no `pkill`, no `kill -9`; `start` never stops anything (it opens the browser to an already-running own instance). `start.command` and `restart.sh` call it. `.gitignore` — `data/state/runtime/` (runtime records). `tests/test_app_lifecycle.py` (new), `tests/test_start_scripts.py`.
+- **Key facts:** full suite on macOS 2026-11-11 (venv now has Playwright 1.59.0): 3491 passed, 1 skipped.
+
+### Decisions by Mike, 2026-11-10 (docs only)
+- **Status:** ✅ Recorded; nothing built.
+- **Key facts:** Issue 16 (daily scheduler semantics): remember the day's successful run; on failure do not retry automatically, wait for the next day or a manual "Run now" (decided, not implemented). Old app copy: its remaining jobs and outcomes are not migrated. Profile settings `target_roles` and `digest_max_per_source`: keep current values. Branch `claude/recursing-keller-c507e3` (46/49 failing-test fix) abandoned: main's full suite already has 0 failures. Old local work branches were deleted 2026-11-11.
+
+## 2026-11-09
+
+### CI runs the Tailor, cover and Viewer browser tests (PR 9)
+- **Status:** ✅ Merged 2026-11-09 as PR 9 (`0830754`; commit `1bf5682`).
+- **Motivation:** the browser tests added with PR 8 were not run in CI.
+- **Changes:** `.github/workflows/python-app.yml` — the "Required browser coverage" step now also runs `tests/test_tailor_cover_dom.py` and `tests/test_viewer_api_boundary_browser.py`.
+- **Key facts:** CI browser tests 15 to 28.
+
 ## 2026-11-08
 
 ### Viewer Referer fragments and Tailor/cover results as text
